@@ -21,9 +21,11 @@ class ModelResult:
 
 
 class ModelProvider:
-    def __init__(self, provider_id: str, model: str):
+    def __init__(self, provider_id: str, model: str, base_url: str = "", api_key: str = ""):
         self.provider_id = provider_id
         self.model = model
+        self.base_url = base_url
+        self.api_key = api_key
 
     def complete(self, pack: PromptPack) -> ModelResult:
         if self.provider_id == "mock":
@@ -50,11 +52,11 @@ class ModelProvider:
 
     def _openai_compatible(self, pack: PromptPack) -> ModelResult:
         started = time.perf_counter()
-        base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
-        api_key = os.getenv("OPENAI_API_KEY", "")
+        base_url = (self.base_url or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")).rstrip("/")
+        api_key = self.api_key or os.getenv("LANGDRILL_PROVIDER_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
         if self.provider_id == "local":
-            base_url = os.getenv("LOCAL_LLM_BASE_URL", base_url).rstrip("/")
-            api_key = os.getenv("LOCAL_LLM_API_KEY", api_key)
+            base_url = (self.base_url or os.getenv("LOCAL_LLM_BASE_URL", base_url)).rstrip("/")
+            api_key = self.api_key or os.getenv("LOCAL_LLM_API_KEY", api_key)
         if not api_key:
             raise RuntimeError("缺少 API key，请写入 .env。")
 

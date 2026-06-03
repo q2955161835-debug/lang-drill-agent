@@ -79,6 +79,8 @@ class PromptPack(BaseModel):
 class InitRequest(BaseModel):
     provider_id: str = "mock"
     model: str = "mock-tutor-v1"
+    base_url: str = ""
+    api_key: str = ""
     display_name: str = "boss"
     target_language: str = "未设置"
     exam_id: str = "unassigned"
@@ -92,3 +94,10 @@ class BranchRequest(BaseModel):
     session_id: str
     selected_text: str = Field(min_length=1)
     message: str
+
+
+class ModelConfigRequest(BaseModel):
+    provider_id: str = "mock"
+    model: str = "mock-tutor-v1"
+    base_url: str = ""
+    api_key: str = ""

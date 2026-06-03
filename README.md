@@ -59,6 +59,15 @@ py -m langdrill_agent.cli import-skill --source "D:\1Folder\语言学习-lang-dr
 - `local`：本地 OpenAI-compatible（OpenAI 兼容）模型服务。
 - DeepSeek（深度求索）、Qwen（通义千问）、Zhipu AI（智谱）、Moonshot（月之暗面）可按 OpenAI-compatible（OpenAI 兼容）方式配置。
 
+网页设置中的模型配置会写入本地 `.env`：
+
+- `LANGDRILL_DEFAULT_PROVIDER`：当前供应商。
+- `LANGDRILL_DEFAULT_MODEL`：当前模型名称。
+- `LANGDRILL_PROVIDER_BASE_URL`：当前 Base URL（基础网址）。
+- `LANGDRILL_PROVIDER_API_KEY`：当前 API Key（接口密钥）。
+
+模型名称在网页里同时提供供应商常见模型选项和自定义填写项。自定义模型不为空时优先使用自定义值，方便供应商新增模型后立即使用。
+
 ## 资料边界
 
 真题和考纲以来源、年份、可信等级和版权边界入库。来源不明或版权不清的完整真题不作为默认发布资产，只做索引与风格参考。

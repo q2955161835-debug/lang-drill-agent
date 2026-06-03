@@ -6,11 +6,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from .agents import EvaluatorTutorAgent, OrchestratorAgent, QuestionAuthorAgent, token_totals
 from .config import load_settings
 from .db import init_db, transaction
-from .models import BranchRequest, ChatRequest, ChatResponse, InitRequest
+from .models import BranchRequest, ChatRequest, ChatResponse, InitRequest, ModelConfigRequest
 from .providers import ModelProvider
-from .services import ProfileService, QuestionService, SessionService, SourceService
+from .services import ModelConfigService, ProfileService, QuestionService, SessionService, SourceService
 from .task_router import TaskRouter
-from .utils import dumps, new_id
+from .utils import new_id
 
 
 app = FastAPI(title="Lang Drill Agent API")
@@ -34,19 +34,13 @@ def bootstrap() -> dict:
     with transaction() as conn:
         profile = ProfileService(conn).get()
         sessions = SessionService(conn).list_sessions_by_date()
+        model_config = ModelConfigService(conn)
         return {
             "profile": profile.model_dump(),
             "sessions": sessions,
             "token_usage": token_totals(conn),
-            "providers": [
-                {"id": "mock", "label": "Mock Provider（本地模拟）", "kind": "mock"},
-                {"id": "openai", "label": "OpenAI Compatible（OpenAI 兼容）", "kind": "openai"},
-                {"id": "deepseek", "label": "DeepSeek（深度求索）", "kind": "openai-compatible"},
-                {"id": "qwen", "label": "Qwen（通义千问）", "kind": "openai-compatible"},
-                {"id": "zhipu", "label": "Zhipu AI（智谱）", "kind": "openai-compatible"},
-                {"id": "moonshot", "label": "Moonshot（月之暗面）", "kind": "openai-compatible"},
-                {"id": "local", "label": "Local Model（本地模型）", "kind": "openai-compatible"},
-            ],
+            "providers": model_config.providers(),
+            "model_config": model_config.current(),
         }
 
 
@@ -67,17 +61,29 @@ def initialize(request: InitRequest) -> dict:
         )
         ProfileService(conn).update(updated)
         SourceService(conn).seed_common_sources()
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO app_settings (key, value_json, updated_at)
-            VALUES ('model.default', ?, CURRENT_TIMESTAMP)
-            """,
-            (dumps({"provider_id": request.provider_id, "model": request.model}),),
+        ModelConfigService(conn).save(
+            request.provider_id,
+            request.base_url,
+            request.model,
+            request.api_key,
         )
         return {
             "profile": updated.model_dump(),
             "next_step": "检查内置考纲；若不是最新版或缺失，再按官方来源下载或索引。",
         }
+
+
+@app.post("/api/model-config")
+def save_model_config(request: ModelConfigRequest) -> dict:
+    init_db()
+    with transaction() as conn:
+        config = ModelConfigService(conn).save(
+            request.provider_id,
+            request.base_url,
+            request.model,
+            request.api_key,
+        )
+        return {"model_config": config}
 
 
 @app.post("/api/chat", response_model=ChatResponse)
@@ -95,7 +101,13 @@ def chat(request: ChatRequest) -> ChatResponse:
         )
         session_service.add_message(session_id, "user", request.content, {"task": task.value})
 
-        provider = ModelProvider(settings.default_provider, settings.default_model)
+        model_config = ModelConfigService(conn).current_with_secret()
+        provider = ModelProvider(
+            model_config.get("provider_id") or settings.default_provider,
+            model_config.get("model") or settings.default_model,
+            model_config.get("base_url") or "",
+            model_config.get("api_key") or "",
+        )
         if task.value == "answer_question" and active:
             result = EvaluatorTutorAgent(conn, provider).evaluate(session_id, active, request.content)
             assistant_content = result.feedback

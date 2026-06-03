@@ -24,6 +24,67 @@ import {
 
 gsap.registerPlugin(useGSAP);
 
+function MessageItem({ message }: { message: Message }) {
+  const container = useRef<HTMLElement>(null);
+  
+  useGSAP(() => {
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduceMotion) return;
+    
+    // 卡通果冻弹跳效果
+    gsap.from(container.current, {
+      opacity: 0,
+      y: 50,
+      rotationZ: gsap.utils.random(-5, 5),
+      scale: 0.8,
+      duration: 0.8,
+      ease: "elastic.out(1, 0.4)"
+    });
+  }, { scope: container, dependencies: [] });
+
+  return (
+    <article className={`message ${message.role}`} ref={container}>
+      <div className="avatar">{message.role === "user" ? <UserCircle size={18} /> : <Sparkle size={18} />}</div>
+      <div className="bubble">{message.content}</div>
+    </article>
+  );
+}
+
+function InteractiveButton({ 
+  children, 
+  className = "", 
+  onClick, 
+  title 
+}: { 
+  children: ReactNode; 
+  className?: string; 
+  onClick?: () => void; 
+  title?: string;
+}) {
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const { contextSafe } = useGSAP({ scope: btnRef });
+  
+  const onEnter = contextSafe(() => gsap.to(btnRef.current, { scale: 1.1, rotationZ: 3, duration: 0.4, ease: "elastic.out(1.2, 0.4)" }));
+  const onLeave = contextSafe(() => gsap.to(btnRef.current, { scale: 1, rotationZ: 0, duration: 0.3, ease: "power2.out" }));
+  const onDown = contextSafe(() => gsap.to(btnRef.current, { scale: 0.9, duration: 0.1, ease: "power1.inOut" }));
+  const onUp = contextSafe(() => gsap.to(btnRef.current, { scale: 1.15, rotationZ: -3, duration: 0.5, ease: "elastic.out(1.5, 0.3)" }));
+
+  return (
+    <button 
+      ref={btnRef}
+      className={className}
+      onClick={onClick}
+      title={title}
+      onMouseEnter={onEnter}
+      onMouseLeave={onLeave}
+      onMouseDown={onDown}
+      onMouseUp={onUp}
+    >
+      {children}
+    </button>
+  );
+}
+
 const API = "";
 
 type Profile = {
@@ -34,6 +95,26 @@ type Profile = {
   learning_goal: string;
   learning_background: string;
   persona: string;
+  global_user_prompt: string;
+};
+
+type ThemeMode = "system" | "light" | "dark";
+
+type ProviderOption = {
+  id: string;
+  label: string;
+  kind: string;
+  base_url: string;
+  model: string;
+  model_options: string[];
+};
+
+type ModelConfig = {
+  provider_id: string;
+  base_url: string;
+  model: string;
+  api_key?: string;
+  has_api_key?: boolean;
 };
 
 type SessionItem = {
@@ -100,8 +181,56 @@ const MOCK_PROFILE: Profile = {
   exam_name: "未设置",
   learning_goal: "",
   learning_background: "",
-  persona: "professional"
+  persona: "professional",
+  global_user_prompt: ""
 };
+
+const FALLBACK_PROVIDERS: ProviderOption[] = [
+  { id: "mock", label: "Mock Provider（本地模拟）", kind: "mock", base_url: "", model: "mock-tutor-v1", model_options: ["mock-tutor-v1"] },
+  { id: "openai", label: "OpenAI（官方）", kind: "openai-compatible", base_url: "https://api.openai.com/v1", model: "gpt-5.2", model_options: ["gpt-5.2", "gpt-5.1", "gpt-5", "gpt-5-mini", "gpt-4.1-mini"] },
+  { id: "deepseek", label: "DeepSeek（深度求索）", kind: "openai-compatible", base_url: "https://api.deepseek.com", model: "deepseek-v4-flash", model_options: ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner"] },
+  { id: "qwen", label: "Qwen（通义千问）", kind: "openai-compatible", base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus", model_options: ["qwen-plus", "qwen-turbo", "qwen-max", "qwen3-plus", "qwen3-max"] },
+  { id: "zhipu", label: "Zhipu AI（智谱）", kind: "openai-compatible", base_url: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4-flash", model_options: ["glm-4-flash", "glm-4-plus", "glm-4-air", "glm-4.5"] },
+  { id: "moonshot", label: "Moonshot（月之暗面）", kind: "openai-compatible", base_url: "https://api.moonshot.cn/v1", model: "kimi-k2-turbo-preview", model_options: ["kimi-k2-turbo-preview", "kimi-k2-thinking", "moonshot-v1-8k", "moonshot-v1-32k"] },
+  { id: "mimo", label: "Xiaomi MiMo（小米 MiMo）", kind: "openai-compatible", base_url: "https://api.xiaomimimo.com/v1", model: "mimo-v2.5-pro", model_options: ["mimo-v2.5-pro", "mimo-v2-pro", "mimo-v2-flash", "mimo-v2-omni"] },
+  { id: "local", label: "Local Model（本地模型）", kind: "openai-compatible", base_url: "http://localhost:11434/v1", model: "qwen2.5:7b", model_options: ["qwen2.5:7b", "deepseek-r1:8b", "llama3.1:8b"] },
+  { id: "custom", label: "Custom OpenAI-compatible（自定义 OpenAI 兼容）", kind: "openai-compatible", base_url: "", model: "", model_options: [] }
+];
+
+const DEFAULT_MODEL_CONFIG: ModelConfig = {
+  provider_id: "mock",
+  base_url: "",
+  model: "mock-tutor-v1",
+  has_api_key: false
+};
+
+function selectedProvider(providers: ProviderOption[], providerId: string) {
+  return providers.find((item) => item.id === providerId) || FALLBACK_PROVIDERS[0];
+}
+
+function uniqueModelOptions(provider: ProviderOption, currentModel: string) {
+  return Array.from(new Set([...(provider.model_options || []), provider.model, currentModel].filter(Boolean)));
+}
+
+function normalizeProviders(providers: ProviderOption[] | undefined) {
+  if (!providers?.length) return FALLBACK_PROVIDERS;
+  return providers.map((provider) => ({
+    ...(FALLBACK_PROVIDERS.find((item) => item.id === provider.id) || {}),
+    ...provider,
+    base_url: provider.base_url || FALLBACK_PROVIDERS.find((item) => item.id === provider.id)?.base_url || "",
+    model: provider.model || FALLBACK_PROVIDERS.find((item) => item.id === provider.id)?.model || "",
+    model_options: provider.model_options?.length
+      ? provider.model_options
+      : FALLBACK_PROVIDERS.find((item) => item.id === provider.id)?.model_options || [provider.model].filter(Boolean)
+  }));
+}
+
+function normalizeModelConfig(config: ModelConfig | undefined) {
+  return {
+    ...DEFAULT_MODEL_CONFIG,
+    ...(config || {})
+  };
+}
 
 const personalityOptions = [
   { id: "none", label: "空", prompt: "不额外注入人格提示词。" },
@@ -138,6 +267,8 @@ async function apiPost<T>(url: string, body: unknown): Promise<T> {
 export default function App() {
   const appRef = useRef<HTMLDivElement | null>(null);
   const [profile, setProfile] = useState<Profile>(MOCK_PROFILE);
+  const [providers, setProviders] = useState<ProviderOption[]>(FALLBACK_PROVIDERS);
+  const [modelConfig, setModelConfig] = useState<ModelConfig>(DEFAULT_MODEL_CONFIG);
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [dailyPanel, setDailyPanel] = useState<DailyPanel>(DEFAULT_PANEL);
@@ -149,6 +280,8 @@ export default function App() {
   const [rightOpen, setRightOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => (localStorage.getItem("themeMode") as ThemeMode | null) || "system");
+  const [fontSize, setFontSize] = useState(() => Number(localStorage.getItem("fontSize") || 16));
   const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>(() => {
     const saved = localStorage.getItem("expandedDates");
     return saved ? JSON.parse(saved) : { [new Date().toISOString().slice(0, 10)]: true };
@@ -163,12 +296,35 @@ export default function App() {
     () => {
       const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       if (reduceMotion) return;
-      gsap.from(".panel-motion", {
-        autoAlpha: 0,
-        y: 10,
-        duration: 0.5,
-        ease: "power2.out",
-        stagger: 0.05
+      
+      const tl = gsap.timeline({
+        defaults: { clearProps: "transform" }
+      });
+      tl.from(".panel-motion", {
+        y: 40,
+        scale: 0.9,
+        duration: 0.7,
+        ease: "elastic.out(1, 0.6)",
+        stagger: 0.08
+      });
+      
+      gsap.from(".memory-strip span", {
+        scale: 0,
+        rotationZ: -10,
+        duration: 0.6,
+        ease: "back.out(1.7)",
+        stagger: 0.05,
+        delay: 0.3,
+        clearProps: "transform"
+      });
+      
+      gsap.from(".score-stack .stat", {
+        y: 30,
+        duration: 0.6,
+        ease: "back.out(1.5)",
+        stagger: 0.1,
+        delay: 0.2,
+        clearProps: "transform"
       });
     },
     { scope: appRef }
@@ -183,13 +339,32 @@ export default function App() {
   }, [expandedDates]);
 
   useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const applyTheme = () => {
+      const resolvedTheme = themeMode === "system" ? (media.matches ? "dark" : "light") : themeMode;
+      document.documentElement.dataset.theme = resolvedTheme;
+      document.documentElement.dataset.themeMode = themeMode;
+      document.documentElement.style.fontSize = `${fontSize}px`;
+      localStorage.setItem("themeMode", themeMode);
+      localStorage.setItem("fontSize", String(fontSize));
+    };
+    applyTheme();
+    media.addEventListener("change", applyTheme);
+    return () => media.removeEventListener("change", applyTheme);
+  }, [fontSize, themeMode]);
+
+  useEffect(() => {
     apiGet<{
       profile: Profile;
       sessions: SessionItem[];
       token_usage: typeof tokenUsage;
+      providers: ProviderOption[];
+      model_config: ModelConfig;
     }>("/api/bootstrap")
       .then((data) => {
         setProfile(data.profile);
+        setProviders(normalizeProviders(data.providers));
+        setModelConfig(normalizeModelConfig(data.model_config));
         setSessions(data.sessions);
         setTokenUsage(data.token_usage);
         setOnboardingOpen(data.profile.exam_id === "unassigned");
@@ -241,9 +416,9 @@ export default function App() {
     <div className="app-shell" ref={appRef}>
       <aside className={`left-rail panel-motion ${leftOpen ? "open" : "closed"}`}>
         <div className="rail-top">
-          <button className="icon-button" onClick={() => setLeftOpen((value) => !value)} title="折叠侧栏">
+          <InteractiveButton className="icon-button" onClick={() => setLeftOpen((value) => !value)} title="折叠侧栏">
             <Sidebar size={20} />
-          </button>
+          </InteractiveButton>
           {leftOpen && <span className="brand">Lang Drill</span>}
         </div>
         {leftOpen && (
@@ -270,10 +445,10 @@ export default function App() {
                 </section>
               ))}
             </div>
-            <button className="settings-button" onClick={() => setSettingsOpen(true)}>
+            <InteractiveButton className="settings-button" onClick={() => setSettingsOpen(true)}>
               <GearSix size={18} />
               <span>设置</span>
-            </button>
+            </InteractiveButton>
           </>
         )}
       </aside>
@@ -283,20 +458,21 @@ export default function App() {
         {activeQuestion && <QuestionDock question={activeQuestion} />}
         <div className="message-stream" onMouseUp={() => setSelectedText(window.getSelection()?.toString() || "")}>
           {messages.map((message) => (
-            <article className={`message ${message.role}`} key={message.id}>
-              <div className="avatar">{message.role === "user" ? <UserCircle size={18} /> : <Sparkle size={18} />}</div>
-              <div className="bubble">{message.content}</div>
-            </article>
+            <MessageItem key={message.id} message={message} />
           ))}
         </div>
         {selectedText && (
-          <button className="branch-fab" onClick={startBranch}>
+          <InteractiveButton className="branch-fab" onClick={startBranch}>
             <GitBranch size={16} />
             开启分支对话
-          </button>
+          </InteractiveButton>
         )}
         <div className="composer-wrap">
-          {emptyContext && <div className="first-prompt">{profile.display_name}，今天打算从哪里开始？</div>}
+          {emptyContext && (
+            <div className="first-prompt">
+              {profile.display_name}，今天打算从哪里开始？
+            </div>
+          )}
           <div className="composer">
             <textarea
               value={input}
@@ -309,17 +485,17 @@ export default function App() {
                 }
               }}
             />
-            <button className="send-button" onClick={() => void sendMessage()} title="发送">
+            <InteractiveButton className="send-button" onClick={() => void sendMessage()} title="发送">
               <PaperPlaneRight size={20} weight="fill" />
-            </button>
+            </InteractiveButton>
           </div>
         </div>
       </main>
 
       <aside className={`right-rail panel-motion ${rightOpen ? "open" : "closed"}`}>
-        <button className="right-toggle" onClick={() => setRightOpen((value) => !value)} title="展开分支对话">
+        <InteractiveButton className="right-toggle" onClick={() => setRightOpen((value) => !value)} title="展开分支对话">
           {rightOpen ? <CaretRight size={18} /> : <CaretLeft size={18} />}
-        </button>
+        </InteractiveButton>
         {rightOpen && (
           <div className="branch-panel">
             <div className="panel-title">
@@ -342,17 +518,33 @@ export default function App() {
       {settingsOpen && (
         <SettingsDialog
           profile={profile}
+          providers={providers}
+          modelConfig={modelConfig}
+          themeMode={themeMode}
+          fontSize={fontSize}
           tokenUsage={tokenUsage}
           onClose={() => setSettingsOpen(false)}
           onProfileChange={setProfile}
+          onModelConfigChange={setModelConfig}
+          onAppearanceChange={(nextTheme, nextFontSize) => {
+            setThemeMode(nextTheme);
+            setFontSize(nextFontSize);
+          }}
+          onOpenOnboarding={() => {
+            setSettingsOpen(false);
+            setOnboardingOpen(true);
+          }}
         />
       )}
       {onboardingOpen && (
         <OnboardingDialog
           profile={profile}
+          providers={providers}
+          modelConfig={modelConfig}
           onClose={() => setOnboardingOpen(false)}
           onDone={(nextProfile) => {
             setProfile(nextProfile);
+            void apiGet<{ model_config?: ModelConfig }>("/api/bootstrap").then((data) => setModelConfig(normalizeModelConfig(data.model_config)));
             setOnboardingOpen(false);
           }}
         />
@@ -442,16 +634,66 @@ function QuestionDock({ question }: { question: Question }) {
 
 function SettingsDialog({
   profile,
+  providers,
+  modelConfig,
+  themeMode,
+  fontSize,
   tokenUsage,
   onClose,
-  onProfileChange
+  onProfileChange,
+  onModelConfigChange,
+  onAppearanceChange,
+  onOpenOnboarding
 }: {
   profile: Profile;
+  providers: ProviderOption[];
+  modelConfig: ModelConfig;
+  themeMode: ThemeMode;
+  fontSize: number;
   tokenUsage: Record<string, number>;
   onClose: () => void;
   onProfileChange: (profile: Profile) => void;
+  onModelConfigChange: (config: ModelConfig) => void;
+  onAppearanceChange: (themeMode: ThemeMode, fontSize: number) => void;
+  onOpenOnboarding: () => void;
 }) {
   const [draft, setDraft] = useState(profile);
+  const [modelDraft, setModelDraft] = useState<ModelConfig>({ ...modelConfig, api_key: "" });
+  const [customModel, setCustomModel] = useState("");
+  const [appearanceDraft, setAppearanceDraft] = useState({ themeMode, fontSize });
+  const [reviewIntensity, setReviewIntensity] = useState(3);
+  const [saveState, setSaveState] = useState("");
+  const provider = selectedProvider(providers, modelDraft.provider_id);
+  const modelOptions = uniqueModelOptions(provider, modelDraft.model);
+  const chooseProvider = (providerId: string) => {
+    const nextProvider = selectedProvider(providers, providerId);
+    const nextModel = nextProvider.model_options?.[0] || nextProvider.model || "";
+    setModelDraft({
+      ...modelDraft,
+      provider_id: nextProvider.id,
+      base_url: nextProvider.base_url,
+      model: nextModel
+    });
+    setCustomModel("");
+  };
+  const saveModelConfig = async () => {
+    const finalModel = customModel.trim() || modelDraft.model;
+    const data = await apiPost<{ model_config: ModelConfig }>("/api/model-config", {
+      ...modelDraft,
+      model: finalModel
+    });
+    onModelConfigChange(data.model_config);
+    setSaveState("模型配置已保存到本地 .env。");
+  };
+  const saveSettings = async () => {
+    onProfileChange(draft);
+    onAppearanceChange(appearanceDraft.themeMode, appearanceDraft.fontSize);
+    try {
+      await saveModelConfig();
+    } finally {
+      onClose();
+    }
+  };
   return (
     <div className="modal-backdrop">
       <div className="settings-modal">
@@ -461,8 +703,35 @@ function SettingsDialog({
         </div>
         <div className="settings-grid">
           <SettingSection title="模型提供商">
-            <select><option>Mock Provider（本地模拟）</option><option>OpenAI Compatible（OpenAI 兼容）</option><option>Local Model（本地模型）</option></select>
-            <select><option>mock-tutor-v1</option><option>gpt-4.1-mini</option><option>qwen-plus</option></select>
+            <select value={modelDraft.provider_id} onChange={(event) => chooseProvider(event.target.value)}>
+              {providers.map((provider) => (
+                <option key={provider.id} value={provider.id}>{provider.label}</option>
+              ))}
+            </select>
+            <input
+              value={modelDraft.base_url}
+              onChange={(event) => setModelDraft({ ...modelDraft, base_url: event.target.value })}
+              placeholder={provider.base_url || "Mock Provider（本地模拟）不需要 Base URL"}
+            />
+            <input
+              value={modelDraft.api_key || ""}
+              onChange={(event) => setModelDraft({ ...modelDraft, api_key: event.target.value })}
+              placeholder={provider.kind === "mock" ? "Mock Provider（本地模拟）不需要 API Key" : modelDraft.has_api_key ? "API Key（接口密钥）已配置，留空则不覆盖" : "API Key（接口密钥）"}
+              type="password"
+              autoComplete="off"
+            />
+            <select value={modelDraft.model} onChange={(event) => setModelDraft({ ...modelDraft, model: event.target.value })}>
+              {modelOptions.map((model) => (
+                <option key={model} value={model}>{model}</option>
+              ))}
+            </select>
+            <input
+              value={customModel}
+              onChange={(event) => setCustomModel(event.target.value)}
+              placeholder="自定义模型名称，填写后优先使用"
+            />
+            <button className="inline-action" onClick={() => void saveModelConfig()}>保存模型配置</button>
+            {saveState && <p className="hint">{saveState}</p>}
           </SettingSection>
           <SettingSection title="Token 使用">
             <div className="token-card"><strong>{tokenUsage.total}</strong><span>累计 token（令牌）</span></div>
@@ -478,24 +747,56 @@ function SettingsDialog({
               {personalityOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
             </select>
             <p className="hint">{personalityOptions.find((item) => item.id === draft.persona)?.prompt}</p>
+            {draft.persona === "custom" && (
+              <textarea
+                value={draft.global_user_prompt || ""}
+                onChange={(event) => setDraft({ ...draft, global_user_prompt: event.target.value })}
+                placeholder="填写自定义人格提示词，例如：语气冷静、少废话、每次先给结论。"
+              />
+            )}
           </SettingSection>
           <SettingSection title="功能设置">
             <label><input type="checkbox" defaultChecked /> 联网检查考纲最新版</label>
             <label><input type="checkbox" defaultChecked /> 分支默认不写回主会话</label>
             <label><input type="checkbox" defaultChecked /> 简单选择题程序判定</label>
+            <button className="inline-action" onClick={onOpenOnboarding}>重新打开初始化设置</button>
           </SettingSection>
           <SettingSection title="学习算法">
             <select><option>mastery_score V1（掌握度 V1）</option><option>FSRS-ready（FSRS 预留）</option></select>
-            <input type="range" min="1" max="5" defaultValue="3" />
+            <label className="range-field">
+              <span>复习强度：{reviewIntensity}</span>
+              <input
+                type="range"
+                min="1"
+                max="5"
+                value={reviewIntensity}
+                onChange={(event) => setReviewIntensity(Number(event.target.value))}
+              />
+              <small>控制到期复习和错题回流的占比，1 更轻，5 更密集。</small>
+            </label>
           </SettingSection>
           <SettingSection title="外观">
-            <div className="theme-row"><button><Sun size={16} /> 浅色</button><button><Moon size={16} /> 深色</button></div>
-            <input type="range" min="14" max="20" defaultValue="16" />
+            <div className="theme-row">
+              <button className={appearanceDraft.themeMode === "system" ? "active" : ""} onClick={() => setAppearanceDraft({ ...appearanceDraft, themeMode: "system" })}><GearSix size={16} /> 跟随系统</button>
+              <button className={appearanceDraft.themeMode === "light" ? "active" : ""} onClick={() => setAppearanceDraft({ ...appearanceDraft, themeMode: "light" })}><Sun size={16} /> 浅色</button>
+              <button className={appearanceDraft.themeMode === "dark" ? "active" : ""} onClick={() => setAppearanceDraft({ ...appearanceDraft, themeMode: "dark" })}><Moon size={16} /> 深色</button>
+            </div>
+            <label className="range-field">
+              <span>字体大小：{appearanceDraft.fontSize}px</span>
+              <input
+                type="range"
+                min="14"
+                max="20"
+                value={appearanceDraft.fontSize}
+                onChange={(event) => setAppearanceDraft({ ...appearanceDraft, fontSize: Number(event.target.value) })}
+              />
+              <small>调整聊天、设置和侧栏文字的整体显示大小。</small>
+            </label>
           </SettingSection>
         </div>
         <div className="modal-actions">
           <button onClick={onClose}>取消</button>
-          <button className="primary" onClick={() => { onProfileChange(draft); onClose(); }}>保存</button>
+          <button className="primary" onClick={() => void saveSettings()}>保存</button>
         </div>
       </div>
     </div>
@@ -513,16 +814,22 @@ function SettingSection({ title, children }: { title: string; children: ReactNod
 
 function OnboardingDialog({
   profile,
+  providers,
+  modelConfig,
   onClose,
   onDone
 }: {
   profile: Profile;
+  providers: ProviderOption[];
+  modelConfig: ModelConfig;
   onClose: () => void;
   onDone: (profile: Profile) => void;
 }) {
   const [draft, setDraft] = useState({
-    provider_id: "mock",
-    model: "mock-tutor-v1",
+    provider_id: modelConfig.provider_id || "mock",
+    base_url: modelConfig.base_url || "",
+    api_key: "",
+    model: modelConfig.model || "mock-tutor-v1",
     display_name: profile.display_name,
     target_language: "日语",
     exam_id: "cjt4",
@@ -531,9 +838,26 @@ function OnboardingDialog({
     learning_background: "",
     search_years: 3
   });
+  const [customModel, setCustomModel] = useState("");
+  const provider = selectedProvider(providers, draft.provider_id);
+  const modelOptions = uniqueModelOptions(provider, draft.model);
+  const chooseProvider = (providerId: string) => {
+    const nextProvider = selectedProvider(providers, providerId);
+    const nextModel = nextProvider.model_options?.[0] || nextProvider.model || "";
+    setDraft({
+      ...draft,
+      provider_id: nextProvider.id,
+      base_url: nextProvider.base_url,
+      model: nextModel
+    });
+    setCustomModel("");
+  };
 
   const submit = async () => {
-    const data = await apiPost<{ profile: Profile }>("/api/initialize", draft);
+    const data = await apiPost<{ profile: Profile }>("/api/initialize", {
+      ...draft,
+      model: customModel.trim() || draft.model
+    });
     onDone(data.profile);
   };
 
@@ -545,7 +869,11 @@ function OnboardingDialog({
           <button className="icon-button" onClick={onClose}><X size={18} /></button>
         </div>
         <div className="onboarding-flow">
-          <label>供应商<select value={draft.provider_id} onChange={(event) => setDraft({ ...draft, provider_id: event.target.value })}><option value="mock">Mock Provider（本地模拟）</option><option value="openai">OpenAI Compatible（OpenAI 兼容）</option><option value="local">Local Model（本地模型）</option></select></label>
+          <label>供应商<select value={draft.provider_id} onChange={(event) => chooseProvider(event.target.value)}>{providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}</select></label>
+          <label>Base URL（基础网址）<input value={draft.base_url} onChange={(event) => setDraft({ ...draft, base_url: event.target.value })} placeholder={provider.base_url || "Mock Provider（本地模拟）不需要 Base URL"} /></label>
+          <label>API Key（接口密钥）<input value={draft.api_key} onChange={(event) => setDraft({ ...draft, api_key: event.target.value })} placeholder={provider.kind === "mock" ? "Mock Provider（本地模拟）不需要 API Key" : "留空则不覆盖已有密钥"} type="password" autoComplete="off" /></label>
+          <label>模型选项<select value={draft.model} onChange={(event) => setDraft({ ...draft, model: event.target.value })}>{modelOptions.map((model) => <option key={model} value={model}>{model}</option>)}</select></label>
+          <label>自定义模型<input value={customModel} onChange={(event) => setCustomModel(event.target.value)} placeholder="填写后优先使用，例如厂商新模型名" /></label>
           <label>称呼<input value={draft.display_name} onChange={(event) => setDraft({ ...draft, display_name: event.target.value })} /></label>
           <label>目标语言<input value={draft.target_language} onChange={(event) => setDraft({ ...draft, target_language: event.target.value })} /></label>
           <label>目标考试<input value={draft.exam_name} onChange={(event) => setDraft({ ...draft, exam_name: event.target.value })} /></label>

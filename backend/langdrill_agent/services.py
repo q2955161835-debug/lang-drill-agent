@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from .config import PROJECT_ROOT
 from .models import Question, UserProfile
 from .utils import dumps, loads, new_id, today_str
 
@@ -231,3 +232,325 @@ class SourceService:
                     "index_and_reference",
                 ),
             )
+
+
+class ModelConfigService:
+    PROVIDERS = [
+        {
+            "id": "mock",
+            "label": "Mock Provider（本地模拟）",
+            "kind": "mock",
+            "base_url": "",
+            "model": "mock-tutor-v1",
+            "model_options": ["mock-tutor-v1"],
+        },
+        {
+            "id": "openai",
+            "label": "OpenAI（官方）",
+            "kind": "openai-compatible",
+            "base_url": "https://api.openai.com/v1",
+            "model": "gpt-5.2",
+            "model_options": [
+                "gpt-5.2",
+                "gpt-5.1",
+                "gpt-5",
+                "gpt-5-mini",
+                "gpt-5-nano",
+                "gpt-4.1",
+                "gpt-4.1-mini",
+                "gpt-4o",
+                "gpt-4o-mini",
+            ],
+        },
+        {
+            "id": "deepseek",
+            "label": "DeepSeek（深度求索）",
+            "kind": "openai-compatible",
+            "base_url": "https://api.deepseek.com",
+            "model": "deepseek-v4-flash",
+            "model_options": [
+                "deepseek-v4-flash",
+                "deepseek-v4-pro",
+                "deepseek-chat",
+                "deepseek-reasoner",
+            ],
+        },
+        {
+            "id": "qwen",
+            "label": "Qwen（通义千问）",
+            "kind": "openai-compatible",
+            "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "model": "qwen-plus",
+            "model_options": [
+                "qwen-plus",
+                "qwen-turbo",
+                "qwen-max",
+                "qwen3-plus",
+                "qwen3-max",
+                "qwen3-coder-plus",
+                "qwen-long",
+            ],
+        },
+        {
+            "id": "zhipu",
+            "label": "Zhipu AI（智谱）",
+            "kind": "openai-compatible",
+            "base_url": "https://open.bigmodel.cn/api/paas/v4",
+            "model": "glm-4-flash",
+            "model_options": [
+                "glm-4-flash",
+                "glm-4-plus",
+                "glm-4-air",
+                "glm-4.5",
+                "glm-4.5-air",
+            ],
+        },
+        {
+            "id": "moonshot",
+            "label": "Moonshot（月之暗面）",
+            "kind": "openai-compatible",
+            "base_url": "https://api.moonshot.cn/v1",
+            "model": "kimi-k2-turbo-preview",
+            "model_options": [
+                "kimi-k2-turbo-preview",
+                "kimi-k2-thinking",
+                "kimi-k2-thinking-turbo",
+                "kimi-k2-0905-preview",
+                "kimi-k2-0711-preview",
+                "moonshot-v1-8k",
+                "moonshot-v1-32k",
+                "moonshot-v1-128k",
+            ],
+        },
+        {
+            "id": "mimo",
+            "label": "Xiaomi MiMo（小米 MiMo）",
+            "kind": "openai-compatible",
+            "base_url": "https://api.xiaomimimo.com/v1",
+            "model": "mimo-v2.5-pro",
+            "model_options": [
+                "mimo-v2.5-pro",
+                "mimo-v2-pro",
+                "mimo-v2-flash",
+                "mimo-v2-omni",
+            ],
+        },
+        {
+            "id": "baichuan",
+            "label": "Baichuan（百川智能）",
+            "kind": "openai-compatible",
+            "base_url": "https://api.baichuan-ai.com/v1",
+            "model": "Baichuan4",
+            "model_options": ["Baichuan4", "Baichuan3-Turbo", "Baichuan3-Turbo-128k"],
+        },
+        {
+            "id": "minimax",
+            "label": "MiniMax（稀宇科技）",
+            "kind": "openai-compatible",
+            "base_url": "https://api.minimax.chat/v1",
+            "model": "MiniMax-M2.7",
+            "model_options": [
+                "MiniMax-M2.7",
+                "MiniMax-M2.5",
+                "MiniMax-M2",
+                "MiniMax-Text-01",
+                "abab6.5s-chat",
+            ],
+        },
+        {
+            "id": "stepfun",
+            "label": "StepFun（阶跃星辰）",
+            "kind": "openai-compatible",
+            "base_url": "https://api.stepfun.ai/v1",
+            "model": "step-3.5-flash",
+            "model_options": ["step-3.5-flash", "step-2-16k", "step-1-8k", "step-1-32k"],
+        },
+        {
+            "id": "yi",
+            "label": "Yi（零一万物）",
+            "kind": "openai-compatible",
+            "base_url": "https://api.01.ai/v1",
+            "model": "yi-lightning",
+            "model_options": ["yi-lightning", "yi-large", "yi-medium", "yi-vision"],
+        },
+        {
+            "id": "siliconflow",
+            "label": "SiliconFlow（硅基流动）",
+            "kind": "openai-compatible",
+            "base_url": "https://api.siliconflow.cn/v1",
+            "model": "Qwen/Qwen2.5-7B-Instruct",
+            "model_options": [
+                "Qwen/Qwen2.5-7B-Instruct",
+                "Qwen/Qwen3-32B",
+                "deepseek-ai/DeepSeek-V3",
+                "deepseek-ai/DeepSeek-R1",
+                "THUDM/GLM-4-9B-Chat",
+                "meta-llama/Llama-3.3-70B-Instruct",
+            ],
+        },
+        {
+            "id": "volcengine",
+            "label": "Volcengine Ark（火山方舟）",
+            "kind": "openai-compatible",
+            "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+            "model": "doubao-seed-2-0-lite-260215",
+            "model_options": [
+                "doubao-seed-2-0-lite-260215",
+                "doubao-seed-1-6",
+                "doubao-1-5-pro-32k",
+                "doubao-1-5-lite-32k",
+            ],
+        },
+        {
+            "id": "tencent",
+            "label": "Tencent Hunyuan（腾讯混元）",
+            "kind": "openai-compatible",
+            "base_url": "https://api.hunyuan.cloud.tencent.com/v1",
+            "model": "hunyuan-turbos-latest",
+            "model_options": [
+                "hunyuan-turbos-latest",
+                "hunyuan-t1-latest",
+                "hunyuan-large",
+                "hunyuan-standard",
+            ],
+        },
+        {
+            "id": "baidu",
+            "label": "Baidu Qianfan（百度千帆）",
+            "kind": "openai-compatible",
+            "base_url": "https://qianfan.baidubce.com/v2",
+            "model": "ernie-4.0-turbo-8k",
+            "model_options": [
+                "ernie-4.0-turbo-8k",
+                "ernie-4.5-turbo",
+                "ernie-x1-turbo",
+                "ernie-speed-8k",
+            ],
+        },
+        {
+            "id": "local",
+            "label": "Local Model（本地模型）",
+            "kind": "openai-compatible",
+            "base_url": "http://localhost:11434/v1",
+            "model": "qwen2.5:7b",
+            "model_options": [
+                "qwen2.5:7b",
+                "qwen2.5:14b",
+                "deepseek-r1:8b",
+                "llama3.1:8b",
+                "gemma3:12b",
+            ],
+        },
+        {
+            "id": "custom",
+            "label": "Custom OpenAI-compatible（自定义 OpenAI 兼容）",
+            "kind": "openai-compatible",
+            "base_url": "",
+            "model": "",
+            "model_options": [],
+        },
+    ]
+
+    def __init__(self, conn: sqlite3.Connection):
+        self.conn = conn
+
+    def providers(self) -> list[dict[str, Any]]:
+        return self.PROVIDERS
+
+    def current(self) -> dict[str, Any]:
+        row = self.conn.execute(
+            "SELECT value_json FROM app_settings WHERE key='model.default'"
+        ).fetchone()
+        config = loads(row["value_json"], {}) if row else {}
+        env_values = self._read_env()
+        provider = self.provider_by_id(
+            config.get("provider_id") or env_values.get("LANGDRILL_DEFAULT_PROVIDER") or "mock"
+        )
+        return {
+            "provider_id": config.get("provider_id")
+            or env_values.get("LANGDRILL_DEFAULT_PROVIDER")
+            or provider["id"],
+            "base_url": config.get("base_url")
+            or env_values.get("LANGDRILL_PROVIDER_BASE_URL")
+            or provider.get("base_url", ""),
+            "model": config.get("model")
+            or env_values.get("LANGDRILL_DEFAULT_MODEL")
+            or provider.get("model", ""),
+            "has_api_key": bool(env_values.get("LANGDRILL_PROVIDER_API_KEY", "")),
+        }
+
+    def current_with_secret(self) -> dict[str, Any]:
+        config = self.current()
+        config["api_key"] = self._read_env().get("LANGDRILL_PROVIDER_API_KEY", "")
+        return config
+
+    def provider_by_id(self, provider_id: str) -> dict[str, Any]:
+        return next((item for item in self.PROVIDERS if item["id"] == provider_id), self.PROVIDERS[0])
+
+    def save(self, provider_id: str, base_url: str, model: str, api_key: str = "") -> dict[str, Any]:
+        provider = self.provider_by_id(provider_id)
+        clean_base_url = (base_url or provider.get("base_url", "")).strip()
+        clean_model = (model or provider.get("model", "")).strip()
+        self.conn.execute(
+            """
+            INSERT OR REPLACE INTO app_settings (key, value_json, updated_at)
+            VALUES ('model.default', ?, CURRENT_TIMESTAMP)
+            """,
+            (
+                dumps(
+                    {
+                        "provider_id": provider_id,
+                        "base_url": clean_base_url,
+                        "model": clean_model,
+                    }
+                ),
+            ),
+        )
+        self._write_env(
+            {
+                "LANGDRILL_DEFAULT_PROVIDER": provider_id,
+                "LANGDRILL_DEFAULT_MODEL": clean_model,
+                "LANGDRILL_PROVIDER_BASE_URL": clean_base_url,
+                **({"LANGDRILL_PROVIDER_API_KEY": api_key.strip()} if api_key else {}),
+            }
+        )
+        return self.current()
+
+    def _read_env(self) -> dict[str, str]:
+        env_path = PROJECT_ROOT / ".env"
+        if not env_path.exists():
+            return {}
+        values: dict[str, str] = {}
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            if not line or line.lstrip().startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            values[key.strip()] = value.strip()
+        return values
+
+    def _write_env(self, updates: dict[str, str]) -> None:
+        env_path = PROJECT_ROOT / ".env"
+        values = self._read_env()
+        values.update({key: value for key, value in updates.items() if value != ""})
+        ordered_keys = [
+            "LANGDRILL_DB_PATH",
+            "LANGDRILL_USER_NAME",
+            "LANGDRILL_DEFAULT_PROVIDER",
+            "LANGDRILL_DEFAULT_MODEL",
+            "LANGDRILL_PROVIDER_BASE_URL",
+            "LANGDRILL_PROVIDER_API_KEY",
+            "OPENAI_API_KEY",
+            "OPENAI_BASE_URL",
+            "OPENAI_MODEL",
+            "LOCAL_LLM_BASE_URL",
+            "LOCAL_LLM_API_KEY",
+            "LOCAL_LLM_MODEL",
+            "LANGDRILL_SKILL_SOURCE",
+        ]
+        lines = []
+        for key in ordered_keys:
+            if key in values:
+                lines.append(f"{key}={values[key]}")
+        for key in sorted(set(values) - set(ordered_keys)):
+            lines.append(f"{key}={values[key]}")
+        env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
