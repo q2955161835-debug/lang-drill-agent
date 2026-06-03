@@ -71,3 +71,7 @@ py -m langdrill_agent.cli import-skill --source "D:\1Folder\语言学习-lang-dr
 ## 资料边界
 
 真题和考纲以来源、年份、可信等级和版权边界入库。来源不明或版权不清的完整真题不作为默认发布资产，只做索引与风格参考。
+
+## License（许可证）
+
+本项目为 source-available（源码可见）项目。非商业用途按 PolyForm Noncommercial License 1.0.0（PolyForm 非商业许可证 1.0.0）授权；商业用途需要单独取得书面商业许可。详见 `LICENSE` 和 `COMMERCIAL.md`。

@@ -10,6 +10,9 @@
   --line: #3D405B; /* Soft dark blue/grey for borders */
   --text: #3D405B;
   --muted: #8F95B2;
+  --line-soft: #E5D9ED;
+  --tag-bg: #FFE4EC;
+  --option-shadow: rgba(0, 0, 0, 0.1);
   
   --accent: #FF7B9C; /* Cute Pink */
   --accent-hover: #FF6188;
@@ -41,6 +44,9 @@
   --line: #F2CC8F;
   --text: #FFF7E8;
   --muted: #D9CEE7;
+  --line-soft: #514B6D;
+  --tag-bg: #4A3144;
+  --option-shadow: rgba(0, 0, 0, 0.28);
   --accent: #FF7B9C;
   --accent-hover: #FF96B1;
   --accent-2: #5F9F82;
@@ -147,7 +153,7 @@ h1, h2, h3, h4, .brand, .kicker {
 }
 
 .rail-top .icon-button {
-  background: white;
+  background: var(--surface);
 }
 
 .icon-button:hover, .right-toggle:hover, .send-button:hover {
@@ -222,7 +228,7 @@ h1, h2, h3, h4, .brand, .kicker {
 }
 
 .mini-list {
-  border-top: 2px dashed #E5D9ED;
+  border-top: 2px dashed var(--line-soft);
   padding-top: 12px;
 }
 
@@ -281,7 +287,7 @@ h1, h2, h3, h4, .brand, .kicker {
   padding: 10px 14px 10px 16px;
   color: var(--text);
   font-weight: 700;
-  background: white;
+  background: var(--surface);
   border: var(--border-thin);
   box-shadow: 0 2px 0 0 var(--line);
 }
@@ -343,7 +349,7 @@ h1, h2, h3, h4, .brand, .kicker {
   color: var(--accent);
   font-size: 1rem;
   font-weight: 800;
-  background: #FFE4EC;
+  background: var(--tag-bg);
   padding: 6px 12px;
   border-radius: 999px;
   display: inline-block;
@@ -391,7 +397,7 @@ h1, h2, h3, h4, .brand, .kicker {
   flex-wrap: wrap;
   gap: 12px;
   margin-top: 32px;
-  border-top: 2px dashed #E5D9ED;
+  border-top: 2px dashed var(--line-soft);
   padding-top: 24px;
 }
 
@@ -446,16 +452,16 @@ h1, h2, h3, h4, .brand, .kicker {
   border: var(--border-thick);
   border-radius: var(--radius-sm);
   padding: 14px;
-  background: white;
+  background: var(--surface-strong);
   color: var(--text);
   font-weight: 800;
-  box-shadow: 0 4px 0 0 rgba(0,0,0,0.1);
+  box-shadow: 0 4px 0 0 var(--option-shadow);
   cursor: pointer;
   transition: transform 0.1s;
 }
 .options span:active {
   transform: translateY(2px);
-  box-shadow: 0 2px 0 0 rgba(0,0,0,0.1);
+  box-shadow: 0 2px 0 0 var(--option-shadow);
 }
 
 /* Messages */
@@ -484,7 +490,7 @@ h1, h2, h3, h4, .brand, .kicker {
   height: 44px;
   border: var(--border-thick);
   border-radius: 50%;
-  background: white;
+  background: var(--surface-strong);
   color: var(--accent);
   box-shadow: 0 3px 0 0 var(--line);
 }
@@ -609,7 +615,7 @@ h1, h2, h3, h4, .brand, .kicker {
 }
 .branch-panel .panel-title {
   font-size: 1.3rem;
-  border-color: #E5D9ED;
+  border-color: var(--line-soft);
 }
 
 .branch-message {
@@ -619,7 +625,7 @@ h1, h2, h3, h4, .brand, .kicker {
   margin-bottom: 16px;
   line-height: 1.6;
   background: var(--surface);
-  box-shadow: 0 4px 0 0 #E5D9ED;
+  box-shadow: 0 4px 0 0 var(--line-soft);
   font-weight: 700;
 }
 .branch-message.user {
@@ -660,8 +666,13 @@ h1, h2, h3, h4, .brand, .kicker {
   font-size: 1.6rem;
 }
 .modal-head .icon-button {
-  background: white;
+  background: var(--surface);
   box-shadow: 0 3px 0 0 var(--line);
+}
+
+:root[data-theme="dark"] .modal-head {
+  background: var(--surface-strong);
+  color: var(--text);
 }
 
 :root[data-theme="dark"] .rail-top .icon-button,
@@ -702,10 +713,11 @@ h1, h2, h3, h4, .brand, .kicker {
   color: var(--text);
   font-weight: 700;
   color-scheme: light;
+  accent-color: var(--accent);
 }
 .setting-section input:focus, .setting-section textarea:focus, .setting-section select:focus {
   outline: none;
-  background: white;
+  background: var(--surface);
   border-color: var(--accent);
 }
 
@@ -718,6 +730,8 @@ h1, h2, h3, h4, .brand, .kicker {
   background: #221F31;
   color: var(--text);
   color-scheme: dark;
+  border-color: var(--line);
+  accent-color: var(--accent-4);
 }
 
 :root[data-theme="dark"] .setting-section input:focus,
@@ -739,6 +753,20 @@ h1, h2, h3, h4, .brand, .kicker {
 :root[data-theme="dark"] select option:hover {
   background: #5C99A5;
   color: #FFF7E8;
+}
+
+:root[data-theme="dark"] input::placeholder,
+:root[data-theme="dark"] textarea::placeholder {
+  color: #B8ADC9;
+  opacity: 1;
+}
+
+:root[data-theme="dark"] input[type="range"] {
+  background: transparent;
+}
+
+:root[data-theme="dark"] input[type="checkbox"] {
+  background: #221F31;
 }
 
 .setting-section textarea, .onboarding-flow textarea {
