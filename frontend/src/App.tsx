@@ -187,7 +187,7 @@ const MOCK_PROFILE: Profile = {
 
 const FALLBACK_PROVIDERS: ProviderOption[] = [
   { id: "mock", label: "Mock Provider（本地模拟）", kind: "mock", base_url: "", model: "mock-tutor-v1", model_options: ["mock-tutor-v1"] },
-  { id: "openai", label: "OpenAI（官方）", kind: "openai-compatible", base_url: "https://api.openai.com/v1", model: "gpt-5.2", model_options: ["gpt-5.2", "gpt-5.1", "gpt-5", "gpt-5-mini", "gpt-4.1-mini"] },
+  { id: "openai", label: "OpenAI（官方）", kind: "openai-compatible", base_url: "https://api.openai.com/v1", model: "gpt-5.5", model_options: ["gpt-5.5", "gpt-5.5-mini", "gpt-5.2", "gpt-5.1", "gpt-5", "gpt-5-mini", "gpt-4.1-mini"] },
   { id: "deepseek", label: "DeepSeek（深度求索）", kind: "openai-compatible", base_url: "https://api.deepseek.com", model: "deepseek-v4-flash", model_options: ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner"] },
   { id: "qwen", label: "Qwen（通义千问）", kind: "openai-compatible", base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus", model_options: ["qwen-plus", "qwen-turbo", "qwen-max", "qwen3-plus", "qwen3-max"] },
   { id: "zhipu", label: "Zhipu AI（智谱）", kind: "openai-compatible", base_url: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4-flash", model_options: ["glm-4-flash", "glm-4-plus", "glm-4-air", "glm-4.5"] },
@@ -697,8 +697,6 @@ function SettingsDialog({
   const [modelDraft, setModelDraft] = useState<ModelConfig>({ ...modelConfig, api_key: "" });
   const [customModel, setCustomModel] = useState("");
   const [appearanceDraft, setAppearanceDraft] = useState({ themeMode, fontSize });
-  const [newProvider, setNewProvider] = useState({ name: "", base_url: "", default_model: "" });
-  const [newProviderState, setNewProviderState] = useState("");
   const [reviewIntensity, setReviewIntensity] = useState(3);
   const [saveState, setSaveState] = useState("");
   const provider = selectedProvider(providers, modelDraft.provider_id);
@@ -750,19 +748,15 @@ function SettingsDialog({
     }
   };
   const handleAddCustomProvider = async () => {
-    if (!newProvider.name || !newProvider.base_url || !newProvider.default_model) {
-      setNewProviderState("请填写所有字段");
-      return;
-    }
-    setNewProviderState("添加中...");
+    const name = window.prompt("请输入新的自定义提供商名称（例如：MyProvider）：");
+    if (!name) return;
     try {
-      await apiPost("/api/config/providers/custom", newProvider);
+      await apiPost("/api/config/providers/custom", { name, base_url: "", default_model: "" });
       const data = await apiGet<{ providers: ProviderOption[] }>("/api/bootstrap");
       onProvidersChange(normalizeProviders(data.providers));
-      setNewProviderState("添加成功，已刷新列表");
-      setNewProvider({ name: "", base_url: "", default_model: "" });
+      setSaveState(`提供商 [${name}] 添加成功，请在下拉列表中选择。`);
     } catch (e) {
-      setNewProviderState(`添加失败: ${e instanceof Error ? e.message : e}`);
+      setSaveState(`添加失败: ${e instanceof Error ? e.message : e}`);
     }
   };
   return (
@@ -774,11 +768,14 @@ function SettingsDialog({
         </div>
         <div className="settings-grid">
           <SettingSection title="模型提供商">
-            <select value={modelDraft.provider_id} onChange={(event) => chooseProvider(event.target.value)}>
-              {providers.map((provider) => (
-                <option key={provider.id} value={provider.id}>{provider.label}</option>
-              ))}
-            </select>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <select style={{ flex: 1 }} value={modelDraft.provider_id} onChange={(event) => chooseProvider(event.target.value)}>
+                {providers.map((provider) => (
+                  <option key={provider.id} value={provider.id}>{provider.label}</option>
+                ))}
+              </select>
+              <button className="inline-action" onClick={() => void handleAddCustomProvider()} title="新增自定义提供商">+</button>
+            </div>
             <input
               value={modelDraft.base_url}
               onChange={(event) => setModelDraft({ ...modelDraft, base_url: event.target.value })}
@@ -803,13 +800,6 @@ function SettingsDialog({
             />
             <button className="inline-action" onClick={() => void saveModelConfig()}>保存模型配置</button>
             {saveState && <p className="hint">{saveState}</p>}
-          </SettingSection>
-          <SettingSection title="添加自定义提供商">
-            <input value={newProvider.name} onChange={(e) => setNewProvider({ ...newProvider, name: e.target.value })} placeholder="提供商名称 (如: MyProvider)" />
-            <input value={newProvider.base_url} onChange={(e) => setNewProvider({ ...newProvider, base_url: e.target.value })} placeholder="Base URL (如: https://api.myprovider.com/v1)" />
-            <input value={newProvider.default_model} onChange={(e) => setNewProvider({ ...newProvider, default_model: e.target.value })} placeholder="默认模型名称 (如: my-model-v1)" />
-            <button className="inline-action" onClick={() => void handleAddCustomProvider()}>添加提供商</button>
-            {newProviderState && <p className="hint">{newProviderState}</p>}
           </SettingSection>
           <SettingSection title="Token 使用">
             <div className="token-card"><strong>{tokenUsage.total}</strong><span>累计 token（令牌）</span></div>

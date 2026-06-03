@@ -484,7 +484,8 @@ class ModelConfigService:
         row_ov = self.conn.execute("SELECT value_json FROM app_settings WHERE key='model.provider_overrides'").fetchone()
         overrides = loads(row_ov["value_json"], {}) if row_ov else {}
         
-        all_providers = [dict(p) for p in self.PROVIDERS] + customs
+        base_providers = [dict(p) for p in self.PROVIDERS]
+        all_providers = base_providers[:-2] + customs + base_providers[-2:]
         for p in all_providers:
             ov = overrides.get(p["id"])
             if ov:
