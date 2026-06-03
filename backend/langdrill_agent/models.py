@@ -16,6 +16,7 @@ class TaskType(str, Enum):
     onboarding = "onboarding"
     daily_drill = "daily_drill"
     answer_question = "answer_question"
+    explanation = "explanation"
     branch_chat = "branch_chat"
     settings = "settings"
     summary = "summary"
@@ -101,3 +102,21 @@ class ModelConfigRequest(BaseModel):
     model: str = "mock-tutor-v1"
     base_url: str = ""
     api_key: str = ""
+
+class AddCustomProviderRequest(BaseModel):
+    name: str
+    base_url: str
+    default_model: str
+
+
+class ProfileUpdateRequest(BaseModel):
+    display_name: str | None = None
+    target_language: str | None = None
+    exam_id: str | None = None
+    exam_name: str | None = None
+    learning_goal: str | None = None
+    learning_background: str | None = None
+    persona: str | None = None
+    global_user_prompt: str | None = None
+    daily_minutes: int | None = None
+

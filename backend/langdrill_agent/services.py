@@ -125,6 +125,27 @@ class SessionService:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    def load_session_messages(self, session_id: str) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            "SELECT id, role, content, created_at FROM messages WHERE session_id=? ORDER BY created_at ASC",
+            (session_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def load_session_detail(self, session_id: str) -> dict[str, Any]:
+        row = self.conn.execute("SELECT * FROM study_sessions WHERE id=?", (session_id,)).fetchone()
+        if not row:
+            return {}
+        messages = self.load_session_messages(session_id)
+        panel = self.daily_panel(session_id)
+        active_q = QuestionService(self.conn).active_question(session_id)
+        return {
+            "session": dict(row),
+            "messages": messages,
+            "daily_panel": panel,
+            "active_question": active_q,
+        }
+
 
 class QuestionService:
     def __init__(self, conn: sqlite3.Connection):
@@ -249,8 +270,10 @@ class ModelConfigService:
             "label": "OpenAI（官方）",
             "kind": "openai-compatible",
             "base_url": "https://api.openai.com/v1",
-            "model": "gpt-5.2",
+            "model": "gpt-5.5",
             "model_options": [
+                "gpt-5.5",
+                "gpt-5.5-mini",
                 "gpt-5.2",
                 "gpt-5.1",
                 "gpt-5",
@@ -455,7 +478,9 @@ class ModelConfigService:
         self.conn = conn
 
     def providers(self) -> list[dict[str, Any]]:
-        return self.PROVIDERS
+        row = self.conn.execute("SELECT value_json FROM app_settings WHERE key='model.custom_providers'").fetchone()
+        customs = loads(row["value_json"], []) if row else []
+        return self.PROVIDERS + customs
 
     def current(self) -> dict[str, Any]:
         row = self.conn.execute(
@@ -485,7 +510,8 @@ class ModelConfigService:
         return config
 
     def provider_by_id(self, provider_id: str) -> dict[str, Any]:
-        return next((item for item in self.PROVIDERS if item["id"] == provider_id), self.PROVIDERS[0])
+        all_providers = self.providers()
+        return next((item for item in all_providers if item["id"] == provider_id), all_providers[0])
 
     def save(self, provider_id: str, base_url: str, model: str, api_key: str = "") -> dict[str, Any]:
         provider = self.provider_by_id(provider_id)
@@ -515,6 +541,23 @@ class ModelConfigService:
             }
         )
         return self.current()
+
+    def add_custom_provider(self, name: str, base_url: str, default_model: str) -> None:
+        row = self.conn.execute("SELECT value_json FROM app_settings WHERE key='model.custom_providers'").fetchone()
+        customs = loads(row["value_json"], []) if row else []
+        new_id = f"custom_{len(customs) + 1}_{int(datetime.now().timestamp())}"
+        customs.append({
+            "id": new_id,
+            "label": f"{name}（自定义）",
+            "kind": "openai-compatible",
+            "base_url": base_url.strip(),
+            "model": default_model.strip(),
+            "model_options": [default_model.strip()],
+        })
+        self.conn.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value_json, updated_at) VALUES ('model.custom_providers', ?, CURRENT_TIMESTAMP)",
+            (dumps(customs),),
+        )
 
     def _read_env(self) -> dict[str, str]:
         env_path = PROJECT_ROOT / ".env"

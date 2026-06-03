@@ -103,13 +103,25 @@ class QuestionAuthorAgent:
         self.assembler = PromptAssembler(PromptRegistry(conn))
 
     def ensure_first_question(self, session_id: str) -> Question:
+        # ── Bug #3 修复：只查 status='ready' 的题，按 sequence 排序 ──
         existing = self.conn.execute(
-            "SELECT id FROM questions WHERE session_id=? LIMIT 1",
+            """
+            SELECT * FROM questions
+            WHERE session_id=? AND status='ready'
+            ORDER BY sequence ASC
+            LIMIT 1
+            """,
             (session_id,),
         ).fetchone()
         if existing:
-            row = self.conn.execute("SELECT * FROM questions WHERE id=?", (existing["id"],)).fetchone()
-            return self._question_from_row(row)
+            return self._question_from_row(existing)
+
+        # 计算下一个 sequence
+        max_seq_row = self.conn.execute(
+            "SELECT COALESCE(MAX(sequence), 0) AS max_seq FROM questions WHERE session_id=?",
+            (session_id,),
+        ).fetchone()
+        next_seq = (max_seq_row["max_seq"] if max_seq_row else 0) + 1
 
         profile = self.profile_service.get()
         plan_row = self.conn.execute(
@@ -125,29 +137,77 @@ class QuestionAuthorAgent:
                 "session_id": session_id,
                 "daily_plan_json": plan,
                 "exam_id": profile.exam_id,
+                "next_sequence": next_seq,
                 "output_contract": "Question JSON Schema",
             },
-            user_content="请生成第一题，结构化输出并避免泄露答案。",
+            user_content=f"请生成第 {next_seq} 题，结构化输出并避免泄露答案。",
             output_schema=Question.model_json_schema(),
             allow_global_user_prompt=False,
         )
         result = self.provider.complete(pack)
-        question = self._fallback_question(session_id, profile.exam_name)
-        self.validator.validate(question)
+
+        # ── Bug #2 修复：真正解析模型输出，不再无条件 fallback ──
+        question = self._try_parse_model_output(result.content, session_id, next_seq)
+        if question is None:
+            # 解析失败或 mock provider 时使用 fallback
+            question = self._fallback_question(session_id, profile.exam_name, next_seq)
+
+        validation_status = "passed"
+        try:
+            self.validator.validate(question)
+        except Exception:
+            # 校验失败，用 fallback 替代
+            question = self._fallback_question(session_id, profile.exam_name, next_seq)
+            validation_status = "fallback_after_validation_failure"
+
         self._save_question(question)
-        self._record_model_call(result, [m["id"] for m in pack.system_modules], "passed")
+        self._record_model_call(result, [m["id"] for m in pack.system_modules], validation_status)
         return question
 
-    def _fallback_question(self, session_id: str, exam_name: str) -> Question:
+    def _try_parse_model_output(
+        self, content: str, session_id: str, sequence: int
+    ) -> Question | None:
+        """尝试从模型 JSON 输出解析为 Question，失败返回 None。"""
+        from .utils import loads as json_loads
+
+        # 尝试从 markdown 代码块中提取 JSON
+        import re
+
+        json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL)
+        raw_json = json_match.group(1) if json_match else content
+
+        parsed = json_loads(raw_json.strip(), None)
+        if not isinstance(parsed, dict):
+            return None
+
+        try:
+            # 补充必要的字段默认值
+            parsed.setdefault("id", new_id("q"))
+            parsed.setdefault("session_id", session_id)
+            parsed.setdefault("sequence", sequence)
+            parsed.setdefault("type", "multiple_choice")
+            parsed.setdefault("difficulty", 0.5)
+            parsed.setdefault("knowledge_tags", [])
+            parsed.setdefault("source_refs", [{"type": "generated", "boundary": "practice_only"}])
+
+            # 确保 answer 字段格式正确
+            if "answer" not in parsed or not isinstance(parsed["answer"], dict):
+                return None
+
+            return Question(**parsed)
+        except Exception:
+            return None
+
+    def _fallback_question(self, session_id: str, exam_name: str, sequence: int = 1) -> Question:
         return Question(
             id=new_id("q"),
             session_id=session_id,
-            sequence=1,
+            sequence=sequence,
             type="multiple_choice",
-            prompt=f"第 1 题 / 共 5 题\n根据今日学习内容，选择最符合 {exam_name or '目标考试'} 语境的答案：\n「彼は毎朝、駅まで歩いて行きます。」这里的「まで」最接近下面哪一项？",
+            prompt=f"第 {sequence} 题 / 共 5 题\n根据今日学习内容，选择最符合 {exam_name or '目标考试'} 语境的答案：\n「彼は毎朝、駅まで歩いて行きます。」这里的「まで」最接近下面哪一项？",
             options=["到某个终点", "从某个起点", "因为某个原因", "和某人一起"],
             answer={"correct": "到某个终点", "letter": "A"},
-            explanation="「まで」表示动作或范围到达的终点，此句中是“走到车站”。",
+            explanation='「まで」表示动作或范围到达的终点，此句中是"走到车站"。',
             knowledge_tags=["particle:まで", "reading:sentence_meaning"],
             difficulty=0.35,
             source_refs=[{"type": "generated", "boundary": "practice_only"}],

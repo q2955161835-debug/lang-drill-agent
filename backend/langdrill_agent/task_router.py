@@ -1,22 +1,62 @@
 from __future__ import annotations
 
+import re
+
 from .models import TaskType
 
 
-ANSWER_PREFIXES = ("A", "B", "C", "D", "不会", "不确定", "跳过")
+# 严格匹配答案的模式：A/B/C/D（可选前缀"选"/"答案是"），或"不会"/"跳过"/"不确定"
+_ANSWER_PATTERN = re.compile(
+    r"^(?:选择?\s*)?[A-Da-d]$"
+    r"|^答案是\s*[A-Da-d]$"
+    r"|^(?:不会|跳过|不确定)$",
+    re.IGNORECASE,
+)
+
+# 追问 / 讲解关键词 —— 出现任意一个就不算答题
+_EXPLANATION_KEYWORDS = (
+    "为什么", "解释", "讲讲", "什么意思", "换种说法", "换种讲法",
+    "怎么理解", "能不能讲", "不太懂", "看不懂", "再讲一遍",
+    "为啥", "原因", "详细",
+)
+
+_SETTINGS_KEYWORDS = (
+    "设置", "供应商", "模型", "更改目标", "修改背景",
+    "配置", "调整人格", "切换供应商",
+)
+
+_SUMMARY_KEYWORDS = ("总结", "复盘", "今天表现", "今日表现", "复习报告")
 
 
 class TaskRouter:
-    def route(self, content: str, *, has_active_question: bool, selected_text: str | None = None) -> TaskType:
+    def route(
+        self,
+        content: str,
+        *,
+        has_active_question: bool,
+        selected_text: str | None = None,
+    ) -> TaskType:
         text = content.strip()
+
+        # 1. 分支对话：有选中文本
         if selected_text:
             return TaskType.branch_chat
-        if any(keyword in text for keyword in ["设置", "供应商", "模型", "目标", "背景"]):
+
+        # 2. 设置：匹配设置关键词
+        if any(keyword in text for keyword in _SETTINGS_KEYWORDS):
             return TaskType.settings
-        if has_active_question and (
-            len(text) <= 20 or text.upper()[:1] in {"A", "B", "C", "D"} or text in ANSWER_PREFIXES
-        ):
-            return TaskType.answer_question
-        if any(keyword in text for keyword in ["总结", "复盘", "今天表现"]):
+
+        # 3. 总结：匹配总结关键词
+        if any(keyword in text for keyword in _SUMMARY_KEYWORDS):
             return TaskType.summary
+
+        # 4. 追问 / 讲解：有当前题且命中讲解关键词
+        if has_active_question and any(keyword in text for keyword in _EXPLANATION_KEYWORDS):
+            return TaskType.explanation
+
+        # 5. 答题：严格正则匹配
+        if has_active_question and _ANSWER_PATTERN.match(text):
+            return TaskType.answer_question
+
+        # 6. 默认：日常训练
         return TaskType.daily_drill

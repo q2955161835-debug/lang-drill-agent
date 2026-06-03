@@ -275,6 +275,7 @@ export default function App() {
   const [activeQuestion, setActiveQuestion] = useState<Question | null>(null);
   const [tokenUsage, setTokenUsage] = useState({ input: 0, output: 0, total: 0, estimated_current_context: 0 });
   const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [leftOpen, setLeftOpen] = useState(() => localStorage.getItem("leftOpen") !== "false");
   const [rightOpen, setRightOpen] = useState(false);
@@ -374,25 +375,37 @@ export default function App() {
 
   const sendMessage = useCallback(async () => {
     const content = input.trim();
-    if (!content) return;
+    if (!content || sending) return;
     const userMessage: Message = { id: `local-${Date.now()}`, role: "user", content };
     setMessages((current) => [...current, userMessage]);
     setInput("");
-    const data = await apiPost<{
-      session_id: string;
-      message: Message;
-      daily_panel: DailyPanel;
-      active_question: Question | null;
-      token_usage: typeof tokenUsage;
-    }>("/api/chat", { content, session_id: activeSessionId });
-    setActiveSessionId(data.session_id);
-    setMessages((current) => [...current, data.message]);
-    setDailyPanel(data.daily_panel);
-    setActiveQuestion(data.active_question);
-    setTokenUsage(data.token_usage);
-    const refreshed = await apiGet<{ sessions: SessionItem[] }>("/api/sessions");
-    setSessions(refreshed.sessions);
-  }, [activeSessionId, input]);
+    setSending(true);
+    try {
+      const data = await apiPost<{
+        session_id: string;
+        message: Message;
+        daily_panel: DailyPanel;
+        active_question: Question | null;
+        token_usage: typeof tokenUsage;
+      }>("/api/chat", { content, session_id: activeSessionId });
+      setActiveSessionId(data.session_id);
+      setMessages((current) => [...current, data.message]);
+      setDailyPanel(data.daily_panel);
+      setActiveQuestion(data.active_question);
+      setTokenUsage(data.token_usage);
+      const refreshed = await apiGet<{ sessions: SessionItem[] }>("/api/sessions");
+      setSessions(refreshed.sessions);
+    } catch (err) {
+      const errorMsg: Message = {
+        id: `error-${Date.now()}`,
+        role: "assistant",
+        content: `⚠️ 请求失败：${err instanceof Error ? err.message : "未知错误"}。请检查后端是否运行或网络是否正常。`
+      };
+      setMessages((current) => [...current, errorMsg]);
+    } finally {
+      setSending(false);
+    }
+  }, [activeSessionId, input, sending]);
 
   const toggleDate = useCallback((date: string) => {
     setExpandedDates((current) => ({ ...current, [date]: !current[date] }));
@@ -436,7 +449,26 @@ export default function App() {
                       <button
                         className={`session-link ${item.id === activeSessionId ? "active" : ""}`}
                         key={item.id}
-                        onClick={() => setActiveSessionId(item.id)}
+                        onClick={async () => {
+                          setActiveSessionId(item.id);
+                          try {
+                            const detail = await apiGet<{
+                              session: Record<string, unknown>;
+                              messages: Message[];
+                              daily_panel: DailyPanel;
+                              active_question: Question | null;
+                              token_usage: typeof tokenUsage;
+                            }>(`/api/sessions/${item.id}`);
+                            if (detail.messages) {
+                              setMessages(detail.messages);
+                              setDailyPanel(detail.daily_panel);
+                              setActiveQuestion(detail.active_question);
+                              setTokenUsage(detail.token_usage);
+                            }
+                          } catch {
+                            // 加载失败时保持当前状态
+                          }
+                        }}
                       >
                         <ChatCircleText size={16} />
                         <span>{item.title}</span>
@@ -477,7 +509,8 @@ export default function App() {
             <textarea
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              placeholder="输入今日学习内容、答案或任何学习请求"
+              placeholder={sending ? "发送中..." : "输入今日学习内容、答案或任何学习请求"}
+              disabled={sending}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
@@ -485,8 +518,8 @@ export default function App() {
                 }
               }}
             />
-            <InteractiveButton className="send-button" onClick={() => void sendMessage()} title="发送">
-              <PaperPlaneRight size={20} weight="fill" />
+            <InteractiveButton className={`send-button ${sending ? "sending" : ""}`} onClick={() => void sendMessage()} title="发送">
+              {sending ? <span className="spinner" /> : <PaperPlaneRight size={20} weight="fill" />}
             </InteractiveButton>
           </div>
         </div>
@@ -530,6 +563,7 @@ export default function App() {
             setThemeMode(nextTheme);
             setFontSize(nextFontSize);
           }}
+          onProvidersChange={setProviders}
           onOpenOnboarding={() => {
             setSettingsOpen(false);
             setOnboardingOpen(true);
@@ -643,6 +677,7 @@ function SettingsDialog({
   onProfileChange,
   onModelConfigChange,
   onAppearanceChange,
+  onProvidersChange,
   onOpenOnboarding
 }: {
   profile: Profile;
@@ -655,12 +690,15 @@ function SettingsDialog({
   onProfileChange: (profile: Profile) => void;
   onModelConfigChange: (config: ModelConfig) => void;
   onAppearanceChange: (themeMode: ThemeMode, fontSize: number) => void;
+  onProvidersChange: (providers: ProviderOption[]) => void;
   onOpenOnboarding: () => void;
 }) {
   const [draft, setDraft] = useState(profile);
   const [modelDraft, setModelDraft] = useState<ModelConfig>({ ...modelConfig, api_key: "" });
   const [customModel, setCustomModel] = useState("");
   const [appearanceDraft, setAppearanceDraft] = useState({ themeMode, fontSize });
+  const [newProvider, setNewProvider] = useState({ name: "", base_url: "", default_model: "" });
+  const [newProviderState, setNewProviderState] = useState("");
   const [reviewIntensity, setReviewIntensity] = useState(3);
   const [saveState, setSaveState] = useState("");
   const provider = selectedProvider(providers, modelDraft.provider_id);
@@ -686,12 +724,42 @@ function SettingsDialog({
     setSaveState("模型配置已保存到本地 .env。");
   };
   const saveSettings = async () => {
-    onProfileChange(draft);
+    // 持久化 profile 到后端
+    try {
+      const profileData = await apiPost<{ profile: Profile }>("/api/profile", {
+        display_name: draft.display_name,
+        target_language: draft.target_language,
+        learning_goal: draft.learning_goal,
+        learning_background: draft.learning_background,
+        persona: draft.persona,
+        global_user_prompt: draft.global_user_prompt,
+      });
+      onProfileChange(profileData.profile);
+    } catch {
+      // 后端不可用时仅更新本地
+      onProfileChange(draft);
+    }
     onAppearanceChange(appearanceDraft.themeMode, appearanceDraft.fontSize);
     try {
       await saveModelConfig();
     } finally {
       onClose();
+    }
+  };
+  const handleAddCustomProvider = async () => {
+    if (!newProvider.name || !newProvider.base_url || !newProvider.default_model) {
+      setNewProviderState("请填写所有字段");
+      return;
+    }
+    setNewProviderState("添加中...");
+    try {
+      await apiPost("/api/config/providers/custom", newProvider);
+      const data = await apiGet<{ providers: ProviderOption[] }>("/api/bootstrap");
+      onProvidersChange(normalizeProviders(data.providers));
+      setNewProviderState("添加成功，已刷新列表");
+      setNewProvider({ name: "", base_url: "", default_model: "" });
+    } catch (e) {
+      setNewProviderState(`添加失败: ${e instanceof Error ? e.message : e}`);
     }
   };
   return (
@@ -732,6 +800,13 @@ function SettingsDialog({
             />
             <button className="inline-action" onClick={() => void saveModelConfig()}>保存模型配置</button>
             {saveState && <p className="hint">{saveState}</p>}
+          </SettingSection>
+          <SettingSection title="添加自定义提供商">
+            <input value={newProvider.name} onChange={(e) => setNewProvider({ ...newProvider, name: e.target.value })} placeholder="提供商名称 (如: MyProvider)" />
+            <input value={newProvider.base_url} onChange={(e) => setNewProvider({ ...newProvider, base_url: e.target.value })} placeholder="Base URL (如: https://api.myprovider.com/v1)" />
+            <input value={newProvider.default_model} onChange={(e) => setNewProvider({ ...newProvider, default_model: e.target.value })} placeholder="默认模型名称 (如: my-model-v1)" />
+            <button className="inline-action" onClick={() => void handleAddCustomProvider()}>添加提供商</button>
+            {newProviderState && <p className="hint">{newProviderState}</p>}
           </SettingSection>
           <SettingSection title="Token 使用">
             <div className="token-card"><strong>{tokenUsage.total}</strong><span>累计 token（令牌）</span></div>
