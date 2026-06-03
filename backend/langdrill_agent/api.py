@@ -77,13 +77,14 @@ def initialize(request: InitRequest) -> dict:
 def save_model_config(request: ModelConfigRequest) -> dict:
     init_db()
     with transaction() as conn:
-        config = ModelConfigService(conn).save(
+        svc = ModelConfigService(conn)
+        config = svc.save(
             request.provider_id,
             request.base_url,
             request.model,
             request.api_key,
         )
-        return {"model_config": config}
+        return {"model_config": config, "providers": svc.providers()}
 
 @app.post("/api/config/providers/custom")
 def add_custom_provider(request: AddCustomProviderRequest) -> dict:

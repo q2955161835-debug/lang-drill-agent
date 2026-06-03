@@ -480,7 +480,23 @@ class ModelConfigService:
     def providers(self) -> list[dict[str, Any]]:
         row = self.conn.execute("SELECT value_json FROM app_settings WHERE key='model.custom_providers'").fetchone()
         customs = loads(row["value_json"], []) if row else []
-        return self.PROVIDERS + customs
+        
+        row_ov = self.conn.execute("SELECT value_json FROM app_settings WHERE key='model.provider_overrides'").fetchone()
+        overrides = loads(row_ov["value_json"], {}) if row_ov else {}
+        
+        all_providers = [dict(p) for p in self.PROVIDERS] + customs
+        for p in all_providers:
+            ov = overrides.get(p["id"])
+            if ov:
+                p["base_url"] = ov.get("base_url", p["base_url"])
+                added_models = ov.get("added_models", [])
+                if added_models:
+                    opts = p.get("model_options", []).copy()
+                    for m in added_models:
+                        if m not in opts:
+                            opts.append(m)
+                    p["model_options"] = opts
+        return all_providers
 
     def current(self) -> dict[str, Any]:
         row = self.conn.execute(
@@ -517,6 +533,7 @@ class ModelConfigService:
         provider = self.provider_by_id(provider_id)
         clean_base_url = (base_url or provider.get("base_url", "")).strip()
         clean_model = (model or provider.get("model", "")).strip()
+        
         self.conn.execute(
             """
             INSERT OR REPLACE INTO app_settings (key, value_json, updated_at)
@@ -531,6 +548,19 @@ class ModelConfigService:
                     }
                 ),
             ),
+        )
+
+        # Save overrides so this provider remembers the base_url and added models
+        row_ov = self.conn.execute("SELECT value_json FROM app_settings WHERE key='model.provider_overrides'").fetchone()
+        overrides = loads(row_ov["value_json"], {}) if row_ov else {}
+        ov = overrides.setdefault(provider_id, {"added_models": []})
+        ov["base_url"] = clean_base_url
+        if clean_model and clean_model not in provider.get("model_options", []) and clean_model not in ov["added_models"]:
+            ov["added_models"].append(clean_model)
+
+        self.conn.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value_json, updated_at) VALUES ('model.provider_overrides', ?, CURRENT_TIMESTAMP)",
+            (dumps(overrides),),
         )
         self._write_env(
             {

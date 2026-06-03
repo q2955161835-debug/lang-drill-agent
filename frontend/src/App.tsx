@@ -716,12 +716,15 @@ function SettingsDialog({
   };
   const saveModelConfig = async () => {
     const finalModel = customModel.trim() || modelDraft.model;
-    const data = await apiPost<{ model_config: ModelConfig }>("/api/model-config", {
+    const data = await apiPost<{ model_config: ModelConfig; providers?: ProviderOption[] }>("/api/model-config", {
       ...modelDraft,
       model: finalModel
     });
     onModelConfigChange(data.model_config);
-    setSaveState("模型配置已保存到本地 .env。");
+    if (data.providers) {
+      onProvidersChange(normalizeProviders(data.providers));
+    }
+    setSaveState("模型配置已保存。如有自定义 URL/模型将永久应用于此提供商。");
   };
   const saveSettings = async () => {
     // 持久化 profile 到后端
