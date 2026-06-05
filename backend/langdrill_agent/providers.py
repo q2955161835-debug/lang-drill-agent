@@ -78,7 +78,12 @@ class ModelProvider:
             json=payload,
             timeout=60,
         )
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise RuntimeError("模型 API 密钥无效或未授权 (401)。请检查 API Key 配置。")
+            raise RuntimeError(f"模型 API 请求失败 ({e.response.status_code}): {e.response.text[:200]}")
         data = response.json()
         content = data["choices"][0]["message"]["content"]
         usage = data.get("usage", {})

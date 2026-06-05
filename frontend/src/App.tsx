@@ -250,7 +250,14 @@ function groupSessions(sessions: SessionItem[]) {
 
 async function apiGet<T>(url: string): Promise<T> {
   const response = await fetch(`${API}${url}`);
-  if (!response.ok) throw new Error(`Request failed: ${response.status}`);
+  if (!response.ok) {
+    let msg = `Request failed: ${response.status}`;
+    try {
+      const errData = await response.json();
+      if (errData.detail) msg = typeof errData.detail === 'string' ? errData.detail : JSON.stringify(errData.detail);
+    } catch { /* ignore */ }
+    throw new Error(msg);
+  }
   return response.json();
 }
 
@@ -260,7 +267,14 @@ async function apiPost<T>(url: string, body: unknown): Promise<T> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
-  if (!response.ok) throw new Error(`Request failed: ${response.status}`);
+  if (!response.ok) {
+    let msg = `Request failed: ${response.status}`;
+    try {
+      const errData = await response.json();
+      if (errData.detail) msg = typeof errData.detail === 'string' ? errData.detail : JSON.stringify(errData.detail);
+    } catch { /* ignore */ }
+    throw new Error(msg);
+  }
   return response.json();
 }
 
@@ -907,6 +921,8 @@ function OnboardingDialog({
     search_years: 3
   });
   const [customModel, setCustomModel] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const provider = selectedProvider(providers, draft.provider_id);
   const modelOptions = uniqueModelOptions(provider, draft.model);
   const chooseProvider = (providerId: string) => {
@@ -922,11 +938,19 @@ function OnboardingDialog({
   };
 
   const submit = async () => {
-    const data = await apiPost<{ profile: Profile }>("/api/initialize", {
-      ...draft,
-      model: customModel.trim() || draft.model
-    });
-    onDone(data.profile);
+    setErrorMsg("");
+    setIsSubmitting(true);
+    try {
+      const data = await apiPost<{ profile: Profile }>("/api/initialize", {
+        ...draft,
+        model: customModel.trim() || draft.model
+      });
+      onDone(data.profile);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -952,9 +976,12 @@ function OnboardingDialog({
         <div className="source-note">
           系统会先检查内置考纲；缺失或不是最新版时，再按官方与可靠公开来源检索。冷门语种会走规则化搜索。
         </div>
+        {errorMsg && <div className="error-message" style={{ color: "var(--color-danger, #ff4444)", marginTop: "8px", fontSize: "14px" }}>{errorMsg}</div>}
         <div className="modal-actions">
-          <button onClick={onClose}>稍后</button>
-          <button className="primary" onClick={() => void submit()}>进入日常使用</button>
+          <button onClick={onClose} disabled={isSubmitting}>稍后</button>
+          <button className="primary" onClick={() => void submit()} disabled={isSubmitting}>
+            {isSubmitting ? "保存中..." : "进入日常使用"}
+          </button>
         </div>
       </div>
     </div>

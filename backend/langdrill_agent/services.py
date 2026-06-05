@@ -274,15 +274,7 @@ class ModelConfigService:
             "model_options": [
                 "gpt-5.5",
                 "gpt-5.5-mini",
-                "gpt-5.2",
-                "gpt-5.1",
-                "gpt-5",
-                "gpt-5-mini",
-                "gpt-5-nano",
-                "gpt-4.1",
-                "gpt-4.1-mini",
                 "gpt-4o",
-                "gpt-4o-mini",
             ],
         },
         {
@@ -290,12 +282,11 @@ class ModelConfigService:
             "label": "DeepSeek（深度求索）",
             "kind": "openai-compatible",
             "base_url": "https://api.deepseek.com",
-            "model": "deepseek-v4-flash",
+            "model": "deepseek-v4-pro",
             "model_options": [
-                "deepseek-v4-flash",
                 "deepseek-v4-pro",
-                "deepseek-chat",
                 "deepseek-reasoner",
+                "deepseek-chat",
             ],
         },
         {
@@ -303,15 +294,11 @@ class ModelConfigService:
             "label": "Qwen（通义千问）",
             "kind": "openai-compatible",
             "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-            "model": "qwen-plus",
+            "model": "qwen3-max",
             "model_options": [
-                "qwen-plus",
-                "qwen-turbo",
-                "qwen-max",
-                "qwen3-plus",
                 "qwen3-max",
-                "qwen3-coder-plus",
-                "qwen-long",
+                "qwen-max",
+                "qwen-plus",
             ],
         },
         {
@@ -319,13 +306,11 @@ class ModelConfigService:
             "label": "Zhipu AI（智谱）",
             "kind": "openai-compatible",
             "base_url": "https://open.bigmodel.cn/api/paas/v4",
-            "model": "glm-4-flash",
+            "model": "glm-4.5",
             "model_options": [
-                "glm-4-flash",
-                "glm-4-plus",
-                "glm-4-air",
                 "glm-4.5",
-                "glm-4.5-air",
+                "glm-4-plus",
+                "glm-4-flash",
             ],
         },
         {
@@ -337,12 +322,7 @@ class ModelConfigService:
             "model_options": [
                 "kimi-k2-turbo-preview",
                 "kimi-k2-thinking",
-                "kimi-k2-thinking-turbo",
-                "kimi-k2-0905-preview",
-                "kimi-k2-0711-preview",
-                "moonshot-v1-8k",
                 "moonshot-v1-32k",
-                "moonshot-v1-128k",
             ],
         },
         {
@@ -354,7 +334,6 @@ class ModelConfigService:
             "model_options": [
                 "mimo-v2.5-pro",
                 "mimo-v2-pro",
-                "mimo-v2-flash",
                 "mimo-v2-omni",
             ],
         },
@@ -374,10 +353,8 @@ class ModelConfigService:
             "model": "MiniMax-M2.7",
             "model_options": [
                 "MiniMax-M2.7",
-                "MiniMax-M2.5",
-                "MiniMax-M2",
-                "MiniMax-Text-01",
                 "abab6.5s-chat",
+                "MiniMax-Text-01",
             ],
         },
         {
@@ -386,7 +363,7 @@ class ModelConfigService:
             "kind": "openai-compatible",
             "base_url": "https://api.stepfun.ai/v1",
             "model": "step-3.5-flash",
-            "model_options": ["step-3.5-flash", "step-2-16k", "step-1-8k", "step-1-32k"],
+            "model_options": ["step-3.5-flash", "step-2-16k", "step-1-32k"],
         },
         {
             "id": "yi",
@@ -394,21 +371,18 @@ class ModelConfigService:
             "kind": "openai-compatible",
             "base_url": "https://api.01.ai/v1",
             "model": "yi-lightning",
-            "model_options": ["yi-lightning", "yi-large", "yi-medium", "yi-vision"],
+            "model_options": ["yi-lightning", "yi-large", "yi-medium"],
         },
         {
             "id": "siliconflow",
             "label": "SiliconFlow（硅基流动）",
             "kind": "openai-compatible",
             "base_url": "https://api.siliconflow.cn/v1",
-            "model": "Qwen/Qwen2.5-7B-Instruct",
+            "model": "deepseek-ai/DeepSeek-V3",
             "model_options": [
-                "Qwen/Qwen2.5-7B-Instruct",
-                "Qwen/Qwen3-32B",
                 "deepseek-ai/DeepSeek-V3",
                 "deepseek-ai/DeepSeek-R1",
-                "THUDM/GLM-4-9B-Chat",
-                "meta-llama/Llama-3.3-70B-Instruct",
+                "Qwen/Qwen3-32B",
             ],
         },
         {
@@ -416,12 +390,11 @@ class ModelConfigService:
             "label": "Volcengine Ark（火山方舟）",
             "kind": "openai-compatible",
             "base_url": "https://ark.cn-beijing.volces.com/api/v3",
-            "model": "doubao-seed-2-0-lite-260215",
+            "model": "doubao-1-5-pro-32k",
             "model_options": [
-                "doubao-seed-2-0-lite-260215",
-                "doubao-seed-1-6",
                 "doubao-1-5-pro-32k",
                 "doubao-1-5-lite-32k",
+                "doubao-seed-2-0-lite-260215",
             ],
         },
         {
@@ -434,7 +407,6 @@ class ModelConfigService:
                 "hunyuan-turbos-latest",
                 "hunyuan-t1-latest",
                 "hunyuan-large",
-                "hunyuan-standard",
             ],
         },
         {
@@ -442,12 +414,11 @@ class ModelConfigService:
             "label": "Baidu Qianfan（百度千帆）",
             "kind": "openai-compatible",
             "base_url": "https://qianfan.baidubce.com/v2",
-            "model": "ernie-4.0-turbo-8k",
+            "model": "ernie-4.5-turbo",
             "model_options": [
-                "ernie-4.0-turbo-8k",
                 "ernie-4.5-turbo",
+                "ernie-4.0-turbo-8k",
                 "ernie-x1-turbo",
-                "ernie-speed-8k",
             ],
         },
         {
@@ -458,10 +429,8 @@ class ModelConfigService:
             "model": "qwen2.5:7b",
             "model_options": [
                 "qwen2.5:7b",
-                "qwen2.5:14b",
                 "deepseek-r1:8b",
                 "llama3.1:8b",
-                "gemma3:12b",
             ],
         },
         {
