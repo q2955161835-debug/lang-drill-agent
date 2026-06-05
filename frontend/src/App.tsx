@@ -773,6 +773,23 @@ function SettingsDialog({
       setSaveState(`添加失败: ${e instanceof Error ? e.message : e}`);
     }
   };
+  const resetDefaults = async () => {
+    if (!window.confirm("确认恢复默认设置？模型、个性化、学习目标和自定义提供商会恢复默认，学习会话不会删除。")) return;
+    const data = await apiPost<{ profile: Profile; model_config: ModelConfig; providers: ProviderOption[] }>("/api/settings/defaults", {});
+    const nextProfile = data.profile;
+    const nextModel = normalizeModelConfig(data.model_config);
+    const nextProviders = normalizeProviders(data.providers);
+    setDraft(nextProfile);
+    setModelDraft({ ...nextModel, api_key: "" });
+    setCustomModel("");
+    setReviewIntensity(3);
+    setAppearanceDraft({ themeMode: "system", fontSize: 16 });
+    onProfileChange(nextProfile);
+    onModelConfigChange(nextModel);
+    onProvidersChange(nextProviders);
+    onAppearanceChange("system", 16);
+    setSaveState("已恢复默认设置。");
+  };
   return (
     <div className="modal-backdrop">
       <div className="settings-modal">
@@ -877,6 +894,7 @@ function SettingsDialog({
           </SettingSection>
         </div>
         <div className="modal-actions">
+          <button onClick={() => void resetDefaults()}>恢复默认设置</button>
           <button onClick={onClose}>取消</button>
           <button className="primary" onClick={() => void saveSettings()}>保存</button>
         </div>

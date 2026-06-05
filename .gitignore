@@ -11,6 +11,10 @@ frontend/dist/
 frontend/*.tsbuildinfo
 data/*.db
 data/*.db-*
+backend/*.db
+backend/*.db-*
+try/*.db
+try/*.db-*
 logs/*.log
 tmp/
 try/.cache/

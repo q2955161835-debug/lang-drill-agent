@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import sqlite3
+from datetime import datetime
 from typing import Any
 
 from .config import PROJECT_ROOT
@@ -473,7 +475,7 @@ class ModelConfigService:
             "SELECT value_json FROM app_settings WHERE key='model.default'"
         ).fetchone()
         config = loads(row["value_json"], {}) if row else {}
-        env_values = self._read_env()
+        env_values = {**self._read_env(), **self._read_process_env()}
         provider = self.provider_by_id(
             config.get("provider_id") or env_values.get("LANGDRILL_DEFAULT_PROVIDER") or "mock"
         )
@@ -492,7 +494,8 @@ class ModelConfigService:
 
     def current_with_secret(self) -> dict[str, Any]:
         config = self.current()
-        config["api_key"] = self._read_env().get("LANGDRILL_PROVIDER_API_KEY", "")
+        env_values = {**self._read_env(), **self._read_process_env()}
+        config["api_key"] = env_values.get("LANGDRILL_PROVIDER_API_KEY", "")
         return config
 
     def provider_by_id(self, provider_id: str) -> dict[str, Any]:
@@ -542,6 +545,21 @@ class ModelConfigService:
         )
         return self.current()
 
+    def reset_defaults(self) -> dict[str, Any]:
+        self.conn.execute(
+            "DELETE FROM app_settings WHERE key IN ('model.default', 'model.provider_overrides', 'model.custom_providers')"
+        )
+        self._write_env(
+            {
+                "LANGDRILL_DEFAULT_PROVIDER": "mock",
+                "LANGDRILL_DEFAULT_MODEL": "mock-tutor-v1",
+                "LANGDRILL_PROVIDER_BASE_URL": "",
+                "LANGDRILL_PROVIDER_API_KEY": "",
+            },
+            clear_empty=True,
+        )
+        return self.current()
+
     def add_custom_provider(self, name: str, base_url: str, default_model: str) -> None:
         row = self.conn.execute("SELECT value_json FROM app_settings WHERE key='model.custom_providers'").fetchone()
         customs = loads(row["value_json"], []) if row else []
@@ -571,10 +589,27 @@ class ModelConfigService:
             values[key.strip()] = value.strip()
         return values
 
-    def _write_env(self, updates: dict[str, str]) -> None:
+    def _read_process_env(self) -> dict[str, str]:
+        keys = {
+            "LANGDRILL_DEFAULT_PROVIDER",
+            "LANGDRILL_DEFAULT_MODEL",
+            "LANGDRILL_PROVIDER_BASE_URL",
+            "LANGDRILL_PROVIDER_API_KEY",
+        }
+        values: dict[str, str] = {}
+        for key in keys:
+            value = os.environ.get(key)
+            if value and value.strip():
+                values[key] = value
+        return values
+
+    def _write_env(self, updates: dict[str, str], *, clear_empty: bool = False) -> None:
         env_path = PROJECT_ROOT / ".env"
         values = self._read_env()
-        values.update({key: value for key, value in updates.items() if value != ""})
+        if clear_empty:
+            values.update(updates)
+        else:
+            values.update({key: value for key, value in updates.items() if value != ""})
         ordered_keys = [
             "LANGDRILL_DB_PATH",
             "LANGDRILL_USER_NAME",

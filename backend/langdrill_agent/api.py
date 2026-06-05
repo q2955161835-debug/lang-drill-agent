@@ -7,7 +7,16 @@ from fastapi.responses import JSONResponse
 from .agents import EvaluatorTutorAgent, OrchestratorAgent, QuestionAuthorAgent, token_totals
 from .config import load_settings
 from .db import init_db, transaction
-from .models import BranchRequest, ChatRequest, ChatResponse, InitRequest, ModelConfigRequest, ProfileUpdateRequest, AddCustomProviderRequest
+from .models import (
+    AddCustomProviderRequest,
+    BranchRequest,
+    ChatRequest,
+    ChatResponse,
+    InitRequest,
+    ModelConfigRequest,
+    ProfileUpdateRequest,
+    UserProfile,
+)
 from .providers import ModelProvider
 from .services import ModelConfigService, ProfileService, QuestionService, SessionService, SourceService
 from .task_router import TaskRouter
@@ -102,6 +111,21 @@ def add_custom_provider(request: AddCustomProviderRequest) -> dict:
         svc = ModelConfigService(conn)
         svc.add_custom_provider(request.name, request.base_url, request.default_model)
         return {"status": "ok"}
+
+
+@app.post("/api/settings/defaults")
+def reset_settings_defaults() -> dict:
+    init_db()
+    with transaction() as conn:
+        profile = UserProfile()
+        ProfileService(conn).update(profile)
+        model_config = ModelConfigService(conn)
+        config = model_config.reset_defaults()
+        return {
+            "profile": profile.model_dump(),
+            "model_config": config,
+            "providers": model_config.providers(),
+        }
 
 
 @app.post("/api/chat", response_model=ChatResponse)
