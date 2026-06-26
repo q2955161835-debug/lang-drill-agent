@@ -40,8 +40,17 @@ def init_db(db_path: Path | None = None) -> Path:
     target = db_path or settings.db_path
     with transaction(target) as conn:
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+        ensure_schema_columns(conn)
         seed_prompt_modules(conn)
     return target
+
+
+def ensure_schema_columns(conn: sqlite3.Connection) -> None:
+    session_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(study_sessions)").fetchall()
+    }
+    if "exam_id" not in session_columns:
+        conn.execute("ALTER TABLE study_sessions ADD COLUMN exam_id TEXT NOT NULL DEFAULT 'cet4'")
 
 
 def seed_prompt_modules(conn: sqlite3.Connection) -> None:

@@ -1,18 +1,17 @@
 import { useState } from "react";
 import {
-  Books,
   CaretLeft,
   CaretRight,
   ChatsCircle,
+  DeviceMobile,
   GitBranch,
   ImageSquare,
   MicrophoneStage,
-  PuzzlePiece
 } from "@phosphor-icons/react";
 import type { Message } from "../types";
 import { apiGet, apiPost } from "../api";
 
-type WorkbenchTab = "branch" | "composer" | "vocab" | "screenshot" | "voice";
+type WorkbenchTab = "branch" | "mirror" | "screenshot" | "voice";
 
 type RightWorkbenchProps = {
   open: boolean;
@@ -23,11 +22,20 @@ type RightWorkbenchProps = {
 
 const tabs: Array<{ id: WorkbenchTab; label: string; icon: typeof GitBranch; disabled?: boolean }> = [
   { id: "branch", label: "分支", icon: GitBranch },
-  { id: "composer", label: "组词器", icon: PuzzlePiece },
-  { id: "vocab", label: "背词同步", icon: Books },
+  { id: "mirror", label: "手机映像", icon: DeviceMobile },
   { id: "screenshot", label: "截图导入", icon: ImageSquare },
   { id: "voice", label: "语音预留", icon: MicrophoneStage, disabled: true }
 ];
+
+type PhoneMirrorStatus = {
+  adb_available: boolean;
+  scrcpy_available: boolean;
+  adb_path: string;
+  scrcpy_path: string;
+  devices: Array<{ id: string; status: string }>;
+  error?: string;
+  recommended_project?: { name: string; url: string; reason: string };
+};
 
 export function RightWorkbench({ open, branchMessages, onToggle, onSendToChat }: RightWorkbenchProps) {
   const [activeTab, setActiveTab] = useState<WorkbenchTab>("branch");
@@ -66,8 +74,7 @@ export function RightWorkbench({ open, branchMessages, onToggle, onSendToChat }:
           </div>
 
           {activeTab === "branch" && <BranchPanel branchMessages={branchMessages} />}
-          {activeTab === "composer" && <ComposerPanel onSendToChat={onSendToChat} />}
-          {activeTab === "vocab" && <VocabSyncPanel />}
+          {activeTab === "mirror" && <PhoneMirrorPanel />}
           {activeTab === "screenshot" && <ScreenshotImportPanel onSendToChat={onSendToChat} />}
           {activeTab === "voice" && <ComingPanel title="语音与听力" body="本阶段只预留入口，后续可接入 Whisper 或 Web Speech API。" />}
         </div>
@@ -96,79 +103,45 @@ function BranchPanel({ branchMessages }: { branchMessages: Message[] }) {
   );
 }
 
-function ComposerPanel({ onSendToChat }: { onSendToChat: (content: string) => void }) {
-  const [goal, setGoal] = useState("CET-4 vocabulary and grammar practice");
-  const [selected, setSelected] = useState<string[]>(["A", "B"]);
-  const [extra, setExtra] = useState("");
-  const [result, setResult] = useState<{ composed_prompt: string; assistant_message: string } | null>(null);
-  const [busy, setBusy] = useState(false);
-  const optionLabels = [
-    ["A", "词汇辨析"],
-    ["B", "语法纠错"],
-    ["C", "阅读理解"],
-    ["D", "翻译写作"]
-  ];
-  const toggle = (key: string) => {
-    setSelected((current) => current.includes(key) ? current.filter((item) => item !== key) : [...current, key]);
-  };
-  const compose = async () => {
-    setBusy(true);
-    try {
-      const data = await apiPost<{ composed_prompt: string; assistant_message: string }>("/api/composer/next", {
-        goal,
-        selected_options: selected,
-        extra_content: extra
-      });
-      setResult(data);
-    } finally {
-      setBusy(false);
+function PhoneMirrorPanel() {
+  const [status, setStatus] = useState<PhoneMirrorStatus | null>(null);
+  const [selectedDevice, setSelectedDevice] = useState("");
+  const [message, setMessage] = useState("尚未检查手机映像环境。");
+  const check = async () => {
+    const data = await apiGet<PhoneMirrorStatus>("/api/phone-mirror/status");
+    setStatus(data);
+    setSelectedDevice(data.devices[0]?.id || "");
+    if (!data.adb_available || !data.scrcpy_available) {
+      setMessage("需要安装 Android Platform Tools（安卓平台工具）和 scrcpy（手机映像工具）后才能启动。");
+      return;
     }
+    setMessage(data.devices.length ? `检测到 ${data.devices.length} 台设备。` : "已检测到工具，但尚未发现已授权手机。");
+  };
+  const start = async () => {
+    const data = await apiPost<{ ok: boolean; command?: string; error?: string }>("/api/phone-mirror/start", { device_id: selectedDevice });
+    setMessage(data.ok ? `已启动：${data.command}` : data.error || "启动失败");
   };
   return (
     <section className="coming-panel workbench-form">
-      <span className="eyebrow">Composer</span>
-      <h3>对话式组词器</h3>
-      <label>学习目标<input value={goal} onChange={(event) => setGoal(event.target.value)} /></label>
-      <div className="option-pills">
-        {optionLabels.map(([key, label]) => (
-          <button key={key} className={selected.includes(key) ? "active" : ""} onClick={() => toggle(key)}>{key}. {label}</button>
-        ))}
-      </div>
-      <label>额外内容<textarea value={extra} onChange={(event) => setExtra(event.target.value)} placeholder="例如：题目稍难一点，解释要包含中文对照。" /></label>
-      <button className="workbench-primary" onClick={() => void compose()} disabled={busy}>{busy ? "组入中..." : "组入下一轮提示词"}</button>
-      {result && (
+      <span className="eyebrow">Phone Mirror（手机映像）</span>
+      <h3>手机投屏与操控</h3>
+      <p>这里按 scrcpy（开源手机映像工具）路线集成：电脑连接手机后，可投屏、鼠标操控，再把手机上的背词或题目画面带回学习流程。</p>
+      {status && (
         <div className="preview-card">
-          <p>{result.assistant_message}</p>
-          <pre>{result.composed_prompt}</pre>
-          <button className="workbench-primary" onClick={() => onSendToChat(result.composed_prompt)}>发送到主聊天</button>
+          <span>adb（安卓调试桥）：{status.adb_available ? "已检测" : "未检测"}</span>
+          <span>scrcpy（手机映像工具）：{status.scrcpy_available ? "已检测" : "未检测"}</span>
+          <span>推荐项目：{status.recommended_project?.name}</span>
         </div>
       )}
-    </section>
-  );
-}
-
-function VocabSyncPanel() {
-  const [deck, setDeck] = useState("LangDrill::CET4");
-  const [status, setStatus] = useState("尚未检查 AnkiConnect。");
-  const check = async () => {
-    const data = await apiGet<{ connected: boolean; decks: string[]; error?: string }>("/api/anki/status");
-    setStatus(data.connected ? `已连接。检测到 ${data.decks.length} 个牌组。` : data.error || "未连接");
-  };
-  const exportDeck = async () => {
-    const data = await apiPost<{ ok: boolean; created?: number; total_candidates: number; error?: string }>("/api/anki/export", { deck_name: deck });
-    setStatus(data.ok ? `已导出 ${data.created || 0}/${data.total_candidates} 个词条到 ${deck}。` : data.error || "导出失败");
-  };
-  return (
-    <section className="coming-panel workbench-form">
-      <span className="eyebrow">Anki Sync</span>
-      <h3>手机背词同步</h3>
-      <p>打开 Anki + AnkiConnect 后，可导出本地词表到 Anki，再通过 AnkiWeb 同步到手机端。</p>
-      <label>目标牌组<input value={deck} onChange={(event) => setDeck(event.target.value)} /></label>
+      <label>设备<select value={selectedDevice} onChange={(event) => setSelectedDevice(event.target.value)}>
+        <option value="">自动选择</option>
+        {status?.devices.map((device) => <option key={device.id} value={device.id}>{device.id} - {device.status}</option>)}
+      </select></label>
       <div className="workbench-actions">
-        <button onClick={() => void check()}>检查连接</button>
-        <button className="workbench-primary" onClick={() => void exportDeck()}>导出词表</button>
+        <button onClick={() => void check()}>检查环境</button>
+        <button className="workbench-primary" onClick={() => void start()} disabled={!status?.scrcpy_available}>启动映像</button>
       </div>
-      <p className="status-line">{status}</p>
+      <p className="status-line">{message}</p>
     </section>
   );
 }
@@ -183,9 +156,9 @@ function ScreenshotImportPanel({ onSendToChat }: { onSendToChat: (content: strin
   const composed = parsed ? `请根据以下截图导入内容生成一道英语练习题：\n\n题干：${parsed.prompt}\n选项：${parsed.options.join(" / ")}\n\n请先确认题意，再给出适合 CET-4 的练习。` : "";
   return (
     <section className="coming-panel workbench-form">
-      <span className="eyebrow">Screenshot</span>
+      <span className="eyebrow">Screenshot（截图）</span>
       <h3>截图导入</h3>
-      <p>当前版本支持粘贴 OCR 文本；桌面版会接入截图/图片选择和本地 OCR。</p>
+      <p>截图导入会配合手机映像使用：先把手机画面投到电脑，再粘贴 OCR（文字识别）文本或后续接入本地截图识别。</p>
       <label>截图识别文本<textarea value={text} onChange={(event) => setText(event.target.value)} placeholder="粘贴题目文本，例如：...\nA. ...\nB. ..." /></label>
       <button className="workbench-primary" onClick={() => void parse()} disabled={!text.trim()}>解析文本</button>
       {parsed && (

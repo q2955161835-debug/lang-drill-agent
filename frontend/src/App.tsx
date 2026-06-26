@@ -11,6 +11,7 @@ import {
   ListBullets,
   Moon,
   PaperPlaneRight,
+  Plus,
   ShieldCheck,
   Sidebar,
   Sparkle,
@@ -21,7 +22,19 @@ import {
 } from "@phosphor-icons/react";
 import { apiGet, apiPost } from "./api";
 import { RightWorkbench } from "./components/RightWorkbench";
-import type { DailyPanel, Message, ModelConfig, Profile, ProviderOption, Question, SessionItem, ThemeMode, TokenUsage } from "./types";
+import type {
+  DailyPanel,
+  ExamOption,
+  Message,
+  ModelConfig,
+  Profile,
+  ProviderOption,
+  Question,
+  SessionItem,
+  SyllabusStatus,
+  ThemeMode,
+  TokenUsage
+} from "./types";
 
 gsap.registerPlugin(useGSAP);
 
@@ -99,6 +112,11 @@ const DEFAULT_PANEL: DailyPanel = {
   },
   questions_total: 0,
   questions_done: 0,
+  knowledge_total: 0,
+  knowledge_done: 0,
+  knowledge_terms: [],
+  exam_id: "cet4",
+  exam_name: "大学英语四级",
   accuracy: 0,
   summary: ""
 };
@@ -126,6 +144,74 @@ const DEFAULT_MODEL_CONFIG: ModelConfig = {
   model: "mimo-v2.5-pro",
   has_api_key: false
 };
+
+const DEFAULT_EXAM_OPTIONS: ExamOption[] = [
+  {
+    id: "cet4",
+    name: "英语四级",
+    target_language: "英语",
+    official_url: "https://cet.neea.edu.cn/xhtml1/folder/16113/1588-1.htm",
+    default_year: 2016,
+    description: "大学英语四级，默认考试。"
+  },
+  {
+    id: "cjt4",
+    name: "日语四级",
+    target_language: "日语",
+    official_url: "https://cet.neea.edu.cn/xhtml1/folder/16113/1588-1.htm",
+    default_year: 2024,
+    description: "大学日语四级，新版考纲 2024 年启用。"
+  },
+  {
+    id: "ielts",
+    name: "雅思",
+    target_language: "英语",
+    official_url: "https://ielts.org/take-a-test/test-types/ielts-academic-test",
+    default_year: 2026,
+    description: "雅思学术类考试结构，官方页面持续维护。"
+  },
+  {
+    id: "toefl",
+    name: "托福",
+    target_language: "英语",
+    official_url: "https://www.ets.org/toefl/test-takers/ibt/about/content.html",
+    default_year: 2026,
+    description: "托福网考考试结构，官方页面持续维护。"
+  },
+  {
+    id: "gaokao-english",
+    name: "高考英语",
+    target_language: "英语",
+    official_url: "https://www.moe.gov.cn/srcsite/A26/s8001/202006/t20200603_462199.html",
+    default_year: 2020,
+    description: "普通高中英语课程标准，按高考英语能力框架使用。"
+  },
+  {
+    id: "custom",
+    name: "添加自定义",
+    target_language: "",
+    official_url: "",
+    default_year: null,
+    description: "可配置考纲网址自动下载或手动导入。"
+  }
+];
+
+const DEFAULT_SYLLABUS_STATUS: SyllabusStatus = {
+  exam_id: "cet4",
+  current_source_id: "",
+  current_year: 2016,
+  current_title: "全国大学英语四、六级考试大纲（2016年修订版）",
+  official_url: "https://cet.neea.edu.cn/xhtml1/folder/16113/1588-1.htm",
+  sources: []
+};
+
+function isOptionAnswer(content: string) {
+  return /^(?:选择?\s*)?[A-D]$/i.test(content.trim()) || /^答案是\s*[A-D]$/i.test(content.trim());
+}
+
+function cleanQuestionPrompt(question: Question) {
+  return question.prompt.replace(/^第\s*\d+\s*题\s*\/\s*共\s*\d+\s*题\s*\n?/, "").trim();
+}
 
 function selectedProvider(providers: ProviderOption[], providerId: string) {
   return providers.find((item) => item.id === providerId) || FALLBACK_PROVIDERS[0];
@@ -176,6 +262,8 @@ export default function App() {
   const [profile, setProfile] = useState<Profile>(MOCK_PROFILE);
   const [providers, setProviders] = useState<ProviderOption[]>(FALLBACK_PROVIDERS);
   const [modelConfig, setModelConfig] = useState<ModelConfig>(DEFAULT_MODEL_CONFIG);
+  const [examOptions, setExamOptions] = useState<ExamOption[]>(DEFAULT_EXAM_OPTIONS);
+  const [syllabusStatus, setSyllabusStatus] = useState<SyllabusStatus>(DEFAULT_SYLLABUS_STATUS);
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [dailyPanel, setDailyPanel] = useState<DailyPanel>(DEFAULT_PANEL);
@@ -268,11 +356,15 @@ export default function App() {
       token_usage: typeof tokenUsage;
       providers: ProviderOption[];
       model_config: ModelConfig;
+      exam_options?: ExamOption[];
+      syllabus_status?: SyllabusStatus;
     }>("/api/bootstrap")
       .then((data) => {
         setProfile(data.profile);
         setProviders(normalizeProviders(data.providers));
         setModelConfig(normalizeModelConfig(data.model_config));
+        setExamOptions(data.exam_options?.length ? data.exam_options : DEFAULT_EXAM_OPTIONS);
+        setSyllabusStatus(data.syllabus_status || DEFAULT_SYLLABUS_STATUS);
         setSessions(data.sessions);
         setTokenUsage(data.token_usage);
         setOnboardingOpen(data.profile.exam_id === "unassigned");
@@ -286,6 +378,9 @@ export default function App() {
     const userMessage: Message = { id: `local-${Date.now()}`, role: "user", content };
     setMessages((current) => [...current, userMessage]);
     setInput("");
+    if (activeQuestion && isOptionAnswer(content)) {
+      setActiveQuestion(null);
+    }
     setSending(true);
     try {
       const data = await apiPost<{
@@ -312,7 +407,72 @@ export default function App() {
     } finally {
       setSending(false);
     }
-  }, [activeSessionId, input, sending]);
+  }, [activeQuestion, activeSessionId, input, sending]);
+
+  const sendQuestionAnswer = useCallback(async (selectedOption: string, extraPrompt: string) => {
+    if (!activeQuestion || sending) return;
+    const cleanOption = selectedOption.trim().toUpperCase();
+    if (!cleanOption) return;
+    const visibleContent = extraPrompt.trim()
+      ? `${cleanOption}\n补充提问：${extraPrompt.trim()}`
+      : cleanOption;
+    const userMessage: Message = { id: `local-${Date.now()}`, role: "user", content: visibleContent };
+    setMessages((current) => [...current, userMessage]);
+    setActiveQuestion(null);
+    setSending(true);
+    try {
+      const data = await apiPost<{
+        session_id: string;
+        message: Message;
+        daily_panel: DailyPanel;
+        active_question: Question | null;
+        token_usage: typeof tokenUsage;
+      }>("/api/chat", {
+        content: "",
+        session_id: activeSessionId,
+        selected_option: cleanOption,
+        question_id: activeQuestion.id,
+        extra_prompt: extraPrompt
+      });
+      setActiveSessionId(data.session_id);
+      setMessages((current) => [...current, data.message]);
+      setDailyPanel(data.daily_panel);
+      setActiveQuestion(data.active_question);
+      setTokenUsage(data.token_usage);
+      const refreshed = await apiGet<{ sessions: SessionItem[] }>("/api/sessions");
+      setSessions(refreshed.sessions);
+    } catch (err) {
+      const errorMsg: Message = {
+        id: `error-${Date.now()}`,
+        role: "assistant",
+        content: `请求失败：${err instanceof Error ? err.message : "未知错误"}。请检查后端是否运行或网络是否正常。`
+      };
+      setMessages((current) => [...current, errorMsg]);
+    } finally {
+      setSending(false);
+    }
+  }, [activeQuestion, activeSessionId, sending]);
+
+  const startNewChat = useCallback(async () => {
+    try {
+      const data = await apiPost<{
+        session_id: string;
+        sessions: SessionItem[];
+        daily_panel: DailyPanel;
+      }>("/api/sessions/new", {});
+      setActiveSessionId(data.session_id);
+      setSessions(data.sessions);
+      setDailyPanel(data.daily_panel);
+      setActiveQuestion(null);
+      setMessages([]);
+      setInput("");
+    } catch {
+      setActiveSessionId(null);
+      setActiveQuestion(null);
+      setMessages([]);
+      setInput("");
+    }
+  }, []);
 
   const toggleDate = useCallback((date: string) => {
     setExpandedDates((current) => ({ ...current, [date]: !current[date] }));
@@ -344,6 +504,10 @@ export default function App() {
         {leftOpen && (
           <>
             <DailyStudyPanel panel={dailyPanel} />
+            <button className="new-chat-button" onClick={() => void startNewChat()} title="新建聊天">
+              <Plus size={16} />
+              <span>新建聊天</span>
+            </button>
             <div className="session-list">
               {Object.entries(sessionsByDate).map(([date, items]) => (
                 <section className="date-group" key={date}>
@@ -384,18 +548,24 @@ export default function App() {
                 </section>
               ))}
             </div>
-            <InteractiveButton className="settings-button" onClick={() => setSettingsOpen(true)}>
+            <InteractiveButton className="settings-button" onClick={() => setSettingsOpen(true)} title="设置">
               <GearSix size={18} />
-              <span>设置</span>
             </InteractiveButton>
           </>
         )}
       </aside>
 
       <main className="chat-main panel-motion">
-        {emptyContext && <LongTermPanel profile={profile} tokenUsage={tokenUsage} />}
-        {activeQuestion && <QuestionDock question={activeQuestion} />}
         <div className="message-stream" onMouseUp={() => setSelectedText(window.getSelection()?.toString() || "")}>
+          {emptyContext && <LongTermPanel profile={profile} tokenUsage={tokenUsage} />}
+          {activeQuestion?.status === "ready" && (
+            <QuestionDock
+              question={activeQuestion}
+              panel={dailyPanel}
+              sending={sending}
+              onSubmit={(option, extraPrompt) => void sendQuestionAnswer(option, extraPrompt)}
+            />
+          )}
           {messages.map((message) => (
             <MessageItem key={message.id} message={message} />
           ))}
@@ -418,6 +588,11 @@ export default function App() {
               onChange={(event) => setInput(event.target.value)}
               placeholder={sending ? "发送中..." : "输入今日学习内容、答案或任何学习请求"}
               disabled={sending}
+              name="langdrill-chat-message"
+              autoComplete="off"
+              data-lpignore="true"
+              data-1p-ignore="true"
+              spellCheck={false}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
@@ -450,8 +625,13 @@ export default function App() {
           themeMode={themeMode}
           fontSize={fontSize}
           tokenUsage={tokenUsage}
+          sessions={sessions}
+          examOptions={examOptions}
+          syllabusStatus={syllabusStatus}
           onClose={() => setSettingsOpen(false)}
           onProfileChange={setProfile}
+          onSessionsChange={setSessions}
+          onSyllabusStatusChange={setSyllabusStatus}
           onModelConfigChange={setModelConfig}
           onAppearanceChange={(nextTheme, nextFontSize) => {
             setThemeMode(nextTheme);
@@ -482,6 +662,8 @@ export default function App() {
 }
 
 function DailyStudyPanel({ panel }: { panel: DailyPanel }) {
+  const knowledgeTotal = panel.knowledge_total || 0;
+  const knowledgeDone = panel.knowledge_done || 0;
   return (
     <section className="daily-panel">
       <div className="panel-title">
@@ -501,8 +683,17 @@ function DailyStudyPanel({ panel }: { panel: DailyPanel }) {
       <div className="thin-progress">
         <span style={{ width: `${panel.questions_total ? (panel.questions_done / panel.questions_total) * 100 : 8}%` }} />
       </div>
+      <div className="word-progress-row">
+        <div>
+          <strong>{knowledgeDone}/{knowledgeTotal}</strong>
+          <span>当日词汇</span>
+        </div>
+        <div className="thin-progress compact">
+          <span style={{ width: `${knowledgeTotal ? (knowledgeDone / knowledgeTotal) * 100 : 8}%` }} />
+        </div>
+      </div>
       <div className="mini-list">
-        {(panel.plan.new_content || []).slice(0, 2).map((item) => (
+        {(panel.knowledge_terms?.length ? panel.knowledge_terms : panel.plan.new_content || []).slice(0, 2).map((item) => (
           <p key={item}>{item}</p>
         ))}
       </div>
@@ -543,18 +734,56 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function QuestionDock({ question }: { question: Question }) {
+function QuestionDock({
+  question,
+  panel,
+  sending,
+  onSubmit
+}: {
+  question: Question;
+  panel: DailyPanel;
+  sending: boolean;
+  onSubmit: (option: string, extraPrompt: string) => void;
+}) {
+  const [selectedOption, setSelectedOption] = useState("");
+  const [extraPrompt, setExtraPrompt] = useState("");
+  const total = Math.max(panel.questions_total || 0, question.sequence || 1);
   return (
     <section className="question-dock">
       <div className="question-head">
         <CheckCircle size={18} />
-        <span>当前题目</span>
+        <span>当前题目：第 {question.sequence || 1} 题 / 共 {total} 题</span>
       </div>
-      <p>{question.prompt}</p>
+      <p>{cleanQuestionPrompt(question)}</p>
       <div className="options">
         {question.options.map((option, index) => (
-          <span key={option}>{String.fromCharCode(65 + index)}. {option}</span>
+          <button
+            key={option}
+            className={selectedOption === String.fromCharCode(65 + index) ? "selected" : ""}
+            onClick={() => setSelectedOption(String.fromCharCode(65 + index))}
+          >
+            {String.fromCharCode(65 + index)}. {option}
+          </button>
         ))}
+      </div>
+      <div className="question-followup">
+        <textarea
+          value={extraPrompt}
+          onChange={(event) => setExtraPrompt(event.target.value)}
+          placeholder="额外提问，可为空。例如：顺便讲一下为什么其他选项不对。"
+          name="langdrill-question-followup"
+          autoComplete="off"
+          data-lpignore="true"
+          data-1p-ignore="true"
+          spellCheck={false}
+        />
+        <button
+          className="inline-action primary-inline"
+          disabled={!selectedOption || sending}
+          onClick={() => onSubmit(selectedOption, extraPrompt)}
+        >
+          提交
+        </button>
       </div>
     </section>
   );
@@ -567,8 +796,13 @@ function SettingsDialog({
   themeMode,
   fontSize,
   tokenUsage,
+  sessions,
+  examOptions,
+  syllabusStatus,
   onClose,
   onProfileChange,
+  onSessionsChange,
+  onSyllabusStatusChange,
   onModelConfigChange,
   onAppearanceChange,
   onProvidersChange,
@@ -580,8 +814,13 @@ function SettingsDialog({
   themeMode: ThemeMode;
   fontSize: number;
   tokenUsage: Record<string, number>;
+  sessions: SessionItem[];
+  examOptions: ExamOption[];
+  syllabusStatus: SyllabusStatus;
   onClose: () => void;
   onProfileChange: (profile: Profile) => void;
+  onSessionsChange: (sessions: SessionItem[]) => void;
+  onSyllabusStatusChange: (status: SyllabusStatus) => void;
   onModelConfigChange: (config: ModelConfig) => void;
   onAppearanceChange: (themeMode: ThemeMode, fontSize: number) => void;
   onProvidersChange: (providers: ProviderOption[]) => void;
@@ -593,6 +832,17 @@ function SettingsDialog({
   const [appearanceDraft, setAppearanceDraft] = useState({ themeMode, fontSize });
   const [reviewIntensity, setReviewIntensity] = useState(3);
   const [saveState, setSaveState] = useState("");
+  const [activeSettingsTab, setActiveSettingsTab] = useState("model");
+  const [syllabusDraft, setSyllabusDraft] = useState(syllabusStatus);
+  const [syllabusMessage, setSyllabusMessage] = useState("");
+  const [customExam, setCustomExam] = useState({
+    name: "",
+    target_language: "",
+    syllabus_mode: "auto",
+    syllabus_url: "",
+    local_path: "",
+    notes: ""
+  });
   const provider = selectedProvider(providers, modelDraft.provider_id);
   const modelOptions = uniqueModelOptions(provider, modelDraft.model);
   const chooseProvider = (providerId: string) => {
@@ -605,6 +855,58 @@ function SettingsDialog({
       model: nextModel
     });
     setCustomModel("");
+  };
+  const chooseExam = async (examId: string) => {
+    const option = examOptions.find((item) => item.id === examId) || examOptions[0];
+    if (option.id === "custom") {
+      setDraft({
+        ...draft,
+        exam_id: "custom",
+        exam_name: customExam.name || "自定义考试",
+        target_language: customExam.target_language || draft.target_language
+      });
+      return;
+    }
+    setDraft({
+      ...draft,
+      exam_id: option.id,
+      exam_name: option.name,
+      target_language: option.target_language || draft.target_language
+    });
+    try {
+      const status = await apiGet<SyllabusStatus>(`/api/syllabus/status?exam_id=${encodeURIComponent(option.id)}`);
+      setSyllabusDraft(status);
+      onSyllabusStatusChange(status);
+    } catch {
+      setSyllabusMessage("考纲状态读取失败，请确认后端已启动。");
+    }
+  };
+  const checkSyllabus = async () => {
+    setSyllabusMessage("正在检查官方考纲...");
+    try {
+      const data = await apiPost<{ changed: boolean; message: string; status: SyllabusStatus }>("/api/syllabus/check", {
+        exam_id: draft.exam_id
+      });
+      setSyllabusDraft(data.status);
+      onSyllabusStatusChange(data.status);
+      setSyllabusMessage(data.message);
+    } catch (err) {
+      setSyllabusMessage(err instanceof Error ? err.message : "检查失败");
+    }
+  };
+  const selectSyllabus = async (sourceId: string) => {
+    if (!sourceId) return;
+    try {
+      const status = await apiPost<SyllabusStatus>("/api/syllabus/select", {
+        exam_id: draft.exam_id,
+        source_id: sourceId
+      });
+      setSyllabusDraft(status);
+      onSyllabusStatusChange(status);
+      setSyllabusMessage("已切换考纲版本。");
+    } catch (err) {
+      setSyllabusMessage(err instanceof Error ? err.message : "切换失败");
+    }
   };
   const saveModelConfig = async () => {
     const finalModel = customModel.trim() || modelDraft.model;
@@ -621,15 +923,22 @@ function SettingsDialog({
   const saveSettings = async () => {
     // 持久化 profile 到后端
     try {
-      const profileData = await apiPost<{ profile: Profile }>("/api/profile", {
+      const profileData = await apiPost<{ profile: Profile; sessions?: SessionItem[]; syllabus_status?: SyllabusStatus }>("/api/profile", {
         display_name: draft.display_name,
         target_language: draft.target_language,
+        exam_id: draft.exam_id,
+        exam_name: draft.exam_name,
         learning_goal: draft.learning_goal,
         learning_background: draft.learning_background,
         persona: draft.persona,
         global_user_prompt: draft.global_user_prompt,
       });
       onProfileChange(profileData.profile);
+      if (profileData.sessions) onSessionsChange(profileData.sessions);
+      if (profileData.syllabus_status) {
+        onSyllabusStatusChange(profileData.syllabus_status);
+        setSyllabusDraft(profileData.syllabus_status);
+      }
     } catch {
       // 后端不可用时仅更新本地
       onProfileChange(draft);
@@ -670,6 +979,16 @@ function SettingsDialog({
     onAppearanceChange("system", 16);
     setSaveState("已恢复默认设置。");
   };
+  const currentExamOption = examOptions.find((item) => item.id === draft.exam_id) || examOptions[0];
+  const tokenMax = Math.max(tokenUsage.total || 0, 1);
+  const settingTabs = [
+    { id: "model", label: "模型", icon: GearSix },
+    { id: "exam", label: "考试", icon: Target },
+    { id: "syllabus", label: "考纲", icon: ListBullets },
+    { id: "tokens", label: "令牌", icon: Brain },
+    { id: "study", label: "学习", icon: ShieldCheck },
+    { id: "appearance", label: "外观", icon: Moon }
+  ];
   return (
     <div className="modal-backdrop">
       <div className="settings-modal">
@@ -677,101 +996,173 @@ function SettingsDialog({
           <h2>设置</h2>
           <button className="icon-button" onClick={onClose}><X size={18} /></button>
         </div>
-        <div className="settings-grid">
-          <SettingSection title="模型提供商">
-            <div style={{ display: "flex", gap: "8px" }}>
-              <select style={{ flex: 1 }} value={modelDraft.provider_id} onChange={(event) => chooseProvider(event.target.value)}>
-                {providers.map((provider) => (
-                  <option key={provider.id} value={provider.id}>{provider.label}</option>
-                ))}
-              </select>
-              <button className="inline-action" onClick={() => void handleAddCustomProvider()} title="新增自定义提供商">+</button>
-            </div>
-            <input
-              value={modelDraft.base_url}
-              onChange={(event) => setModelDraft({ ...modelDraft, base_url: event.target.value })}
-              placeholder={provider.base_url || "Mock Provider（本地模拟）不需要 Base URL"}
-            />
-            <input
-              value={modelDraft.api_key || ""}
-              onChange={(event) => setModelDraft({ ...modelDraft, api_key: event.target.value })}
-              placeholder={provider.kind === "mock" ? "Mock Provider（本地模拟）不需要 API Key" : modelDraft.has_api_key ? "API Key（接口密钥）已配置，留空则不覆盖" : "API Key（接口密钥）"}
-              type="password"
-              autoComplete="off"
-            />
-            <select value={modelDraft.model} onChange={(event) => setModelDraft({ ...modelDraft, model: event.target.value })}>
-              {modelOptions.map((model) => (
-                <option key={model} value={model}>{model}</option>
-              ))}
-            </select>
-            <input
-              value={customModel}
-              onChange={(event) => setCustomModel(event.target.value)}
-              placeholder="自定义模型名称，填写后优先使用"
-            />
-            <button className="inline-action" onClick={() => void saveModelConfig()}>保存模型配置</button>
-            {saveState && <p className="hint">{saveState}</p>}
-          </SettingSection>
-          <SettingSection title="Token 使用">
-            <div className="token-card"><strong>{tokenUsage.total}</strong><span>累计 token（令牌）</span></div>
-          </SettingSection>
-          <SettingSection title="学习目标">
-            <input value={draft.learning_goal} onChange={(event) => setDraft({ ...draft, learning_goal: event.target.value })} placeholder="目标考试、分数或能力目标" />
-          </SettingSection>
-          <SettingSection title="学习背景">
-            <textarea value={draft.learning_background} onChange={(event) => setDraft({ ...draft, learning_background: event.target.value })} placeholder="当前水平、弱项、已学内容" />
-          </SettingSection>
-          <SettingSection title="个性化">
-            <select value={draft.persona} onChange={(event) => setDraft({ ...draft, persona: event.target.value })}>
-              {personalityOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-            </select>
-            <p className="hint">{personalityOptions.find((item) => item.id === draft.persona)?.prompt}</p>
-            {draft.persona === "custom" && (
-              <textarea
-                value={draft.global_user_prompt || ""}
-                onChange={(event) => setDraft({ ...draft, global_user_prompt: event.target.value })}
-                placeholder="填写自定义人格提示词，例如：语气冷静、少废话、每次先给结论。"
-              />
+        <div className="settings-layout">
+          <nav className="settings-tabs" aria-label="设置分类">
+            {settingTabs.map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  className={activeSettingsTab === tab.id ? "active" : ""}
+                  onClick={() => setActiveSettingsTab(tab.id)}
+                >
+                  <Icon size={18} />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+          <div className="settings-content">
+            {activeSettingsTab === "model" && (
+              <SettingSection title="模型提供商">
+                <div className="inline-row">
+                  <select value={modelDraft.provider_id} onChange={(event) => chooseProvider(event.target.value)}>
+                    {providers.map((provider) => (
+                      <option key={provider.id} value={provider.id}>{provider.label}</option>
+                    ))}
+                  </select>
+                  <button className="inline-action square-action" onClick={() => void handleAddCustomProvider()} title="新增自定义提供商">+</button>
+                </div>
+                <input
+                  value={modelDraft.base_url}
+                  onChange={(event) => setModelDraft({ ...modelDraft, base_url: event.target.value })}
+                  placeholder={provider.base_url || "Mock Provider（本地模拟）不需要 Base URL（基础网址）"}
+                />
+                <input
+                  value={modelDraft.api_key || ""}
+                  onChange={(event) => setModelDraft({ ...modelDraft, api_key: event.target.value })}
+                  placeholder={provider.kind === "mock" ? "Mock Provider（本地模拟）不需要 API Key（接口密钥）" : modelDraft.has_api_key ? "API Key（接口密钥）已配置，留空则不覆盖" : "API Key（接口密钥）"}
+                  type="password"
+                  autoComplete="off"
+                />
+                <select value={modelDraft.model} onChange={(event) => setModelDraft({ ...modelDraft, model: event.target.value })}>
+                  {modelOptions.map((model) => (
+                    <option key={model} value={model}>{model}</option>
+                  ))}
+                </select>
+                <input
+                  value={customModel}
+                  onChange={(event) => setCustomModel(event.target.value)}
+                  placeholder="自定义模型名称，填写后优先使用"
+                />
+                <button className="inline-action" onClick={() => void saveModelConfig()}>保存模型配置</button>
+                {saveState && <p className="hint">{saveState}</p>}
+              </SettingSection>
             )}
-          </SettingSection>
-          <SettingSection title="功能设置">
-            <label><input type="checkbox" defaultChecked /> 联网检查考纲最新版</label>
-            <label><input type="checkbox" defaultChecked /> 分支默认不写回主会话</label>
-            <label><input type="checkbox" defaultChecked /> 简单选择题程序判定</label>
-            <button className="inline-action" onClick={onOpenOnboarding}>重新打开初始化设置</button>
-          </SettingSection>
-          <SettingSection title="学习算法">
-            <select><option>mastery_score V1（掌握度 V1）</option><option>FSRS-ready（FSRS 预留）</option></select>
-            <label className="range-field">
-              <span>复习强度：{reviewIntensity}</span>
-              <input
-                type="range"
-                min="1"
-                max="5"
-                value={reviewIntensity}
-                onChange={(event) => setReviewIntensity(Number(event.target.value))}
-              />
-              <small>控制到期复习和错题回流的占比，1 更轻，5 更密集。</small>
-            </label>
-          </SettingSection>
-          <SettingSection title="外观">
-            <div className="theme-row">
-              <button className={appearanceDraft.themeMode === "system" ? "active" : ""} onClick={() => setAppearanceDraft({ ...appearanceDraft, themeMode: "system" })}><GearSix size={16} /> 跟随系统</button>
-              <button className={appearanceDraft.themeMode === "light" ? "active" : ""} onClick={() => setAppearanceDraft({ ...appearanceDraft, themeMode: "light" })}><Sun size={16} /> 浅色</button>
-              <button className={appearanceDraft.themeMode === "dark" ? "active" : ""} onClick={() => setAppearanceDraft({ ...appearanceDraft, themeMode: "dark" })}><Moon size={16} /> 深色</button>
-            </div>
-            <label className="range-field">
-              <span>字体大小：{appearanceDraft.fontSize}px</span>
-              <input
-                type="range"
-                min="14"
-                max="20"
-                value={appearanceDraft.fontSize}
-                onChange={(event) => setAppearanceDraft({ ...appearanceDraft, fontSize: Number(event.target.value) })}
-              />
-              <small>调整聊天、设置和侧栏文字的整体显示大小。</small>
-            </label>
-          </SettingSection>
+            {activeSettingsTab === "exam" && (
+              <SettingSection title="考试选择">
+                <select value={draft.exam_id} onChange={(event) => void chooseExam(event.target.value)}>
+                  {examOptions.map((option) => (
+                    <option key={option.id} value={option.id}>{option.name}</option>
+                  ))}
+                </select>
+                <p className="hint">{currentExamOption?.description}</p>
+                <input value={draft.exam_name} onChange={(event) => setDraft({ ...draft, exam_name: event.target.value })} placeholder="考试名称" />
+                <input value={draft.target_language} onChange={(event) => setDraft({ ...draft, target_language: event.target.value })} placeholder="目标语言" />
+                {draft.exam_id === "custom" && (
+                  <div className="custom-exam-grid">
+                    <input value={customExam.name} onChange={(event) => setCustomExam({ ...customExam, name: event.target.value })} placeholder="自定义考试名称" />
+                    <input value={customExam.target_language} onChange={(event) => setCustomExam({ ...customExam, target_language: event.target.value })} placeholder="目标语言" />
+                    <select value={customExam.syllabus_mode} onChange={(event) => setCustomExam({ ...customExam, syllabus_mode: event.target.value })}>
+                      <option value="auto">考纲网址自动下载</option>
+                      <option value="manual">手动导入本地文件</option>
+                    </select>
+                    <input value={customExam.syllabus_url} onChange={(event) => setCustomExam({ ...customExam, syllabus_url: event.target.value })} placeholder="官方考纲网址" />
+                    <input value={customExam.local_path} onChange={(event) => setCustomExam({ ...customExam, local_path: event.target.value })} placeholder="本地考纲文件路径" />
+                    <textarea value={customExam.notes} onChange={(event) => setCustomExam({ ...customExam, notes: event.target.value })} placeholder="题型、分值、考试时间、评分偏好等补充设置" />
+                  </div>
+                )}
+                <div className="settings-summary-line">当前考试会切换会话列表、题库统计、知识点和考纲选择。</div>
+                <div className="settings-summary-line">当前考试会话数：{sessions.length}</div>
+              </SettingSection>
+            )}
+            {activeSettingsTab === "syllabus" && (
+              <SettingSection title="考纲管理">
+                <div className="syllabus-current">
+                  <strong>{syllabusDraft.current_year || "未记录"} 年</strong>
+                  <span>{syllabusDraft.current_title || "暂无考纲"}</span>
+                </div>
+                <div className="inline-row">
+                  <button className="inline-action" onClick={() => void checkSyllabus()}>手动检查并更新</button>
+                  <a className="inline-link" href={syllabusDraft.official_url} target="_blank" rel="noreferrer">打开官方来源</a>
+                </div>
+                <select value={syllabusDraft.current_source_id} onChange={(event) => void selectSyllabus(event.target.value)}>
+                  {syllabusDraft.sources.map((source) => (
+                    <option key={source.id} value={source.id}>{source.year || "未知年份"} - {source.title}</option>
+                  ))}
+                </select>
+                <p className="hint">若官方内容没有变化，会提示已是最新考纲；若发现新年份，会保留旧年份并加入可切换列表。</p>
+                {syllabusMessage && <p className="hint strong-hint">{syllabusMessage}</p>}
+              </SettingSection>
+            )}
+            {activeSettingsTab === "tokens" && (
+              <SettingSection title="令牌统计">
+                <div className="token-dashboard">
+                  <div className="token-hero"><strong>{tokenUsage.total}</strong><span>累计 token（令牌）</span></div>
+                  {[
+                    ["输入", tokenUsage.input],
+                    ["输出", tokenUsage.output],
+                    ["当前上下文估算", tokenUsage.estimated_current_context]
+                  ].map(([label, value]) => (
+                    <div className="token-meter" key={label}>
+                      <div><span>{label}</span><strong>{value}</strong></div>
+                      <div className="thin-progress compact"><span style={{ width: `${Math.max(8, (Number(value) / tokenMax) * 100)}%` }} /></div>
+                    </div>
+                  ))}
+                </div>
+              </SettingSection>
+            )}
+            {activeSettingsTab === "study" && (
+              <SettingSection title="学习设置">
+                <input value={draft.learning_goal} onChange={(event) => setDraft({ ...draft, learning_goal: event.target.value })} placeholder="目标考试、分数或能力目标" />
+                <textarea value={draft.learning_background} onChange={(event) => setDraft({ ...draft, learning_background: event.target.value })} placeholder="当前水平、弱项、已学内容" />
+                <select value={draft.persona} onChange={(event) => setDraft({ ...draft, persona: event.target.value })}>
+                  {personalityOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                </select>
+                <p className="hint">{personalityOptions.find((item) => item.id === draft.persona)?.prompt}</p>
+                {draft.persona === "custom" && (
+                  <textarea
+                    value={draft.global_user_prompt || ""}
+                    onChange={(event) => setDraft({ ...draft, global_user_prompt: event.target.value })}
+                    placeholder="填写自定义人格提示词，例如：语气冷静、少废话、每次先给结论。"
+                  />
+                )}
+                <select><option>mastery_score V1（掌握度 V1）</option><option>FSRS-ready（FSRS 预留）</option></select>
+                <label className="range-field">
+                  <span>复习强度：{reviewIntensity}</span>
+                  <input
+                    type="range"
+                    min="1"
+                    max="5"
+                    value={reviewIntensity}
+                    onChange={(event) => setReviewIntensity(Number(event.target.value))}
+                  />
+                  <small>控制到期复习和错题回流的占比，1 更轻，5 更密集。</small>
+                </label>
+                <button className="inline-action" onClick={onOpenOnboarding}>重新打开初始化设置</button>
+              </SettingSection>
+            )}
+            {activeSettingsTab === "appearance" && (
+              <SettingSection title="外观">
+                <div className="theme-row">
+                  <button className={appearanceDraft.themeMode === "system" ? "active" : ""} onClick={() => setAppearanceDraft({ ...appearanceDraft, themeMode: "system" })}><GearSix size={16} /> 跟随系统</button>
+                  <button className={appearanceDraft.themeMode === "light" ? "active" : ""} onClick={() => setAppearanceDraft({ ...appearanceDraft, themeMode: "light" })}><Sun size={16} /> 浅色</button>
+                  <button className={appearanceDraft.themeMode === "dark" ? "active" : ""} onClick={() => setAppearanceDraft({ ...appearanceDraft, themeMode: "dark" })}><Moon size={16} /> 深色</button>
+                </div>
+                <label className="range-field">
+                  <span>字体大小：{appearanceDraft.fontSize}px</span>
+                  <input
+                    type="range"
+                    min="14"
+                    max="20"
+                    value={appearanceDraft.fontSize}
+                    onChange={(event) => setAppearanceDraft({ ...appearanceDraft, fontSize: Number(event.target.value) })}
+                  />
+                  <small>调整聊天、设置和侧栏文字的整体显示大小。</small>
+                </label>
+              </SettingSection>
+            )}
+          </div>
         </div>
         <div className="modal-actions">
           <button onClick={() => void resetDefaults()}>恢复默认设置</button>

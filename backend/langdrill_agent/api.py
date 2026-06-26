@@ -18,13 +18,24 @@ from .models import (
     ComposerRequest,
     InitRequest,
     ModelConfigRequest,
+    PhoneMirrorStartRequest,
     ProfileUpdateRequest,
     ScreenshotImportRequest,
+    SyllabusCheckRequest,
+    SyllabusSelectRequest,
     UserProfile,
 )
 from .providers import ModelProvider
+from .phone_mirror import PhoneMirrorService
 from .screenshot_import import ScreenshotImportService
-from .services import ModelConfigService, ProfileService, QuestionService, SessionService, SourceService
+from .services import (
+    ModelConfigService,
+    ProfileService,
+    QuestionService,
+    SessionService,
+    SourceService,
+    SyllabusService,
+)
 from .task_router import TaskRouter
 from .utils import new_id
 
@@ -65,6 +76,8 @@ def bootstrap() -> dict:
             "token_usage": token_totals(conn),
             "providers": model_config.providers(),
             "model_config": model_config.current(),
+            "exam_options": SyllabusService(conn).exam_options(),
+            "syllabus_status": SyllabusService(conn).status(profile.exam_id),
         }
 
 
@@ -140,14 +153,28 @@ def chat(request: ChatRequest) -> ChatResponse:
     settings = load_settings()
     with transaction() as conn:
         session_service = SessionService(conn)
-        session_id = session_service.ensure_session(request.session_id, request.content)
-        active = QuestionService(conn).active_question(session_id)
+        selected_option = (request.selected_option or "").strip().upper()
+        extra_prompt = (request.extra_prompt or "").strip()
+        visible_content = request.content.strip()
+        if selected_option:
+            visible_content = selected_option
+            if extra_prompt:
+                visible_content = f"{selected_option}\n补充提问：{extra_prompt}"
+        session_id = session_service.ensure_session(request.session_id, visible_content or "日常学习")
+        question_service = QuestionService(conn)
+        selected_question = (
+            question_service.question_by_id(request.question_id, session_id)
+            if request.question_id
+            else None
+        )
+        active = selected_question or question_service.active_question(session_id)
         task = TaskRouter().route(
-            request.content,
+            visible_content or request.content,
             has_active_question=active is not None,
             selected_text=request.selected_text,
+            selected_option=selected_option,
         )
-        session_service.add_message(session_id, "user", request.content, {"task": task.value})
+        session_service.add_message(session_id, "user", visible_content or request.content, {"task": task.value})
 
         model_config = ModelConfigService(conn).current_with_secret()
         provider = ModelProvider(
@@ -161,7 +188,13 @@ def chat(request: ChatRequest) -> ChatResponse:
 
         if task.value == "answer_question" and active:
             # ── 答题 ──
-            result = EvaluatorTutorAgent(conn, provider).evaluate(session_id, active, request.content)
+            answer_content = selected_option or request.content
+            result = EvaluatorTutorAgent(conn, provider).evaluate(
+                session_id,
+                active,
+                answer_content,
+                extra_prompt=extra_prompt,
+            )
             assistant_content = result.feedback
             active_question = QuestionService(conn).active_question(session_id)
 
@@ -279,6 +312,19 @@ def sessions() -> dict:
         return {"sessions": SessionService(conn).list_sessions_by_date()}
 
 
+@app.post("/api/sessions/new")
+def new_session() -> dict:
+    init_db()
+    with transaction() as conn:
+        session_service = SessionService(conn)
+        session_id = session_service.ensure_session(None, "新聊天", force_new=True)
+        return {
+            "session_id": session_id,
+            "sessions": session_service.list_sessions_by_date(),
+            "daily_panel": session_service.daily_panel(session_id),
+        }
+
+
 @app.get("/api/sessions/{session_id}")
 def get_session(session_id: str) -> dict:
     """加载历史会话的完整消息、daily panel 和当前题目。"""
@@ -303,7 +349,54 @@ def update_profile(request: ProfileUpdateRequest) -> dict:
             return {"profile": current.model_dump()}
         updated = current.model_copy(update=updates)
         profile_service.update(updated)
-        return {"profile": updated.model_dump()}
+        return {
+            "profile": updated.model_dump(),
+            "sessions": SessionService(conn).list_sessions_by_date(),
+            "syllabus_status": SyllabusService(conn).status(updated.exam_id),
+        }
+
+
+@app.get("/api/exams")
+def exam_options() -> dict:
+    init_db()
+    with transaction() as conn:
+        profile = ProfileService(conn).get()
+        return {
+            "current_exam_id": profile.exam_id,
+            "options": SyllabusService(conn).exam_options(),
+        }
+
+
+@app.get("/api/syllabus/status")
+def syllabus_status(exam_id: str | None = None) -> dict:
+    init_db()
+    with transaction() as conn:
+        profile = ProfileService(conn).get()
+        return SyllabusService(conn).status(exam_id or profile.exam_id)
+
+
+@app.post("/api/syllabus/check")
+def syllabus_check(request: SyllabusCheckRequest) -> dict:
+    init_db()
+    with transaction() as conn:
+        return SyllabusService(conn).manual_check(request.exam_id)
+
+
+@app.post("/api/syllabus/select")
+def syllabus_select(request: SyllabusSelectRequest) -> dict:
+    init_db()
+    with transaction() as conn:
+        return SyllabusService(conn).select_source(request.exam_id, request.source_id)
+
+
+@app.get("/api/phone-mirror/status")
+def phone_mirror_status() -> dict:
+    return PhoneMirrorService().status()
+
+
+@app.post("/api/phone-mirror/start")
+def phone_mirror_start(request: PhoneMirrorStartRequest) -> dict:
+    return PhoneMirrorService().start(request.device_id)
 
 
 @app.post("/api/composer/next")

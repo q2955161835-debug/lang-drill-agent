@@ -35,6 +35,7 @@ class TaskRouter:
         *,
         has_active_question: bool,
         selected_text: str | None = None,
+        selected_option: str | None = None,
     ) -> TaskType:
         text = content.strip()
 
@@ -42,21 +43,25 @@ class TaskRouter:
         if selected_text:
             return TaskType.branch_chat
 
-        # 2. 设置：匹配设置关键词
+        # 2. 题目选项来自结构化提交，即使附带追问也先进入答题流程
+        if has_active_question and selected_option and selected_option.strip().upper() in {"A", "B", "C", "D"}:
+            return TaskType.answer_question
+
+        # 3. 设置：匹配设置关键词
         if any(keyword in text for keyword in _SETTINGS_KEYWORDS):
             return TaskType.settings
 
-        # 3. 总结：匹配总结关键词
+        # 4. 总结：匹配总结关键词
         if any(keyword in text for keyword in _SUMMARY_KEYWORDS):
             return TaskType.summary
 
-        # 4. 追问 / 讲解：有当前题且命中讲解关键词
+        # 5. 追问 / 讲解：有当前题且命中讲解关键词
         if has_active_question and any(keyword in text for keyword in _EXPLANATION_KEYWORDS):
             return TaskType.explanation
 
-        # 5. 答题：严格正则匹配
+        # 6. 答题：严格正则匹配
         if has_active_question and _ANSWER_PATTERN.match(text):
             return TaskType.answer_question
 
-        # 6. 默认：日常训练
+        # 7. 默认：日常训练
         return TaskType.daily_drill

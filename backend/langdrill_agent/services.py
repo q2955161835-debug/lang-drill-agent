@@ -47,22 +47,45 @@ class SessionService:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
 
-    def ensure_session(self, session_id: str | None, title_hint: str = "日常学习") -> str:
+    def ensure_session(
+        self,
+        session_id: str | None,
+        title_hint: str = "日常学习",
+        *,
+        force_new: bool = False,
+    ) -> str:
+        profile = ProfileService(self.conn).get()
         if session_id:
-            row = self.conn.execute("SELECT id FROM study_sessions WHERE id=?", (session_id,)).fetchone()
+            row = self.conn.execute(
+                "SELECT id FROM study_sessions WHERE id=? AND exam_id=?",
+                (session_id, profile.exam_id),
+            ).fetchone()
             if row:
                 return session_id
+        if not force_new:
+            row = self.conn.execute(
+                """
+                SELECT id FROM study_sessions
+                WHERE folder_date=? AND exam_id=? AND status='active'
+                ORDER BY updated_at DESC
+                LIMIT 1
+                """,
+                (today_str(), profile.exam_id),
+            ).fetchone()
+            if row:
+                return str(row["id"])
         new_session_id = new_id("ses")
         title = title_hint.strip()[:18] or "日常学习"
         self.conn.execute(
             """
-            INSERT INTO study_sessions (id, title, folder_date, daily_plan_json)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO study_sessions (id, title, folder_date, exam_id, daily_plan_json)
+            VALUES (?, ?, ?, ?, ?)
             """,
             (
                 new_session_id,
                 title,
                 today_str(),
+                profile.exam_id,
                 dumps(
                     {
                         "new_content": [],
@@ -100,30 +123,56 @@ class SessionService:
         row = self.conn.execute("SELECT * FROM study_sessions WHERE id=?", (session_id,)).fetchone()
         if not row:
             return {}
+        scope = self._daily_scope(str(row["folder_date"]), str(row["exam_id"]))
         questions = self.conn.execute(
-            "SELECT COUNT(*) AS total, SUM(CASE WHEN status='answered' THEN 1 ELSE 0 END) AS done FROM questions WHERE session_id=?",
-            (session_id,),
+            """
+            SELECT
+              COUNT(q.id) AS total,
+              SUM(CASE WHEN q.status='answered' THEN 1 ELSE 0 END) AS done
+            FROM questions q
+            JOIN study_sessions s ON s.id = q.session_id
+            WHERE s.folder_date=? AND s.exam_id=?
+            """,
+            (scope["date"], scope["exam_id"]),
         ).fetchone()
         attempts = self.conn.execute(
-            "SELECT COUNT(*) AS total, SUM(is_correct) AS correct FROM attempts WHERE session_id=?",
-            (session_id,),
+            """
+            SELECT COUNT(a.id) AS total, SUM(a.is_correct) AS correct
+            FROM attempts a
+            JOIN study_sessions s ON s.id = a.session_id
+            WHERE s.folder_date=? AND s.exam_id=?
+            """,
+            (scope["date"], scope["exam_id"]),
         ).fetchone()
-        plan = loads(row["daily_plan_json"], {})
+        plan = self._merged_daily_plan(scope["date"], scope["exam_id"])
+        knowledge = self._knowledge_progress(scope["date"], scope["exam_id"])
         total_attempts = attempts["total"] or 0
         return {
             "date": row["folder_date"],
-            "title": row["title"],
-            "status": row["status"],
+            "title": f"{scope['exam_name']} 当日学习",
+            "status": scope["status"],
+            "exam_id": scope["exam_id"],
+            "exam_name": scope["exam_name"],
             "plan": plan,
             "questions_total": questions["total"] or 0,
             "questions_done": questions["done"] or 0,
+            "knowledge_total": knowledge["total"],
+            "knowledge_done": knowledge["done"],
+            "knowledge_terms": knowledge["terms"],
             "accuracy": round((attempts["correct"] or 0) / total_attempts, 2) if total_attempts else 0,
             "summary": row["summary"],
         }
 
     def list_sessions_by_date(self) -> list[dict[str, Any]]:
+        profile = ProfileService(self.conn).get()
         rows = self.conn.execute(
-            "SELECT id, title, folder_date, status, updated_at FROM study_sessions ORDER BY folder_date DESC, updated_at DESC"
+            """
+            SELECT id, title, folder_date, exam_id, status, updated_at
+            FROM study_sessions
+            WHERE exam_id=?
+            ORDER BY folder_date DESC, updated_at DESC
+            """,
+            (profile.exam_id,),
         ).fetchall()
         return [dict(row) for row in rows]
 
@@ -148,6 +197,79 @@ class SessionService:
             "active_question": active_q,
         }
 
+    def _daily_scope(self, date: str, exam_id: str) -> dict[str, str]:
+        profile = ProfileService(self.conn).get()
+        row = self.conn.execute(
+            """
+            SELECT
+              SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) AS active_count,
+              MAX(updated_at) AS updated_at
+            FROM study_sessions
+            WHERE folder_date=? AND exam_id=?
+            """,
+            (date, exam_id),
+        ).fetchone()
+        return {
+            "date": date,
+            "exam_id": exam_id,
+            "exam_name": profile.exam_name if profile.exam_id == exam_id else exam_id,
+            "status": "active" if row and (row["active_count"] or 0) else "idle",
+        }
+
+    def _merged_daily_plan(self, date: str, exam_id: str) -> dict[str, Any]:
+        rows = self.conn.execute(
+            """
+            SELECT daily_plan_json FROM study_sessions
+            WHERE folder_date=? AND exam_id=?
+            ORDER BY updated_at ASC
+            """,
+            (date, exam_id),
+        ).fetchall()
+        merged: dict[str, Any] = {
+            "new_content": [],
+            "review_content": [],
+            "target_minutes": ProfileService(self.conn).get().daily_minutes,
+            "status": "waiting_for_first_prompt",
+        }
+        for row in rows:
+            plan = loads(row["daily_plan_json"], {})
+            for key in ("new_content", "review_content"):
+                for item in plan.get(key, []) or []:
+                    if item and item not in merged[key]:
+                        merged[key].append(item)
+            if plan.get("target_minutes"):
+                merged["target_minutes"] = plan["target_minutes"]
+            if plan.get("status") and plan["status"] != "waiting_for_first_prompt":
+                merged["status"] = plan["status"]
+            if plan.get("algorithm"):
+                merged["algorithm"] = plan["algorithm"]
+        return merged
+
+    def _knowledge_progress(self, date: str, exam_id: str) -> dict[str, Any]:
+        rows = self.conn.execute(
+            """
+            SELECT q.knowledge_tags_json, q.status
+            FROM questions q
+            JOIN study_sessions s ON s.id = q.session_id
+            WHERE s.folder_date=? AND s.exam_id=?
+            """,
+            (date, exam_id),
+        ).fetchall()
+        all_tags: list[str] = []
+        answered_tags: list[str] = []
+        for row in rows:
+            tags = [str(tag) for tag in loads(row["knowledge_tags_json"], []) if str(tag).strip()]
+            all_tags.extend(tags)
+            if row["status"] == "answered":
+                answered_tags.extend(tags)
+        unique_all = sorted(set(all_tags))
+        unique_done = sorted(set(answered_tags))
+        return {
+            "total": len(unique_all),
+            "done": len(unique_done),
+            "terms": unique_all[:8],
+        }
+
 
 class QuestionService:
     def __init__(self, conn: sqlite3.Connection):
@@ -162,6 +284,17 @@ class QuestionService:
             LIMIT 1
             """,
             (session_id,),
+        ).fetchone()
+        return self._row_to_payload(row) if row else None
+
+    def question_by_id(self, question_id: str, session_id: str) -> dict[str, Any] | None:
+        row = self.conn.execute(
+            """
+            SELECT * FROM questions
+            WHERE id=? AND session_id=? AND status='ready'
+            LIMIT 1
+            """,
+            (question_id, session_id),
         ).fetchone()
         return self._row_to_payload(row) if row else None
 
@@ -205,32 +338,44 @@ class SourceService:
     COMMON_SYLLABUS_SOURCES = [
         {
             "exam_id": "cjt4",
-            "title": "大学日语四级考试大纲 2023",
-            "url": "https://www.china-cet.edu.cn/",
+            "title": "全国大学日语四、六级考试大纲（2024年启用）",
+            "year": 2024,
+            "url": "https://cet.neea.edu.cn/xhtml1/folder/16113/1588-1.htm",
             "trusted_level": "official_or_exam_org",
         },
         {
             "exam_id": "cet4",
-            "title": "全国大学英语四级考试大纲 2016",
-            "url": "https://cet.neea.edu.cn/",
+            "title": "全国大学英语四、六级考试大纲（2016年修订版）",
+            "year": 2016,
+            "url": "https://cet.neea.edu.cn/xhtml1/folder/16113/1588-1.htm",
             "trusted_level": "official_or_exam_org",
         },
         {
             "exam_id": "cet6",
-            "title": "全国大学英语六级考试大纲 2016",
-            "url": "https://cet.neea.edu.cn/",
+            "title": "全国大学英语四、六级考试大纲（2016年修订版）",
+            "year": 2016,
+            "url": "https://cet.neea.edu.cn/xhtml1/folder/16113/1588-1.htm",
+            "trusted_level": "official_or_exam_org",
+        },
+        {
+            "exam_id": "ielts",
+            "title": "IELTS Academic test format（雅思学术类考试结构）",
+            "year": 2026,
+            "url": "https://ielts.org/take-a-test/test-types/ielts-academic-test",
+            "trusted_level": "official",
+        },
+        {
+            "exam_id": "toefl",
+            "title": "TOEFL iBT Test Content（托福网考考试内容）",
+            "year": 2026,
+            "url": "https://www.ets.org/toefl/test-takers/ibt/about/content.html",
             "trusted_level": "official_or_exam_org",
         },
         {
             "exam_id": "gaokao-english",
-            "title": "普通高中英语课程标准 2020",
-            "url": "http://www.moe.gov.cn/",
-            "trusted_level": "official",
-        },
-        {
-            "exam_id": "gaokao-japanese",
-            "title": "普通高中日语课程标准 2020",
-            "url": "http://www.moe.gov.cn/",
+            "title": "普通高中英语课程标准（2017年版2020年修订）",
+            "year": 2020,
+            "url": "https://www.moe.gov.cn/srcsite/A26/s8001/202006/t20200603_462199.html",
             "trusted_level": "official",
         },
     ]
@@ -243,18 +388,204 @@ class SourceService:
             self.conn.execute(
                 """
                 INSERT OR IGNORE INTO syllabus_sources
-                (id, exam_id, title, url, trusted_level, copyright_boundary)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (id, exam_id, title, year, url, trusted_level, copyright_boundary)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     f"src_{source['exam_id']}",
                     source["exam_id"],
                     source["title"],
+                    source["year"],
                     source["url"],
                     source["trusted_level"],
                     "index_and_reference",
                 ),
             )
+            self.conn.execute(
+                """
+                UPDATE syllabus_sources
+                SET year=COALESCE(year, ?),
+                    url=CASE WHEN url='' THEN ? ELSE url END,
+                    title=CASE WHEN title='' THEN ? ELSE title END
+                WHERE id=?
+                """,
+                (source["year"], source["url"], source["title"], f"src_{source['exam_id']}"),
+            )
+
+
+class SyllabusService:
+    EXAM_OPTIONS = [
+        {
+            "id": "cet4",
+            "name": "英语四级",
+            "target_language": "英语",
+            "official_url": "https://cet.neea.edu.cn/xhtml1/folder/16113/1588-1.htm",
+            "default_year": 2016,
+            "description": "大学英语四级，默认考试。",
+        },
+        {
+            "id": "cjt4",
+            "name": "日语四级",
+            "target_language": "日语",
+            "official_url": "https://cet.neea.edu.cn/xhtml1/folder/16113/1588-1.htm",
+            "default_year": 2024,
+            "description": "大学日语四级，新版考纲 2024 年启用。",
+        },
+        {
+            "id": "ielts",
+            "name": "雅思",
+            "target_language": "英语",
+            "official_url": "https://ielts.org/take-a-test/test-types/ielts-academic-test",
+            "default_year": 2026,
+            "description": "雅思学术类考试结构，官方页面持续维护。",
+        },
+        {
+            "id": "toefl",
+            "name": "托福",
+            "target_language": "英语",
+            "official_url": "https://www.ets.org/toefl/test-takers/ibt/about/content.html",
+            "default_year": 2026,
+            "description": "托福网考考试结构，官方页面持续维护。",
+        },
+        {
+            "id": "gaokao-english",
+            "name": "高考英语",
+            "target_language": "英语",
+            "official_url": "https://www.moe.gov.cn/srcsite/A26/s8001/202006/t20200603_462199.html",
+            "default_year": 2020,
+            "description": "普通高中英语课程标准，按高考英语能力框架使用。",
+        },
+        {
+            "id": "custom",
+            "name": "添加自定义",
+            "target_language": "",
+            "official_url": "",
+            "default_year": None,
+            "description": "可配置考纲网址自动下载或手动导入。",
+        },
+    ]
+
+    def __init__(self, conn: sqlite3.Connection):
+        self.conn = conn
+
+    def exam_options(self) -> list[dict[str, Any]]:
+        return [dict(item) for item in self.EXAM_OPTIONS]
+
+    def status(self, exam_id: str | None = None) -> dict[str, Any]:
+        SourceService(self.conn).seed_common_sources()
+        profile = ProfileService(self.conn).get()
+        target_exam = exam_id or profile.exam_id
+        rows = self.conn.execute(
+            """
+            SELECT id, exam_id, title, year, url, local_path, trusted_level,
+                   is_latest_checked, checked_at, created_at
+            FROM syllabus_sources
+            WHERE exam_id=?
+            ORDER BY year DESC, created_at DESC
+            """,
+            (target_exam,),
+        ).fetchall()
+        sources = [dict(row) for row in rows]
+        current = sources[0] if sources else self._default_source(target_exam)
+        selected_id = self._selected_source_id(target_exam) or current.get("id", "")
+        return {
+            "exam_id": target_exam,
+            "current_source_id": selected_id,
+            "current_year": current.get("year"),
+            "current_title": current.get("title", ""),
+            "official_url": current.get("url", self._exam_option(target_exam).get("official_url", "")),
+            "sources": sources,
+        }
+
+    def manual_check(self, exam_id: str) -> dict[str, Any]:
+        SourceService(self.conn).seed_common_sources()
+        option = self._exam_option(exam_id)
+        default_year = option.get("default_year")
+        latest = self.status(exam_id)
+        current_year = latest.get("current_year")
+        changed = bool(default_year and (not current_year or int(current_year) < int(default_year)))
+        if changed:
+            source_id = f"src_{exam_id}_{default_year}"
+            self.conn.execute(
+                """
+                INSERT OR IGNORE INTO syllabus_sources
+                (id, exam_id, title, year, url, trusted_level, copyright_boundary, is_latest_checked, checked_at)
+                VALUES (?, ?, ?, ?, ?, ?, 'index_and_reference', 1, CURRENT_TIMESTAMP)
+                """,
+                (
+                    source_id,
+                    exam_id,
+                    option["name"] + f"考纲 {default_year}",
+                    default_year,
+                    option.get("official_url", ""),
+                    "official",
+                ),
+            )
+            self._select_source(exam_id, source_id)
+            return {
+                "changed": True,
+                "message": f"已录入 {default_year} 年考纲，旧年份仍保留在可选考纲中。",
+                "status": self.status(exam_id),
+            }
+        if latest["sources"]:
+            self.conn.execute(
+                """
+                UPDATE syllabus_sources
+                SET is_latest_checked=1, checked_at=CURRENT_TIMESTAMP
+                WHERE id=?
+                """,
+                (latest["sources"][0]["id"],),
+            )
+        return {
+            "changed": False,
+            "message": f"当前 {current_year} 年考纲已是最新考纲。",
+            "status": self.status(exam_id),
+        }
+
+    def select_source(self, exam_id: str, source_id: str) -> dict[str, Any]:
+        row = self.conn.execute(
+            "SELECT id FROM syllabus_sources WHERE exam_id=? AND id=?",
+            (exam_id, source_id),
+        ).fetchone()
+        if not row:
+            raise ValueError("考纲不存在，无法切换。")
+        self._select_source(exam_id, source_id)
+        return self.status(exam_id)
+
+    def _select_source(self, exam_id: str, source_id: str) -> None:
+        key = f"syllabus.selected.{exam_id}"
+        self.conn.execute(
+            """
+            INSERT OR REPLACE INTO app_settings (key, value_json, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            """,
+            (key, dumps({"source_id": source_id})),
+        )
+
+    def _selected_source_id(self, exam_id: str) -> str:
+        row = self.conn.execute(
+            "SELECT value_json FROM app_settings WHERE key=?",
+            (f"syllabus.selected.{exam_id}",),
+        ).fetchone()
+        data = loads(row["value_json"], {}) if row else {}
+        return str(data.get("source_id", ""))
+
+    def _exam_option(self, exam_id: str) -> dict[str, Any]:
+        return next((item for item in self.EXAM_OPTIONS if item["id"] == exam_id), self.EXAM_OPTIONS[-1])
+
+    def _default_source(self, exam_id: str) -> dict[str, Any]:
+        option = self._exam_option(exam_id)
+        return {
+            "id": "",
+            "exam_id": exam_id,
+            "title": option.get("name", exam_id),
+            "year": option.get("default_year"),
+            "url": option.get("official_url", ""),
+            "local_path": "",
+            "trusted_level": "unknown",
+            "is_latest_checked": 0,
+            "checked_at": None,
+        }
 
 
 class ModelConfigService:

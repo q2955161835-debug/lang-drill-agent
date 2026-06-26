@@ -16,5 +16,7 @@ backend/*.db-*
 try/*.db
 try/*.db-*
 logs/*.log
+%TEMP%*.log
+frontend/%TEMP%*.log
 tmp/
 try/.cache/

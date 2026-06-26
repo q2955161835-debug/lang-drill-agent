@@ -262,8 +262,15 @@ class EvaluatorTutorAgent:
     def __init__(self, conn: sqlite3.Connection, provider: ModelProvider):
         self.conn = conn
         self.provider = provider
+        self.assembler = PromptAssembler(PromptRegistry(conn))
 
-    def evaluate(self, session_id: str, question_payload: dict, user_answer: str) -> EvaluationResult:
+    def evaluate(
+        self,
+        session_id: str,
+        question_payload: dict,
+        user_answer: str,
+        extra_prompt: str = "",
+    ) -> EvaluationResult:
         correct = question_payload["answer"].get("correct")
         letter = question_payload["answer"].get("letter")
         normalized = user_answer.strip().upper()
@@ -284,6 +291,15 @@ class EvaluatorTutorAgent:
             f"讲解：{question_payload['explanation']}\n\n"
             f"知识点：{', '.join(question_payload.get('knowledge_tags', []))}"
         )
+        if extra_prompt.strip():
+            feedback = self._feedback_with_extra_prompt(
+                session_id=session_id,
+                question_payload=question_payload,
+                user_answer=user_answer,
+                is_correct=is_correct,
+                base_feedback=feedback,
+                extra_prompt=extra_prompt.strip(),
+            )
         attempt_id = new_id("att")
         self.conn.execute(
             """
@@ -320,6 +336,64 @@ class EvaluatorTutorAgent:
             mastery_delta=score - 0.5,
             next_action="continue",
         )
+
+    def _feedback_with_extra_prompt(
+        self,
+        *,
+        session_id: str,
+        question_payload: dict,
+        user_answer: str,
+        is_correct: bool,
+        base_feedback: str,
+        extra_prompt: str,
+    ) -> str:
+        profile = ProfileService(self.conn).get()
+        pack = self.assembler.assemble(
+            task_type="evaluation",
+            exam_id=profile.exam_id,
+            persona=profile.persona if profile.persona != "custom" else "professional",
+            context_pack={
+                "task_type": TaskType.answer_question.value,
+                "session_id": session_id,
+                "question": {
+                    "id": question_payload.get("id"),
+                    "sequence": question_payload.get("sequence"),
+                    "prompt": question_payload.get("prompt"),
+                    "options": question_payload.get("options", []),
+                    "knowledge_tags": question_payload.get("knowledge_tags", []),
+                },
+                "programmatic_judgement": "correct" if is_correct else "incorrect",
+                "base_feedback": base_feedback,
+            },
+            user_content=(
+                f"用户选择：{user_answer}\n"
+                f"用户额外提问：{extra_prompt}\n\n"
+                "请基于程序判定补充讲解，回答额外提问。不要更改正确答案。"
+            ),
+            allow_global_user_prompt=True,
+        )
+        result = self.provider.complete(pack)
+        self.conn.execute(
+            """
+            INSERT INTO model_calls
+            (id, agent_name, task_type, provider_id, model, prompt_modules_json,
+             input_tokens, output_tokens, latency_ms, validation_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                new_id("call"),
+                self.name,
+                "evaluation_extra_prompt",
+                self.provider.provider_id,
+                result.model,
+                dumps([m["id"] for m in pack.system_modules]),
+                result.input_tokens,
+                result.output_tokens,
+                result.latency_ms,
+                "not_required",
+            ),
+        )
+        return result.content.strip() or base_feedback
 
 
 def token_totals(conn: sqlite3.Connection) -> dict[str, int]:

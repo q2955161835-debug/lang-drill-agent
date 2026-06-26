@@ -32,6 +32,7 @@ export type SessionItem = {
   id: string;
   title: string;
   folder_date: string;
+  exam_id?: string;
   status: string;
 };
 
@@ -47,6 +48,11 @@ export type DailyPanel = {
   };
   questions_total: number;
   questions_done: number;
+  knowledge_total?: number;
+  knowledge_done?: number;
+  knowledge_terms?: string[];
+  exam_id?: string;
+  exam_name?: string;
   accuracy: number;
   summary: string;
 };
@@ -74,4 +80,34 @@ export type TokenUsage = {
   output: number;
   total: number;
   estimated_current_context: number;
+};
+
+export type ExamOption = {
+  id: string;
+  name: string;
+  target_language: string;
+  official_url: string;
+  default_year: number | null;
+  description: string;
+};
+
+export type SyllabusSource = {
+  id: string;
+  exam_id: string;
+  title: string;
+  year: number | null;
+  url: string;
+  local_path: string;
+  trusted_level: string;
+  is_latest_checked: number;
+  checked_at?: string | null;
+};
+
+export type SyllabusStatus = {
+  exam_id: string;
+  current_source_id: string;
+  current_year: number | null;
+  current_title: string;
+  official_url: string;
+  sources: SyllabusSource[];
 };

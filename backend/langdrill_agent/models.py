@@ -39,6 +39,9 @@ class ChatRequest(BaseModel):
     content: str
     session_id: str | None = None
     selected_text: str | None = None
+    selected_option: str | None = None
+    question_id: str | None = None
+    extra_prompt: str = ""
 
 
 class ChatResponse(BaseModel):
@@ -136,3 +139,15 @@ class ScreenshotImportRequest(BaseModel):
 class AnkiExportRequest(BaseModel):
     deck_name: str = "LangDrill::CET4"
 
+
+class SyllabusCheckRequest(BaseModel):
+    exam_id: str
+
+
+class SyllabusSelectRequest(BaseModel):
+    exam_id: str
+    source_id: str
+
+
+class PhoneMirrorStartRequest(BaseModel):
+    device_id: str = ""

@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS study_sessions (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
   folder_date TEXT NOT NULL,
+  exam_id TEXT NOT NULL DEFAULT 'cet4',
   status TEXT NOT NULL DEFAULT 'active',
   daily_plan_json TEXT NOT NULL DEFAULT '{}',
   summary TEXT NOT NULL DEFAULT '',
