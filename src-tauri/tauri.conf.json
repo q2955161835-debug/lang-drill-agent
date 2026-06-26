@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Lang Drill Agent",
+  "version": "0.1.0",
+  "identifier": "com.langdrill.agent",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:5173",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../frontend/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Lang Drill Agent",
+        "width": 1320,
+        "height": 860,
+        "minWidth": 1040,
+        "minHeight": 720
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi"],
+    "category": "Education",
+    "shortDescription": "English learning agent for CET practice",
+    "longDescription": "Lang Drill Agent is a local-first English learning agent with chat, practice questions, Anki sync, and screenshot import workflows."
+  }
+}

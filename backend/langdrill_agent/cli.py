@@ -15,9 +15,9 @@ app = typer.Typer(help="Lang Drill Agent CLI（命令行接口）")
 @app.command()
 def init(
     display_name: str = typer.Option("boss", help="用户称呼"),
-    target_language: str = typer.Option("未设置", help="目标语言"),
-    exam_id: str = typer.Option("unassigned", help="考试 ID（标识符）"),
-    exam_name: str = typer.Option("未设置", help="考试名称"),
+    target_language: str = typer.Option("英语", help="目标语言"),
+    exam_id: str = typer.Option("cet4", help="考试 ID（标识符）"),
+    exam_name: str = typer.Option("大学英语四级", help="考试名称"),
 ) -> None:
     """初始化数据库、用户档案和常见考纲来源。"""
     db_path = init_db()

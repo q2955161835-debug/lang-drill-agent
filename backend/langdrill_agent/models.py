@@ -24,9 +24,9 @@ class TaskType(str, Enum):
 
 class UserProfile(BaseModel):
     display_name: str = "boss"
-    target_language: str = "未设置"
-    exam_id: str = "unassigned"
-    exam_name: str = "未设置"
+    target_language: str = "英语"
+    exam_id: str = "cet4"
+    exam_name: str = "大学英语四级"
     deadline: str | None = None
     daily_minutes: int = 35
     learning_goal: str = ""
@@ -83,9 +83,9 @@ class InitRequest(BaseModel):
     base_url: str = ""
     api_key: str = ""
     display_name: str = "boss"
-    target_language: str = "未设置"
-    exam_id: str = "unassigned"
-    exam_name: str = "未设置"
+    target_language: str = "英语"
+    exam_id: str = "cet4"
+    exam_name: str = "大学英语四级"
     learning_goal: str = ""
     learning_background: str = ""
     search_years: int = Field(default=3, ge=1, le=10)
@@ -119,4 +119,20 @@ class ProfileUpdateRequest(BaseModel):
     persona: str | None = None
     global_user_prompt: str | None = None
     daily_minutes: int | None = None
+
+
+class ComposerRequest(BaseModel):
+    goal: str = ""
+    selected_options: list[str] = Field(default_factory=list)
+    extra_content: str = ""
+
+
+class ScreenshotImportRequest(BaseModel):
+    text: str
+    session_id: str | None = None
+    import_to_session: bool = False
+
+
+class AnkiExportRequest(BaseModel):
+    deck_name: str = "LangDrill::CET4"
 

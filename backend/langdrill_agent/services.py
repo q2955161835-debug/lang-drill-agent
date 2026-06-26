@@ -258,74 +258,22 @@ class SourceService:
 
 
 class ModelConfigService:
+    MOCK_PROVIDER = {
+        "id": "mock",
+        "label": "Mock Provider（本地模拟）",
+        "kind": "mock",
+        "base_url": "",
+        "model": "mock-tutor-v1",
+        "model_options": ["mock-tutor-v1"],
+    }
     PROVIDERS = [
-        {
-            "id": "mock",
-            "label": "Mock Provider（本地模拟）",
-            "kind": "mock",
-            "base_url": "",
-            "model": "mock-tutor-v1",
-            "model_options": ["mock-tutor-v1"],
-        },
-        {
-            "id": "openai",
-            "label": "OpenAI（官方）",
-            "kind": "openai-compatible",
-            "base_url": "https://api.openai.com/v1",
-            "model": "gpt-5.5",
-            "model_options": [
-                "gpt-5.5",
-                "gpt-5.5-mini",
-                "gpt-4o",
-            ],
-        },
         {
             "id": "deepseek",
             "label": "DeepSeek（深度求索）",
             "kind": "openai-compatible",
             "base_url": "https://api.deepseek.com",
-            "model": "deepseek-v4-pro",
-            "model_options": [
-                "deepseek-v4-pro",
-                "deepseek-reasoner",
-                "deepseek-chat",
-            ],
-        },
-        {
-            "id": "qwen",
-            "label": "Qwen（通义千问）",
-            "kind": "openai-compatible",
-            "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-            "model": "qwen3-max",
-            "model_options": [
-                "qwen3-max",
-                "qwen-max",
-                "qwen-plus",
-            ],
-        },
-        {
-            "id": "zhipu",
-            "label": "Zhipu AI（智谱）",
-            "kind": "openai-compatible",
-            "base_url": "https://open.bigmodel.cn/api/paas/v4",
-            "model": "glm-4.5",
-            "model_options": [
-                "glm-4.5",
-                "glm-4-plus",
-                "glm-4-flash",
-            ],
-        },
-        {
-            "id": "moonshot",
-            "label": "Moonshot（月之暗面）",
-            "kind": "openai-compatible",
-            "base_url": "https://api.moonshot.cn/v1",
-            "model": "kimi-k2-turbo-preview",
-            "model_options": [
-                "kimi-k2-turbo-preview",
-                "kimi-k2-thinking",
-                "moonshot-v1-32k",
-            ],
+            "model": "deepseek-chat",
+            "model_options": ["deepseek-chat", "deepseek-reasoner"],
         },
         {
             "id": "mimo",
@@ -333,107 +281,7 @@ class ModelConfigService:
             "kind": "openai-compatible",
             "base_url": "https://api.xiaomimimo.com/v1",
             "model": "mimo-v2.5-pro",
-            "model_options": [
-                "mimo-v2.5-pro",
-                "mimo-v2-pro",
-                "mimo-v2-omni",
-            ],
-        },
-        {
-            "id": "baichuan",
-            "label": "Baichuan（百川智能）",
-            "kind": "openai-compatible",
-            "base_url": "https://api.baichuan-ai.com/v1",
-            "model": "Baichuan4",
-            "model_options": ["Baichuan4", "Baichuan3-Turbo", "Baichuan3-Turbo-128k"],
-        },
-        {
-            "id": "minimax",
-            "label": "MiniMax（稀宇科技）",
-            "kind": "openai-compatible",
-            "base_url": "https://api.minimax.chat/v1",
-            "model": "MiniMax-M2.7",
-            "model_options": [
-                "MiniMax-M2.7",
-                "abab6.5s-chat",
-                "MiniMax-Text-01",
-            ],
-        },
-        {
-            "id": "stepfun",
-            "label": "StepFun（阶跃星辰）",
-            "kind": "openai-compatible",
-            "base_url": "https://api.stepfun.ai/v1",
-            "model": "step-3.5-flash",
-            "model_options": ["step-3.5-flash", "step-2-16k", "step-1-32k"],
-        },
-        {
-            "id": "yi",
-            "label": "Yi（零一万物）",
-            "kind": "openai-compatible",
-            "base_url": "https://api.01.ai/v1",
-            "model": "yi-lightning",
-            "model_options": ["yi-lightning", "yi-large", "yi-medium"],
-        },
-        {
-            "id": "siliconflow",
-            "label": "SiliconFlow（硅基流动）",
-            "kind": "openai-compatible",
-            "base_url": "https://api.siliconflow.cn/v1",
-            "model": "deepseek-ai/DeepSeek-V3",
-            "model_options": [
-                "deepseek-ai/DeepSeek-V3",
-                "deepseek-ai/DeepSeek-R1",
-                "Qwen/Qwen3-32B",
-            ],
-        },
-        {
-            "id": "volcengine",
-            "label": "Volcengine Ark（火山方舟）",
-            "kind": "openai-compatible",
-            "base_url": "https://ark.cn-beijing.volces.com/api/v3",
-            "model": "doubao-1-5-pro-32k",
-            "model_options": [
-                "doubao-1-5-pro-32k",
-                "doubao-1-5-lite-32k",
-                "doubao-seed-2-0-lite-260215",
-            ],
-        },
-        {
-            "id": "tencent",
-            "label": "Tencent Hunyuan（腾讯混元）",
-            "kind": "openai-compatible",
-            "base_url": "https://api.hunyuan.cloud.tencent.com/v1",
-            "model": "hunyuan-turbos-latest",
-            "model_options": [
-                "hunyuan-turbos-latest",
-                "hunyuan-t1-latest",
-                "hunyuan-large",
-            ],
-        },
-        {
-            "id": "baidu",
-            "label": "Baidu Qianfan（百度千帆）",
-            "kind": "openai-compatible",
-            "base_url": "https://qianfan.baidubce.com/v2",
-            "model": "ernie-4.5-turbo",
-            "model_options": [
-                "ernie-4.5-turbo",
-                "ernie-4.0-turbo-8k",
-                "ernie-x1-turbo",
-            ],
-        },
-        {
-            "id": "local",
-            "label": "Local Model（本地模型）",
-            "kind": "openai-compatible",
-            "base_url": "http://localhost:11434/v1",
-            "model": "qwen2.5:7b",
-            "model_options": [
-                "qwen2.5:7b",
-                "deepseek-r1:8b",
-                "llama3.1:8b",
-            ],
+            "model_options": ["mimo-v2.5-pro", "mimo-v2-pro"],
         },
         {
             "id": "custom",
@@ -456,7 +304,9 @@ class ModelConfigService:
         overrides = loads(row_ov["value_json"], {}) if row_ov else {}
         
         base_providers = [dict(p) for p in self.PROVIDERS]
-        all_providers = base_providers[:-2] + customs + base_providers[-2:]
+        builtin = [provider for provider in base_providers if provider["id"] != "custom"]
+        custom_template = next(provider for provider in base_providers if provider["id"] == "custom")
+        all_providers = builtin + customs + [custom_template]
         for p in all_providers:
             ov = overrides.get(p["id"])
             if ov:
@@ -476,13 +326,17 @@ class ModelConfigService:
         ).fetchone()
         config = loads(row["value_json"], {}) if row else {}
         env_values = {**self._read_env(), **self._read_process_env()}
-        provider = self.provider_by_id(
-            config.get("provider_id") or env_values.get("LANGDRILL_DEFAULT_PROVIDER") or "mock"
-        )
+        provider_id = config.get("provider_id") or env_values.get("LANGDRILL_DEFAULT_PROVIDER") or "mock"
+        provider = self.provider_by_id(provider_id)
+        if provider_id == "mock":
+            return {
+                "provider_id": "mock",
+                "base_url": "",
+                "model": config.get("model") or provider.get("model", "mock-tutor-v1"),
+                "has_api_key": False,
+            }
         return {
-            "provider_id": config.get("provider_id")
-            or env_values.get("LANGDRILL_DEFAULT_PROVIDER")
-            or provider["id"],
+            "provider_id": provider_id,
             "base_url": config.get("base_url")
             or env_values.get("LANGDRILL_PROVIDER_BASE_URL")
             or provider.get("base_url", ""),
@@ -494,11 +348,16 @@ class ModelConfigService:
 
     def current_with_secret(self) -> dict[str, Any]:
         config = self.current()
+        if config.get("provider_id") == "mock":
+            config["api_key"] = ""
+            return config
         env_values = {**self._read_env(), **self._read_process_env()}
         config["api_key"] = env_values.get("LANGDRILL_PROVIDER_API_KEY", "")
         return config
 
     def provider_by_id(self, provider_id: str) -> dict[str, Any]:
+        if provider_id == "mock":
+            return dict(self.MOCK_PROVIDER)
         all_providers = self.providers()
         return next((item for item in all_providers if item["id"] == provider_id), all_providers[0])
 
@@ -551,12 +410,10 @@ class ModelConfigService:
         )
         self._write_env(
             {
-                "LANGDRILL_DEFAULT_PROVIDER": "mock",
-                "LANGDRILL_DEFAULT_MODEL": "mock-tutor-v1",
-                "LANGDRILL_PROVIDER_BASE_URL": "",
-                "LANGDRILL_PROVIDER_API_KEY": "",
-            },
-            clear_empty=True,
+                "LANGDRILL_DEFAULT_PROVIDER": "mimo",
+                "LANGDRILL_DEFAULT_MODEL": "mimo-v2.5-pro",
+                "LANGDRILL_PROVIDER_BASE_URL": "https://api.xiaomimimo.com/v1",
+            }
         )
         return self.current()
 
@@ -632,3 +489,12 @@ class ModelConfigService:
         for key in sorted(set(values) - set(ordered_keys)):
             lines.append(f"{key}={values[key]}")
         env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        managed_keys = set(updates)
+        if "LANGDRILL_PROVIDER_API_KEY" in values:
+            managed_keys.add("LANGDRILL_PROVIDER_API_KEY")
+        for key in managed_keys:
+            value = values.get(key, "")
+            if value:
+                os.environ[key] = value
+            elif clear_empty:
+                os.environ.pop(key, None)

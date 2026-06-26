@@ -1,9 +1,9 @@
 CREATE TABLE IF NOT EXISTS user_profiles (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   display_name TEXT NOT NULL DEFAULT 'boss',
-  target_language TEXT NOT NULL DEFAULT '未设置',
-  exam_id TEXT NOT NULL DEFAULT 'unassigned',
-  exam_name TEXT NOT NULL DEFAULT '未设置',
+  target_language TEXT NOT NULL DEFAULT '英语',
+  exam_id TEXT NOT NULL DEFAULT 'cet4',
+  exam_name TEXT NOT NULL DEFAULT '大学英语四级',
   deadline TEXT,
   daily_minutes INTEGER NOT NULL DEFAULT 35,
   learning_goal TEXT NOT NULL DEFAULT '',

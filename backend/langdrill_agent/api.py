@@ -5,19 +5,25 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .agents import EvaluatorTutorAgent, OrchestratorAgent, QuestionAuthorAgent, token_totals
+from .composer import ComposerService
 from .config import load_settings
 from .db import init_db, transaction
+from .integrations_anki import AnkiConnectClient, AnkiConnectError
 from .models import (
     AddCustomProviderRequest,
+    AnkiExportRequest,
     BranchRequest,
     ChatRequest,
     ChatResponse,
+    ComposerRequest,
     InitRequest,
     ModelConfigRequest,
     ProfileUpdateRequest,
+    ScreenshotImportRequest,
     UserProfile,
 )
 from .providers import ModelProvider
+from .screenshot_import import ScreenshotImportService
 from .services import ModelConfigService, ProfileService, QuestionService, SessionService, SourceService
 from .task_router import TaskRouter
 from .utils import new_id
@@ -298,3 +304,54 @@ def update_profile(request: ProfileUpdateRequest) -> dict:
         updated = current.model_copy(update=updates)
         profile_service.update(updated)
         return {"profile": updated.model_dump()}
+
+
+@app.post("/api/composer/next")
+def composer_next(request: ComposerRequest) -> dict:
+    """Build a structured next-round prompt from ABCD selections and extra content."""
+    return ComposerService().next_turn(request.goal, request.selected_options, request.extra_content)
+
+
+@app.get("/api/anki/status")
+def anki_status() -> dict:
+    try:
+        decks = AnkiConnectClient().deck_names()
+        return {"connected": True, "decks": decks}
+    except AnkiConnectError as exc:
+        return {"connected": False, "error": str(exc), "decks": []}
+
+
+@app.post("/api/anki/export")
+def anki_export(request: AnkiExportRequest) -> dict:
+    init_db()
+    with transaction() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, term, reading, meaning, notes, exam_id, mastery_score
+            FROM knowledge_items
+            ORDER BY updated_at DESC
+            LIMIT 200
+            """
+        ).fetchall()
+        items = [dict(row) for row in rows]
+    try:
+        result = AnkiConnectClient().add_notes(request.deck_name, items)
+        return {"ok": True, "deck_name": request.deck_name, "total_candidates": len(items), **result}
+    except AnkiConnectError as exc:
+        return {"ok": False, "deck_name": request.deck_name, "error": str(exc), "total_candidates": len(items)}
+
+
+@app.post("/api/screenshot/parse")
+def screenshot_parse(request: ScreenshotImportRequest) -> dict:
+    parsed = ScreenshotImportService().parse_text(request.text)
+    if not request.import_to_session or not request.session_id:
+        return parsed
+    init_db()
+    with transaction() as conn:
+        SessionService(conn).add_message(
+            request.session_id,
+            "user",
+            f"截图导入文本：\n{parsed['raw_text']}",
+            {"source": "screenshot_import", "parsed": parsed},
+        )
+    return {**parsed, "imported": True}

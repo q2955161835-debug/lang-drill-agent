@@ -40,7 +40,7 @@ def load_settings() -> Settings:
     return Settings(
         db_path=db_path,
         user_name=os.getenv("LANGDRILL_USER_NAME", "boss"),
-        default_provider=os.getenv("LANGDRILL_DEFAULT_PROVIDER", "mock"),
-        default_model=os.getenv("LANGDRILL_DEFAULT_MODEL", "mock-tutor-v1"),
+        default_provider=os.getenv("LANGDRILL_DEFAULT_PROVIDER", "mimo"),
+        default_model=os.getenv("LANGDRILL_DEFAULT_MODEL", "mimo-v2.5-pro"),
         skill_source=skill_source,
     )

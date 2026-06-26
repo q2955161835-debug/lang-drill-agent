@@ -4,8 +4,6 @@ import gsap from "gsap";
 import {
   Brain,
   CaretDown,
-  CaretLeft,
-  CaretRight,
   ChatCircleText,
   CheckCircle,
   GearSix,
@@ -21,6 +19,9 @@ import {
   UserCircle,
   X
 } from "@phosphor-icons/react";
+import { apiGet, apiPost } from "./api";
+import { RightWorkbench } from "./components/RightWorkbench";
+import type { DailyPanel, Message, ModelConfig, Profile, ProviderOption, Question, SessionItem, ThemeMode, TokenUsage } from "./types";
 
 gsap.registerPlugin(useGSAP);
 
@@ -85,78 +86,6 @@ function InteractiveButton({
   );
 }
 
-const API = "";
-
-type Profile = {
-  display_name: string;
-  target_language: string;
-  exam_id: string;
-  exam_name: string;
-  learning_goal: string;
-  learning_background: string;
-  persona: string;
-  global_user_prompt: string;
-};
-
-type ThemeMode = "system" | "light" | "dark";
-
-type ProviderOption = {
-  id: string;
-  label: string;
-  kind: string;
-  base_url: string;
-  model: string;
-  model_options: string[];
-};
-
-type ModelConfig = {
-  provider_id: string;
-  base_url: string;
-  model: string;
-  api_key?: string;
-  has_api_key?: boolean;
-};
-
-type SessionItem = {
-  id: string;
-  title: string;
-  folder_date: string;
-  status: string;
-};
-
-type DailyPanel = {
-  date: string;
-  title: string;
-  status: string;
-  plan: {
-    new_content?: string[];
-    review_content?: string[];
-    target_minutes?: number;
-    status?: string;
-  };
-  questions_total: number;
-  questions_done: number;
-  accuracy: number;
-  summary: string;
-};
-
-type Question = {
-  id: string;
-  sequence: number;
-  type: string;
-  prompt: string;
-  options: string[];
-  answer?: { correct?: string; letter?: string };
-  explanation?: string;
-  knowledge_tags: string[];
-  status: string;
-};
-
-type Message = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-};
 
 const DEFAULT_PANEL: DailyPanel = {
   date: new Date().toISOString().slice(0, 10),
@@ -176,9 +105,9 @@ const DEFAULT_PANEL: DailyPanel = {
 
 const MOCK_PROFILE: Profile = {
   display_name: "boss",
-  target_language: "未设置",
-  exam_id: "unassigned",
-  exam_name: "未设置",
+  target_language: "英语",
+  exam_id: "cet4",
+  exam_name: "大学英语四级",
   learning_goal: "",
   learning_background: "",
   persona: "professional",
@@ -186,21 +115,15 @@ const MOCK_PROFILE: Profile = {
 };
 
 const FALLBACK_PROVIDERS: ProviderOption[] = [
-  { id: "mock", label: "Mock Provider（本地模拟）", kind: "mock", base_url: "", model: "mock-tutor-v1", model_options: ["mock-tutor-v1"] },
-  { id: "openai", label: "OpenAI（官方）", kind: "openai-compatible", base_url: "https://api.openai.com/v1", model: "gpt-5.5", model_options: ["gpt-5.5", "gpt-5.5-mini", "gpt-5.2", "gpt-5.1", "gpt-5", "gpt-5-mini", "gpt-4.1-mini"] },
-  { id: "deepseek", label: "DeepSeek（深度求索）", kind: "openai-compatible", base_url: "https://api.deepseek.com", model: "deepseek-v4-flash", model_options: ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner"] },
-  { id: "qwen", label: "Qwen（通义千问）", kind: "openai-compatible", base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus", model_options: ["qwen-plus", "qwen-turbo", "qwen-max", "qwen3-plus", "qwen3-max"] },
-  { id: "zhipu", label: "Zhipu AI（智谱）", kind: "openai-compatible", base_url: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4-flash", model_options: ["glm-4-flash", "glm-4-plus", "glm-4-air", "glm-4.5"] },
-  { id: "moonshot", label: "Moonshot（月之暗面）", kind: "openai-compatible", base_url: "https://api.moonshot.cn/v1", model: "kimi-k2-turbo-preview", model_options: ["kimi-k2-turbo-preview", "kimi-k2-thinking", "moonshot-v1-8k", "moonshot-v1-32k"] },
-  { id: "mimo", label: "Xiaomi MiMo（小米 MiMo）", kind: "openai-compatible", base_url: "https://api.xiaomimimo.com/v1", model: "mimo-v2.5-pro", model_options: ["mimo-v2.5-pro", "mimo-v2-pro", "mimo-v2-flash", "mimo-v2-omni"] },
-  { id: "local", label: "Local Model（本地模型）", kind: "openai-compatible", base_url: "http://localhost:11434/v1", model: "qwen2.5:7b", model_options: ["qwen2.5:7b", "deepseek-r1:8b", "llama3.1:8b"] },
+  { id: "deepseek", label: "DeepSeek（深度求索）", kind: "openai-compatible", base_url: "https://api.deepseek.com", model: "deepseek-chat", model_options: ["deepseek-chat", "deepseek-reasoner"] },
+  { id: "mimo", label: "Xiaomi MiMo（小米 MiMo）", kind: "openai-compatible", base_url: "https://api.xiaomimimo.com/v1", model: "mimo-v2.5-pro", model_options: ["mimo-v2.5-pro", "mimo-v2-pro"] },
   { id: "custom", label: "Custom OpenAI-compatible（自定义 OpenAI 兼容）", kind: "openai-compatible", base_url: "", model: "", model_options: [] }
 ];
 
 const DEFAULT_MODEL_CONFIG: ModelConfig = {
-  provider_id: "mock",
-  base_url: "",
-  model: "mock-tutor-v1",
+  provider_id: "mimo",
+  base_url: "https://api.xiaomimimo.com/v1",
+  model: "mimo-v2.5-pro",
   has_api_key: false
 };
 
@@ -246,36 +169,6 @@ function groupSessions(sessions: SessionItem[]) {
     acc[session.folder_date].push(session);
     return acc;
   }, {});
-}
-
-async function apiGet<T>(url: string): Promise<T> {
-  const response = await fetch(`${API}${url}`);
-  if (!response.ok) {
-    let msg = `Request failed: ${response.status}`;
-    try {
-      const errData = await response.json();
-      if (errData.detail) msg = typeof errData.detail === 'string' ? errData.detail : JSON.stringify(errData.detail);
-    } catch { /* ignore */ }
-    throw new Error(msg);
-  }
-  return response.json();
-}
-
-async function apiPost<T>(url: string, body: unknown): Promise<T> {
-  const response = await fetch(`${API}${url}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  });
-  if (!response.ok) {
-    let msg = `Request failed: ${response.status}`;
-    try {
-      const errData = await response.json();
-      if (errData.detail) msg = typeof errData.detail === 'string' ? errData.detail : JSON.stringify(errData.detail);
-    } catch { /* ignore */ }
-    throw new Error(msg);
-  }
-  return response.json();
 }
 
 export default function App() {
@@ -539,28 +432,15 @@ export default function App() {
         </div>
       </main>
 
-      <aside className={`right-rail panel-motion ${rightOpen ? "open" : "closed"}`}>
-        <InteractiveButton className="right-toggle" onClick={() => setRightOpen((value) => !value)} title="展开分支对话">
-          {rightOpen ? <CaretRight size={18} /> : <CaretLeft size={18} />}
-        </InteractiveButton>
-        {rightOpen && (
-          <div className="branch-panel">
-            <div className="panel-title">
-              <GitBranch size={18} />
-              <span>分支对话</span>
-            </div>
-            {branchMessages.length === 0 ? (
-              <p className="empty-copy">目前没有分支对话。</p>
-            ) : (
-              branchMessages.map((message) => (
-                <div className={`branch-message ${message.role}`} key={message.id}>
-                  {message.content}
-                </div>
-              ))
-            )}
-          </div>
-        )}
-      </aside>
+      <RightWorkbench
+        open={rightOpen}
+        branchMessages={branchMessages}
+        onToggle={() => setRightOpen((value) => !value)}
+        onSendToChat={(content) => {
+          setInput(content);
+          setRightOpen(false);
+        }}
+      />
 
       {settingsOpen && (
         <SettingsDialog
@@ -637,7 +517,7 @@ function LongTermPanel({ profile, tokenUsage }: { profile: Profile; tokenUsage: 
         <div>
           <span className="kicker">Learning Memory（学习记忆）</span>
           <h1>长期学习记录总面板</h1>
-          <p>{profile.exam_name === "未设置" ? "完成首次设置后，这里会显示目标考试、弱项、复习到期和最近表现。" : `${profile.exam_name} · ${profile.target_language}`}</p>
+          <p>{`${profile.exam_name} · ${profile.target_language}`}</p>
         </div>
         <div className="score-stack">
           <Stat label="Token（令牌）" value={String(tokenUsage.total)} />
@@ -931,9 +811,9 @@ function OnboardingDialog({
     api_key: "",
     model: modelConfig.model || "mock-tutor-v1",
     display_name: profile.display_name,
-    target_language: "日语",
-    exam_id: "cjt4",
-    exam_name: "大学日语四级",
+    target_language: "英语",
+    exam_id: "cet4",
+    exam_name: "大学英语四级",
     learning_goal: "",
     learning_background: "",
     search_years: 3

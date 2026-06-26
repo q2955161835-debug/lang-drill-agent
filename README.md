@@ -105,15 +105,29 @@ npm install
 
 ## 启动
 
-后端：
+Windows 一键启动：
+
+```powershell
+.\start.bat
+```
+
+脚本会自动初始化默认英语/CET-4 档案，分别启动后端 `http://127.0.0.1:8000` 和前端 `http://127.0.0.1:5173`，并打开浏览器。
+
+停止服务：
+
+```powershell
+.\stop.bat
+```
+
+手动启动后端：
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
-py -m langdrill_agent.cli init --display-name boss --target-language 日语 --exam-id cjt4 --exam-name 大学日语四级
+py -m langdrill_agent.cli init --display-name boss --target-language 英语 --exam-id cet4 --exam-name 大学英语四级
 py -m langdrill_agent.cli serve --reload
 ```
 
-前端：
+手动启动前端：
 
 ```powershell
 cd frontend
