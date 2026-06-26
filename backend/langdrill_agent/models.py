@@ -124,20 +124,11 @@ class ProfileUpdateRequest(BaseModel):
     daily_minutes: int | None = None
 
 
-class ComposerRequest(BaseModel):
-    goal: str = ""
-    selected_options: list[str] = Field(default_factory=list)
-    extra_content: str = ""
-
-
 class ScreenshotImportRequest(BaseModel):
     text: str
     session_id: str | None = None
     import_to_session: bool = False
-
-
-class AnkiExportRequest(BaseModel):
-    deck_name: str = "LangDrill::CET4"
+    source_image_path: str = ""
 
 
 class SyllabusCheckRequest(BaseModel):

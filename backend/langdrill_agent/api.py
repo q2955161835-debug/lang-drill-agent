@@ -1,21 +1,22 @@
 from __future__ import annotations
 
+import logging
+import time
+
 from fastapi import FastAPI
+from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .agents import EvaluatorTutorAgent, OrchestratorAgent, QuestionAuthorAgent, token_totals
-from .composer import ComposerService
 from .config import load_settings
 from .db import init_db, transaction
-from .integrations_anki import AnkiConnectClient, AnkiConnectError
+from .logging_config import configure_logging
 from .models import (
     AddCustomProviderRequest,
-    AnkiExportRequest,
     BranchRequest,
     ChatRequest,
     ChatResponse,
-    ComposerRequest,
     InitRequest,
     ModelConfigRequest,
     PhoneMirrorStartRequest,
@@ -41,9 +42,11 @@ from .utils import new_id
 
 
 app = FastAPI(title="Lang Drill Agent API")
+logger = logging.getLogger(__name__)
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
+    logger.exception("unhandled api exception", extra={"path": str(request.url.path)})
     return JSONResponse(
         status_code=400,
         content={"detail": str(exc)},
@@ -58,8 +61,25 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    started = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception("request failed before response", extra={"path": request.url.path})
+        raise
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    logger.info(
+        "api request",
+        extra={"method": request.method, "path": request.url.path, "status": response.status_code, "elapsed_ms": elapsed_ms},
+    )
+    return response
+
+
 @app.on_event("startup")
 def startup() -> None:
+    configure_logging()
     init_db()
 
 
@@ -399,52 +419,37 @@ def phone_mirror_start(request: PhoneMirrorStartRequest) -> dict:
     return PhoneMirrorService().start(request.device_id)
 
 
-@app.post("/api/composer/next")
-def composer_next(request: ComposerRequest) -> dict:
-    """Build a structured next-round prompt from ABCD selections and extra content."""
-    return ComposerService().next_turn(request.goal, request.selected_options, request.extra_content)
-
-
-@app.get("/api/anki/status")
-def anki_status() -> dict:
-    try:
-        decks = AnkiConnectClient().deck_names()
-        return {"connected": True, "decks": decks}
-    except AnkiConnectError as exc:
-        return {"connected": False, "error": str(exc), "decks": []}
-
-
-@app.post("/api/anki/export")
-def anki_export(request: AnkiExportRequest) -> dict:
-    init_db()
-    with transaction() as conn:
-        rows = conn.execute(
-            """
-            SELECT id, term, reading, meaning, notes, exam_id, mastery_score
-            FROM knowledge_items
-            ORDER BY updated_at DESC
-            LIMIT 200
-            """
-        ).fetchall()
-        items = [dict(row) for row in rows]
-    try:
-        result = AnkiConnectClient().add_notes(request.deck_name, items)
-        return {"ok": True, "deck_name": request.deck_name, "total_candidates": len(items), **result}
-    except AnkiConnectError as exc:
-        return {"ok": False, "deck_name": request.deck_name, "error": str(exc), "total_candidates": len(items)}
-
-
 @app.post("/api/screenshot/parse")
 def screenshot_parse(request: ScreenshotImportRequest) -> dict:
-    parsed = ScreenshotImportService().parse_text(request.text)
+    service = ScreenshotImportService()
+    parsed = service.parse_text(request.text, request.source_image_path)
     if not request.import_to_session or not request.session_id:
         return parsed
     init_db()
     with transaction() as conn:
-        SessionService(conn).add_message(
+        profile = ProfileService(conn).get()
+        imported_count = service.import_words(
+            conn,
+            session_id=request.session_id,
+            parsed=parsed,
+            exam_id=profile.exam_id,
+            source_image_path=request.source_image_path,
+        )
+        msg_id = SessionService(conn).add_message(
             request.session_id,
             "user",
             f"截图导入文本：\n{parsed['raw_text']}",
-            {"source": "screenshot_import", "parsed": parsed},
+            {
+                "source": "screenshot_import",
+                "parsed": parsed,
+                "imported_count": imported_count,
+                "source_image_path": request.source_image_path,
+            },
         )
-    return {**parsed, "imported": True}
+        return {
+            **parsed,
+            "imported": True,
+            "imported_count": imported_count,
+            "message_id": msg_id,
+            "daily_panel": SessionService(conn).daily_panel(request.session_id),
+        }

@@ -1,20 +1,32 @@
 from __future__ import annotations
 
 import sqlite3
+import shutil
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
 from .config import PROJECT_ROOT, load_settings
+import logging
 
 
 SCHEMA_PATH = Path(__file__).resolve().parent / "migrations" / "001_initial.sql"
+logger = logging.getLogger(__name__)
 
 
-def connect(db_path: Path | None = None) -> sqlite3.Connection:
+def prepare_user_database_path(db_path: Path | None = None) -> Path:
     settings = load_settings()
     target = db_path or settings.db_path
     target.parent.mkdir(parents=True, exist_ok=True)
+    legacy_default = PROJECT_ROOT / "data" / "langdrill_agent.db"
+    if db_path is None and target == settings.db_path and legacy_default.exists() and not target.exists():
+        shutil.copy2(legacy_default, target)
+        logger.info("copied legacy project database to user data directory", extra={"target": str(target)})
+    return target
+
+
+def connect(db_path: Path | None = None) -> sqlite3.Connection:
+    target = prepare_user_database_path(db_path)
     conn = sqlite3.connect(target, isolation_level=None)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
@@ -36,12 +48,12 @@ def transaction(db_path: Path | None = None) -> Iterator[sqlite3.Connection]:
 
 
 def init_db(db_path: Path | None = None) -> Path:
-    settings = load_settings()
-    target = db_path or settings.db_path
+    target = prepare_user_database_path(db_path)
     with transaction(target) as conn:
         conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
         ensure_schema_columns(conn)
         seed_prompt_modules(conn)
+    logger.info("initialized database", extra={"db_path": str(target)})
     return target
 
 

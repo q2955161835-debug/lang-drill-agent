@@ -246,7 +246,7 @@ class SessionService:
         return merged
 
     def _knowledge_progress(self, date: str, exam_id: str) -> dict[str, Any]:
-        rows = self.conn.execute(
+        question_rows = self.conn.execute(
             """
             SELECT q.knowledge_tags_json, q.status
             FROM questions q
@@ -257,11 +257,26 @@ class SessionService:
         ).fetchall()
         all_tags: list[str] = []
         answered_tags: list[str] = []
-        for row in rows:
+        for row in question_rows:
             tags = [str(tag) for tag in loads(row["knowledge_tags_json"], []) if str(tag).strip()]
             all_tags.extend(tags)
             if row["status"] == "answered":
                 answered_tags.extend(tags)
+        imported_rows = self.conn.execute(
+            """
+            SELECT term, mastery_score
+            FROM knowledge_items
+            WHERE exam_id=? AND DATE(created_at)=?
+            """,
+            (exam_id, date),
+        ).fetchall()
+        for row in imported_rows:
+            term = str(row["term"]).strip()
+            if not term:
+                continue
+            all_tags.append(term)
+            if float(row["mastery_score"] or 0) >= 0.75:
+                answered_tags.append(term)
         unique_all = sorted(set(all_tags))
         unique_done = sorted(set(answered_tags))
         return {
@@ -799,7 +814,9 @@ class ModelConfigService:
         else:
             values.update({key: value for key, value in updates.items() if value != ""})
         ordered_keys = [
+            "LANGDRILL_USER_DATA_DIR",
             "LANGDRILL_DB_PATH",
+            "LANGDRILL_LOG_LEVEL",
             "LANGDRILL_USER_NAME",
             "LANGDRILL_DEFAULT_PROVIDER",
             "LANGDRILL_DEFAULT_MODEL",

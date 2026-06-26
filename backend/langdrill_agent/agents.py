@@ -2,14 +2,18 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import datetime
+import logging
 
-from .algorithm import MasteryInputs, mastery_score
+from .algorithm import MasteryInputs, mastery_score, next_review_at
 from .models import EvaluationResult, Question, TaskType
 from .prompt_engine import PromptAssembler, PromptRegistry
 from .providers import ModelProvider
 from .services import ProfileService, QuestionService, SessionService
 from .utils import dumps, estimate_tokens, new_id
 from .validator import QuestionValidator
+
+
+logger = logging.getLogger(__name__)
 
 
 class OrchestratorAgent:
@@ -150,14 +154,14 @@ class QuestionAuthorAgent:
         question = self._try_parse_model_output(result.content, session_id, next_seq)
         if question is None:
             # 解析失败或 mock provider 时使用 fallback
-            question = self._fallback_question(session_id, profile.exam_name, next_seq)
+            question = self._fallback_question(session_id, profile.exam_name, next_seq, profile.exam_id)
 
         validation_status = "passed"
         try:
             self.validator.validate(question)
         except Exception:
             # 校验失败，用 fallback 替代
-            question = self._fallback_question(session_id, profile.exam_name, next_seq)
+            question = self._fallback_question(session_id, profile.exam_name, next_seq, profile.exam_id)
             validation_status = "fallback_after_validation_failure"
 
         self._save_question(question)
@@ -198,7 +202,38 @@ class QuestionAuthorAgent:
         except Exception:
             return None
 
-    def _fallback_question(self, session_id: str, exam_name: str, sequence: int = 1) -> Question:
+    def _fallback_question(
+        self,
+        session_id: str,
+        exam_name: str,
+        sequence: int = 1,
+        exam_id: str = "cet4",
+    ) -> Question:
+        imported_word = self._first_imported_word(exam_id)
+        if imported_word:
+            term = imported_word["term"]
+            meaning = imported_word["meaning"] or "该单词的截图导入释义"
+            distractors = self._meaning_distractors(exam_id, term)
+            options = [meaning, *distractors][:4]
+            while len(options) < 4:
+                options.append(["不相关的抽象概念", "表示时间顺序", "一种语法连接词"][len(options) - 1])
+            logger.info("using imported vocabulary fallback question", extra={"term": term, "exam_id": exam_id})
+            return Question(
+                id=new_id("q"),
+                session_id=session_id,
+                sequence=sequence,
+                type="multiple_choice",
+                prompt=(
+                    f"第 {sequence} 题 / 共 5 题\n"
+                    f"根据导入的单词列表，选择 “{term}” 最贴近的中文释义。"
+                ),
+                options=options,
+                answer={"correct": meaning, "letter": "A"},
+                explanation=f"`{term}` 的截图导入释义是：{meaning}",
+                knowledge_tags=[f"vocabulary:{term}"],
+                difficulty=0.35,
+                source_refs=[{"type": "user_import", "boundary": "practice_only", "term": term}],
+            )
         return Question(
             id=new_id("q"),
             session_id=session_id,
@@ -212,6 +247,32 @@ class QuestionAuthorAgent:
             difficulty=0.35,
             source_refs=[{"type": "generated", "boundary": "practice_only"}],
         )
+
+    def _first_imported_word(self, exam_id: str) -> dict[str, str] | None:
+        row = self.conn.execute(
+            """
+            SELECT term, meaning
+            FROM knowledge_items
+            WHERE exam_id=? AND source_scope='screenshot_import'
+            ORDER BY mastery_score ASC, updated_at ASC
+            LIMIT 1
+            """,
+            (exam_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def _meaning_distractors(self, exam_id: str, correct_term: str) -> list[str]:
+        rows = self.conn.execute(
+            """
+            SELECT meaning
+            FROM knowledge_items
+            WHERE exam_id=? AND term<>? AND meaning<>''
+            ORDER BY updated_at ASC
+            LIMIT 3
+            """,
+            (exam_id, correct_term),
+        ).fetchall()
+        return [row["meaning"] for row in rows]
 
     def _save_question(self, question: Question) -> None:
         QuestionService(self.conn).save_question(question)
@@ -330,12 +391,36 @@ class EvaluatorTutorAgent:
                 dumps({"score_after": score, "created_from": "evaluator_tutor"}),
             ),
         )
+        self._update_knowledge_mastery(question_payload, score)
         return EvaluationResult(
             is_correct=is_correct,
             feedback=feedback,
             mastery_delta=score - 0.5,
             next_action="continue",
         )
+
+    def _update_knowledge_mastery(self, question_payload: dict, score: float) -> None:
+        due_at = next_review_at(score).isoformat(timespec="seconds")
+        for tag in question_payload.get("knowledge_tags", []):
+            term = str(tag).split(":", 1)[-1].strip()
+            if not term:
+                continue
+            rows = self.conn.execute(
+                """
+                SELECT id FROM knowledge_items
+                WHERE term=? OR term=?
+                """,
+                (term, tag),
+            ).fetchall()
+            for row in rows:
+                self.conn.execute(
+                    """
+                    UPDATE knowledge_items
+                    SET mastery_score=?, due_at=?, updated_at=CURRENT_TIMESTAMP
+                    WHERE id=?
+                    """,
+                    (score, due_at, row["id"]),
+                )
 
     def _feedback_with_extra_prompt(
         self,

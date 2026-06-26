@@ -9,6 +9,7 @@ import {
   MicrophoneStage,
 } from "@phosphor-icons/react";
 import type { Message } from "../types";
+import type { DailyPanel } from "../types";
 import { apiGet, apiPost } from "../api";
 
 type WorkbenchTab = "branch" | "mirror" | "screenshot" | "voice";
@@ -16,8 +17,10 @@ type WorkbenchTab = "branch" | "mirror" | "screenshot" | "voice";
 type RightWorkbenchProps = {
   open: boolean;
   branchMessages: Message[];
+  sessionId: string | null;
   onToggle: () => void;
   onSendToChat: (content: string) => void;
+  onDailyPanelChange: (panel: DailyPanel) => void;
 };
 
 const tabs: Array<{ id: WorkbenchTab; label: string; icon: typeof GitBranch; disabled?: boolean }> = [
@@ -37,7 +40,7 @@ type PhoneMirrorStatus = {
   recommended_project?: { name: string; url: string; reason: string };
 };
 
-export function RightWorkbench({ open, branchMessages, onToggle, onSendToChat }: RightWorkbenchProps) {
+export function RightWorkbench({ open, branchMessages, sessionId, onToggle, onSendToChat, onDailyPanelChange }: RightWorkbenchProps) {
   const [activeTab, setActiveTab] = useState<WorkbenchTab>("branch");
 
   return (
@@ -75,7 +78,13 @@ export function RightWorkbench({ open, branchMessages, onToggle, onSendToChat }:
 
           {activeTab === "branch" && <BranchPanel branchMessages={branchMessages} />}
           {activeTab === "mirror" && <PhoneMirrorPanel />}
-          {activeTab === "screenshot" && <ScreenshotImportPanel onSendToChat={onSendToChat} />}
+          {activeTab === "screenshot" && (
+            <ScreenshotImportPanel
+              sessionId={sessionId}
+              onSendToChat={onSendToChat}
+              onDailyPanelChange={onDailyPanelChange}
+            />
+          )}
           {activeTab === "voice" && <ComingPanel title="语音与听力" body="本阶段只预留入口，后续可接入 Whisper 或 Web Speech API。" />}
         </div>
       )}
@@ -146,12 +155,39 @@ function PhoneMirrorPanel() {
   );
 }
 
-function ScreenshotImportPanel({ onSendToChat }: { onSendToChat: (content: string) => void }) {
+type ParsedScreenshot = {
+  prompt: string;
+  options: string[];
+  confidence: string;
+  raw_text: string;
+  words?: Array<{ term: string; meaning: string }>;
+  imported_count?: number;
+  daily_panel?: DailyPanel;
+};
+
+function ScreenshotImportPanel({
+  sessionId,
+  onSendToChat,
+  onDailyPanelChange,
+}: {
+  sessionId: string | null;
+  onSendToChat: (content: string) => void;
+  onDailyPanelChange: (panel: DailyPanel) => void;
+}) {
   const [text, setText] = useState("");
-  const [parsed, setParsed] = useState<{ prompt: string; options: string[]; confidence: string; raw_text: string } | null>(null);
-  const parse = async () => {
-    const data = await apiPost<{ prompt: string; options: string[]; confidence: string; raw_text: string }>("/api/screenshot/parse", { text });
+  const [imagePath, setImagePath] = useState("");
+  const [parsed, setParsed] = useState<ParsedScreenshot | null>(null);
+  const [status, setStatus] = useState("粘贴 OCR（文字识别）文本后可解析；有当前会话时可直接导入单词。");
+  const parse = async (importToSession: boolean) => {
+    const data = await apiPost<ParsedScreenshot>("/api/screenshot/parse", {
+      text,
+      session_id: sessionId,
+      import_to_session: importToSession && Boolean(sessionId),
+      source_image_path: imagePath,
+    });
     setParsed(data);
+    if (data.daily_panel) onDailyPanelChange(data.daily_panel);
+    setStatus(importToSession ? `已导入 ${data.imported_count || 0} 个单词。` : `已解析 ${data.words?.length || 0} 个单词。`);
   };
   const composed = parsed ? `请根据以下截图导入内容生成一道英语练习题：\n\n题干：${parsed.prompt}\n选项：${parsed.options.join(" / ")}\n\n请先确认题意，再给出适合 CET-4 的练习。` : "";
   return (
@@ -159,12 +195,18 @@ function ScreenshotImportPanel({ onSendToChat }: { onSendToChat: (content: strin
       <span className="eyebrow">Screenshot（截图）</span>
       <h3>截图导入</h3>
       <p>截图导入会配合手机映像使用：先把手机画面投到电脑，再粘贴 OCR（文字识别）文本或后续接入本地截图识别。</p>
+      <label>源图片路径<input value={imagePath} onChange={(event) => setImagePath(event.target.value)} placeholder="可选，例如 D:/.../word-list.png" /></label>
       <label>截图识别文本<textarea value={text} onChange={(event) => setText(event.target.value)} placeholder="粘贴题目文本，例如：...\nA. ...\nB. ..." /></label>
-      <button className="workbench-primary" onClick={() => void parse()} disabled={!text.trim()}>解析文本</button>
+      <div className="workbench-actions">
+        <button className="workbench-primary" onClick={() => void parse(false)} disabled={!text.trim()}>解析文本</button>
+        <button onClick={() => void parse(true)} disabled={!text.trim() || !sessionId}>导入当前会话</button>
+      </div>
+      <p className="status-line">{status}</p>
       {parsed && (
         <div className="preview-card">
           <p>识别类型：{parsed.confidence}</p>
           <strong>{parsed.prompt}</strong>
+          {parsed.words?.slice(0, 10).map((word) => <span key={word.term}>{word.term}：{word.meaning}</span>)}
           {parsed.options.map((option, index) => <span key={option}>{String.fromCharCode(65 + index)}. {option}</span>)}
           <button className="workbench-primary" onClick={() => onSendToChat(composed)}>发送到主聊天</button>
         </div>

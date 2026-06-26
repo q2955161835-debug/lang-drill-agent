@@ -11,6 +11,7 @@ frontend/dist/
 frontend/*.tsbuildinfo
 data/*.db
 data/*.db-*
+data_backups/
 backend/*.db
 backend/*.db-*
 try/*.db

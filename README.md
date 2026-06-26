@@ -26,6 +26,7 @@ Lang Drill Agent（语言学习训练 Agent）不是单一巨型 prompt（提示
 - 结构化出题：Question Author（出题 Agent）按今日学习内容、复习内容、考纲规则和真题风格生成题目。
 - 判题讲解：Evaluator Tutor（判题讲解 Agent）负责复杂题型判分、错误诊断、讲解、错题归因和当日总结。
 - 分支对话：拖选文本后开启右侧分支小窗，共享必要主上下文，默认不写回主会话，可选择合并为注释、错题解释、复习卡片或学习背景更新。
+- 手机映像与截图导入：右侧工作台预留 scrcpy（开源手机映像工具）/adb（安卓调试桥）手机操控链路，并支持把手机背词截图的 OCR（文字识别）文本导入为知识项。
 - 题目吸附显示：当前正在回答的题目在聊天滚动时保持可见，避免题目被滑走。
 - 模型供应商配置：支持 Mock（本地模拟）、OpenAI-compatible（OpenAI 兼容）、国内常见供应商、本地模型和自定义 Base URL（基础网址）/API Key（接口密钥）/模型名称。
 - 学习算法基础：内置 `mastery_score V1`（掌握度 V1），预留 FSRS（Free Spaced Repetition Scheduler，免费间隔重复调度器）接入点。
@@ -73,6 +74,7 @@ Web（网页）前端包含三个主区域：
 - 左侧模块：当日学习面板、按日期分组的会话列表、可折叠侧边栏和左下角设置入口。
 - 中间模块：主聊天界面、长期学习总面板、题目框、聊天栏和题目吸附显示。
 - 右侧模块：分支对话界面，默认折叠，未创建分支时显示“目前没有分支对话”。
+- 右侧工作台：包含分支、手机映像、截图导入和语音预留；旧组词器和 Anki（记忆卡工具）导出已归档，不再进入运行路径。
 
 设置面板包含：
 
@@ -89,6 +91,8 @@ CLI（命令行接口）适合脚本化、终端工作流和快速调试：
 
 ```powershell
 py -m langdrill_agent.cli status
+py -m langdrill_agent.cli data-paths
+py -m langdrill_agent.cli backup-user-data
 py -m langdrill_agent.cli chat "今天学习まで、から和に的区别"
 py -m langdrill_agent.cli import-skill --source "D:\1Folder\语言学习-lang-drill\语言学习-lang-drill-skill"
 ```
@@ -163,6 +167,9 @@ npm run dev
 - 用户自定义全局提示词为低优先级，必要时可关闭。
 - 安全规则总是注入；个性化人格仅在聊天和总结任务中注入。
 - 长期学习记录只以摘要、统计和相关检索片段形式进入 prompt（提示词）。
+- 默认用户状态写入当前系统用户主目录下的 `.langdrill-agent` 点目录；历史 `data/langdrill_agent.db` 只作为迁移来源，不再是默认正式状态库。
+- 清空重测前可运行 `py -m langdrill_agent.cli backup-user-data`，把点目录数据备份到项目内 `data_backups/`；该目录不提交。
+- 后端日志默认写入 `~/.langdrill-agent/logs/langdrill-agent.log`，用于定位 API（接口）、模型、截图导入和数据库问题。
 - 真题和考纲必须保留来源、年份、可信等级和版权边界。
 - 来源不明或版权不清的完整真题不作为默认发布资产，只做索引与风格参考。
 
@@ -172,6 +179,7 @@ npm run dev
 backend/langdrill_agent/        共享后端内核、API（接口）、CLI（命令行接口）、服务层和 Agent（智能体）
 backend/langdrill_agent/migrations/ SQLite（轻量数据库）schema（结构定义）
 frontend/                       React（前端框架）+ Vite（前端构建工具）网页前端
+archive/optimized-out/          已下线旧功能模块归档
 doc/                            架构说明、项目地图、进展记录和 README（说明文档）资源
 doc/assets/                     README（说明文档）海报等展示资源
 try/                            测试和调试文件，可清理
@@ -182,6 +190,7 @@ try/                            测试和调试文件，可清理
 ```powershell
 py -m ruff check backend try
 py -m pytest try
+py try\full_chain_smoke.py
 cd frontend
 npm run build
 ```

@@ -610,11 +610,13 @@ export default function App() {
       <RightWorkbench
         open={rightOpen}
         branchMessages={branchMessages}
+        sessionId={activeSessionId}
         onToggle={() => setRightOpen((value) => !value)}
         onSendToChat={(content) => {
           setInput(content);
           setRightOpen(false);
         }}
+        onDailyPanelChange={setDailyPanel}
       />
 
       {settingsOpen && (
