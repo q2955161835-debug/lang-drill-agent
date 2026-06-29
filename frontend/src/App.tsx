@@ -27,6 +27,7 @@ import type {
   ExamOption,
   Message,
   ModelConfig,
+  ModelOption,
   Profile,
   ProviderOption,
   Question,
@@ -146,22 +147,23 @@ const MOCK_PROFILE: Profile = {
 };
 
 const FALLBACK_PROVIDERS: ProviderOption[] = [
-  { id: "deepseek", label: "DeepSeek（深度求索）", kind: "openai-compatible", base_url: "https://api.deepseek.com", model: "deepseek-chat", model_options: ["deepseek-chat", "deepseek-reasoner"] },
-  { id: "mimo", label: "Xiaomi MiMo（小米 MiMo）", kind: "openai-compatible", base_url: "https://api.xiaomimimo.com/v1", model: "mimo-v2.5-pro", model_options: ["mimo-v2.5-pro", "mimo-v2-pro"] },
-  { id: "custom", label: "Custom OpenAI-compatible（自定义 OpenAI 兼容）", kind: "openai-compatible", base_url: "", model: "", model_options: [] }
+  { id: "openai", label: "OpenAI GPT（OpenAI GPT）", kind: "openai-compatible", api_format: "openai-chat-completions", api_key_required: true, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "https://api.openai.com/v1", model: "gpt-5.5", model_options: ["gpt-5.5", "gpt-5.4"] },
+  { id: "claude", label: "Claude（Claude）", kind: "anthropic", api_format: "anthropic-messages", api_key_required: true, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "https://api.anthropic.com", model: "claude-sonnet-4.7", model_options: ["claude-sonnet-4.7", "claude-opus-4.7"] },
+  { id: "deepseek", label: "DeepSeek（深度求索）", kind: "openai-compatible", api_format: "openai-chat-completions", api_key_required: true, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "https://api.deepseek.com", model: "deepseek-v4-pro", model_options: ["deepseek-v4-pro", "deepseek-v4-flash"] },
+  { id: "mimo", label: "Xiaomi MiMo（小米 MiMo）", kind: "anthropic", api_format: "anthropic-messages", api_key_required: true, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "https://api.xiaomimimo.com/anthropic", model: "mimo-v2.5-pro", model_options: ["mimo-v2.5", "mimo-v2.5-pro"] },
+  { id: "mock", label: "Mock Provider（本地模拟）", kind: "mock", api_format: "mock", api_key_required: false, enabled: true, has_api_key: false, visible_in_picker: true, base_url: "", model: "mock-tutor-v1", model_options: ["mock-tutor-v1"] }
 ];
 
 const DEFAULT_MODEL_CONFIG: ModelConfig = {
   provider_id: "mimo",
-  base_url: "https://api.xiaomimimo.com/v1",
+  base_url: "https://api.xiaomimimo.com/anthropic",
   model: "mimo-v2.5-pro",
-  thinking_level: "auto",
+  thinking_level: "enabled",
   thinking_level_options: [
-    { id: "auto", label: "自动", api_value: "" },
-    { id: "low", label: "低", api_value: "low" },
-    { id: "medium", label: "中", api_value: "medium" },
-    { id: "high", label: "高", api_value: "high" }
+    { id: "off", label: "关闭", api_value: "" },
+    { id: "enabled", label: "开启", api_value: "enabled" }
   ],
+  api_format: "anthropic-messages",
   has_api_key: false
 };
 
@@ -234,40 +236,86 @@ function cleanQuestionPrompt(question: Question) {
 }
 
 function selectedProvider(providers: ProviderOption[], providerId: string) {
-  return providers.find((item) => item.id === providerId) || FALLBACK_PROVIDERS[0];
+  return providers.find((item) => item.id === providerId)
+    || FALLBACK_PROVIDERS.find((item) => item.id === providerId)
+    || providers[0]
+    || FALLBACK_PROVIDERS[0];
 }
 
-function uniqueModelOptions(provider: ProviderOption, currentModel: string) {
-  return Array.from(new Set([...(provider.model_options || []), provider.model, currentModel].filter(Boolean)));
+function modelOptionLabel(option: ModelOption) {
+  return typeof option === "string" ? option : option.label || option.id;
+}
+
+function normalizedModelOption(option: ModelOption): Exclude<ModelOption, string> {
+  if (typeof option === "string") {
+    return { id: option, label: option };
+  }
+  return option;
+}
+
+function modelOptionsFor(provider: ProviderOption, currentModel: string) {
+  const options = [...(provider.model_options || [])].map(normalizedModelOption);
+  const seen = new Set(options.map((option) => option.id));
+  for (const model of [provider.model, currentModel]) {
+    if (model && !seen.has(model)) {
+      options.push({ id: model, label: model });
+      seen.add(model);
+    }
+  }
+  return options;
+}
+
+function thinkingOptionsForModel(provider: ProviderOption, modelId: string) {
+  const model = modelOptionsFor(provider, modelId).find((option) => option.id === modelId);
+  return model?.reasoning?.levels || [];
+}
+
+function defaultThinkingLevelForModel(provider: ProviderOption, modelId: string) {
+  const model = modelOptionsFor(provider, modelId).find((option) => option.id === modelId);
+  return model?.reasoning?.default_level || model?.reasoning?.levels?.[0]?.id || "";
+}
+
+function pickerProviders(providers: ProviderOption[]) {
+  const visible = providers.filter((provider) => provider.visible_in_picker || provider.id === "mock");
+  if (visible.length) return visible;
+  const mock = providers.find((provider) => provider.id === "mock") || FALLBACK_PROVIDERS.find((provider) => provider.id === "mock");
+  return mock ? [mock] : providers;
 }
 
 function normalizeProviders(providers: ProviderOption[] | undefined) {
   if (!providers?.length) return FALLBACK_PROVIDERS;
-  return providers.map((provider) => ({
+  const normalized: ProviderOption[] = providers.map((provider) => ({
     ...(FALLBACK_PROVIDERS.find((item) => item.id === provider.id) || {}),
     ...provider,
     base_url: provider.base_url || FALLBACK_PROVIDERS.find((item) => item.id === provider.id)?.base_url || "",
     model: provider.model || FALLBACK_PROVIDERS.find((item) => item.id === provider.id)?.model || "",
     model_options: provider.model_options?.length
       ? provider.model_options
-      : FALLBACK_PROVIDERS.find((item) => item.id === provider.id)?.model_options || [provider.model].filter(Boolean)
+      : FALLBACK_PROVIDERS.find((item) => item.id === provider.id)?.model_options || [provider.model].filter(Boolean),
+    enabled: provider.enabled ?? true,
+    has_api_key: provider.has_api_key ?? false,
+    visible_in_picker: provider.visible_in_picker ?? provider.id === "mock"
   }));
+  if (!normalized.some((provider) => provider.id === "mock")) {
+    normalized.push(FALLBACK_PROVIDERS.find((provider) => provider.id === "mock") as ProviderOption);
+  }
+  return normalized;
 }
 
 function normalizeModelConfig(config: ModelConfig | undefined) {
+  if (!config) return DEFAULT_MODEL_CONFIG;
   return {
     ...DEFAULT_MODEL_CONFIG,
-    ...(config || {}),
-    thinking_level: (config?.thinking_level || DEFAULT_MODEL_CONFIG.thinking_level) as ThinkingLevel,
-    thinking_level_options: config?.thinking_level_options?.length
-      ? config.thinking_level_options
-      : DEFAULT_MODEL_CONFIG.thinking_level_options
+    ...config,
+    thinking_level: (config.thinking_level || "") as ThinkingLevel,
+    thinking_level_options: config.thinking_level_options || []
   };
 }
 
 function thinkingLevelLabel(config: ModelConfig) {
-  const current = config.thinking_level || "auto";
-  return config.thinking_level_options?.find((item) => item.id === current)?.label || "自动";
+  const current = config.thinking_level || "";
+  if (!current) return "未配置";
+  return config.thinking_level_options?.find((item) => item.id === current)?.label || current;
 }
 
 const personalityOptions = [
@@ -317,6 +365,19 @@ export default function App() {
 
   const sessionsByDate = useMemo(() => groupSessions(sessions), [sessions]);
   const emptyContext = messages.length === 0;
+  const quickProviders = pickerProviders(providers);
+  const quickProviderId = quickProviders.some((provider) => provider.id === modelConfig.provider_id)
+    ? modelConfig.provider_id
+    : quickProviders[0]?.id || modelConfig.provider_id;
+  const quickProvider = selectedProvider(quickProviders, quickProviderId);
+  const quickCurrentModel = quickProvider.id === modelConfig.provider_id ? modelConfig.model : quickProvider.model;
+  const quickModelOptions = modelOptionsFor(quickProvider, quickCurrentModel);
+  const quickThinkingOptions = quickProvider.id === modelConfig.provider_id
+    ? modelConfig.thinking_level_options || []
+    : thinkingOptionsForModel(quickProvider, quickCurrentModel);
+  const quickThinkingLevel = quickProvider.id === modelConfig.provider_id
+    ? modelConfig.thinking_level || ""
+    : defaultThinkingLevelForModel(quickProvider, quickCurrentModel);
 
   useGSAP(
     () => {
@@ -513,7 +574,9 @@ export default function App() {
       provider_id: nextConfig.provider_id,
       base_url: nextConfig.base_url,
       model: nextConfig.model,
-      thinking_level: nextConfig.thinking_level || "auto"
+      thinking_level: nextConfig.thinking_level || "",
+      thinking_level_options: nextConfig.thinking_level_options || [],
+      api_format: nextConfig.api_format || ""
     });
     setModelConfig(normalizeModelConfig(data.model_config));
     if (data.providers) {
@@ -633,42 +696,60 @@ export default function App() {
           )}
           <div className="chat-config-bar" aria-label="聊天模型快捷配置">
             <select
-              value={modelConfig.provider_id}
+              value={quickProviderId}
               onChange={(event) => {
-                const nextProvider = selectedProvider(providers, event.target.value);
-                const nextModel = nextProvider.model_options?.[0] || nextProvider.model || "";
+                const nextProvider = selectedProvider(quickProviders, event.target.value);
+                const nextModel = modelOptionsFor(nextProvider, nextProvider.model)[0]?.id || nextProvider.model || "";
                 void saveQuickModelConfig({
                   ...modelConfig,
                   provider_id: nextProvider.id,
                   base_url: nextProvider.base_url,
-                  model: nextModel
+                  model: nextModel,
+                  api_format: nextProvider.api_format,
+                  thinking_level: defaultThinkingLevelForModel(nextProvider, nextModel)
                 });
               }}
               title="模型供应商"
             >
-              {providers.map((provider) => (
+              {quickProviders.map((provider) => (
                 <option key={provider.id} value={provider.id}>{provider.label}</option>
               ))}
             </select>
             <select
-              value={modelConfig.model}
-              onChange={(event) => void saveQuickModelConfig({ ...modelConfig, model: event.target.value })}
+              value={quickCurrentModel}
+              onChange={(event) => void saveQuickModelConfig({
+                ...modelConfig,
+                provider_id: quickProvider.id,
+                base_url: quickProvider.base_url,
+                api_format: quickProvider.api_format,
+                model: event.target.value,
+                thinking_level: defaultThinkingLevelForModel(quickProvider, event.target.value)
+              })}
               title="模型"
             >
-              {uniqueModelOptions(selectedProvider(providers, modelConfig.provider_id), modelConfig.model).map((model) => (
-                <option key={model} value={model}>{model}</option>
+              {quickModelOptions.map((model) => (
+                <option key={model.id} value={model.id}>{modelOptionLabel(model)}</option>
               ))}
             </select>
-            <select
-              value={modelConfig.thinking_level || "auto"}
-              onChange={(event) => void saveQuickModelConfig({ ...modelConfig, thinking_level: event.target.value as ThinkingLevel })}
-              title="思考等级"
-            >
-              {(modelConfig.thinking_level_options || DEFAULT_MODEL_CONFIG.thinking_level_options || []).map((option) => (
-                <option key={option.id} value={option.id}>思考：{option.label}</option>
-              ))}
-            </select>
-            <span title="不同模型会自动适配 API 参数或提示词控制">当前：{thinkingLevelLabel(modelConfig)}</span>
+            {quickThinkingOptions.length > 0 && (
+              <select
+                value={quickThinkingLevel}
+                onChange={(event) => void saveQuickModelConfig({
+                  ...modelConfig,
+                  provider_id: quickProvider.id,
+                  base_url: quickProvider.base_url,
+                  api_format: quickProvider.api_format,
+                  model: quickCurrentModel,
+                  thinking_level: event.target.value as ThinkingLevel
+                })}
+                title="思考等级"
+              >
+                {quickThinkingOptions.map((option) => (
+                  <option key={option.id} value={option.id}>思考：{option.label}</option>
+                ))}
+              </select>
+            )}
+            <span title="按当前模型配置写入原生 API 参数">当前：{thinkingLevelLabel({ ...modelConfig, thinking_level: quickThinkingLevel, thinking_level_options: quickThinkingOptions })}</span>
           </div>
           <div className="composer">
             <textarea
@@ -934,17 +1015,31 @@ function SettingsDialog({
     notes: ""
   });
   const provider = selectedProvider(providers, modelDraft.provider_id);
-  const modelOptions = uniqueModelOptions(provider, modelDraft.model);
+  const modelOptions = modelOptionsFor(provider, modelDraft.model);
+  const modelThinkingOptions = modelDraft.thinking_level_options || thinkingOptionsForModel(provider, modelDraft.model);
   const chooseProvider = (providerId: string) => {
     const nextProvider = selectedProvider(providers, providerId);
-    const nextModel = nextProvider.model_options?.[0] || nextProvider.model || "";
+    const nextModel = modelOptionsFor(nextProvider, nextProvider.model)[0]?.id || nextProvider.model || "";
+    const nextThinkingOptions = thinkingOptionsForModel(nextProvider, nextModel);
     setModelDraft({
       ...modelDraft,
       provider_id: nextProvider.id,
       base_url: nextProvider.base_url,
-      model: nextModel
+      api_format: nextProvider.api_format,
+      model: nextModel,
+      thinking_level: defaultThinkingLevelForModel(nextProvider, nextModel),
+      thinking_level_options: nextThinkingOptions
     });
     setCustomModel("");
+  };
+  const chooseModel = (modelId: string) => {
+    const nextThinkingOptions = thinkingOptionsForModel(provider, modelId);
+    setModelDraft({
+      ...modelDraft,
+      model: modelId,
+      thinking_level: defaultThinkingLevelForModel(provider, modelId),
+      thinking_level_options: nextThinkingOptions
+    });
   };
   const chooseExam = async (examId: string) => {
     const option = examOptions.find((item) => item.id === examId) || examOptions[0];
@@ -1002,7 +1097,8 @@ function SettingsDialog({
     const finalModel = customModel.trim() || modelDraft.model;
     const data = await apiPost<{ model_config: ModelConfig; providers?: ProviderOption[] }>("/api/model-config", {
       ...modelDraft,
-      model: finalModel
+      model: finalModel,
+      thinking_level_options: modelDraft.thinking_level_options || []
     });
     onModelConfigChange(data.model_config);
     if (data.providers) {
@@ -1051,6 +1147,25 @@ function SettingsDialog({
     } catch (e) {
       setSaveState(`添加失败: ${e instanceof Error ? e.message : e}`);
     }
+  };
+  const handleAddThinkingLevel = () => {
+    const label = window.prompt("请输入思考等级显示名称，例如：极高、最高、开启：");
+    if (!label?.trim()) return;
+    const apiValue = window.prompt("请输入该等级传给 API（接口）的原生值，例如：xhigh、max、high、enabled；留空表示关闭或自动：") || "";
+    const rawId = apiValue.trim() || label.trim();
+    const id = rawId
+      .toLowerCase()
+      .replace(/\s+/g, "_")
+      .replace(/[^a-z0-9_\-\u4e00-\u9fa5]/g, "");
+    if (!id) return;
+    const currentOptions = modelThinkingOptions.filter((option) => option.id !== id);
+    const nextOptions = [...currentOptions, { id, label: label.trim(), api_value: apiValue.trim() }];
+    setModelDraft({
+      ...modelDraft,
+      thinking_level: id,
+      thinking_level_options: nextOptions
+    });
+    setSaveState("已加入当前模型的思考等级，保存模型配置后生效。");
   };
   const resetDefaults = async () => {
     if (!window.confirm("确认恢复默认设置？模型、个性化、学习目标和自定义提供商会恢复默认，学习会话不会删除。")) return;
@@ -1125,19 +1240,24 @@ function SettingsDialog({
                   type="password"
                   autoComplete="off"
                 />
-                <select value={modelDraft.model} onChange={(event) => setModelDraft({ ...modelDraft, model: event.target.value })}>
+                <select value={modelDraft.model} onChange={(event) => chooseModel(event.target.value)}>
                   {modelOptions.map((model) => (
-                    <option key={model} value={model}>{model}</option>
+                    <option key={model.id} value={model.id}>{modelOptionLabel(model)}</option>
                   ))}
                 </select>
-                <select
-                  value={modelDraft.thinking_level || "auto"}
-                  onChange={(event) => setModelDraft({ ...modelDraft, thinking_level: event.target.value as ThinkingLevel })}
-                >
-                  {(modelDraft.thinking_level_options || DEFAULT_MODEL_CONFIG.thinking_level_options || []).map((option) => (
-                    <option key={option.id} value={option.id}>思考等级：{option.label}</option>
-                  ))}
-                </select>
+                <div className="inline-row">
+                  {modelThinkingOptions.length > 0 && (
+                    <select
+                      value={modelDraft.thinking_level || defaultThinkingLevelForModel(provider, modelDraft.model)}
+                      onChange={(event) => setModelDraft({ ...modelDraft, thinking_level: event.target.value as ThinkingLevel })}
+                    >
+                      {modelThinkingOptions.map((option) => (
+                        <option key={option.id} value={option.id}>思考等级：{option.label}</option>
+                      ))}
+                    </select>
+                  )}
+                  <button className="inline-action" onClick={() => void handleAddThinkingLevel()}>添加思考等级</button>
+                </div>
                 <input
                   value={customModel}
                   onChange={(event) => setCustomModel(event.target.value)}
@@ -1311,10 +1431,10 @@ function OnboardingDialog({
   const [errorMsg, setErrorMsg] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const provider = selectedProvider(providers, draft.provider_id);
-  const modelOptions = uniqueModelOptions(provider, draft.model);
+  const modelOptions = modelOptionsFor(provider, draft.model);
   const chooseProvider = (providerId: string) => {
     const nextProvider = selectedProvider(providers, providerId);
-    const nextModel = nextProvider.model_options?.[0] || nextProvider.model || "";
+    const nextModel = modelOptionsFor(nextProvider, nextProvider.model)[0]?.id || nextProvider.model || "";
     setDraft({
       ...draft,
       provider_id: nextProvider.id,
@@ -1351,7 +1471,7 @@ function OnboardingDialog({
           <label>供应商<select value={draft.provider_id} onChange={(event) => chooseProvider(event.target.value)}>{providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}</select></label>
           <label>Base URL（基础网址）<input value={draft.base_url} onChange={(event) => setDraft({ ...draft, base_url: event.target.value })} placeholder={provider.base_url || "Mock Provider（本地模拟）不需要 Base URL"} /></label>
           <label>API Key（接口密钥）<input value={draft.api_key} onChange={(event) => setDraft({ ...draft, api_key: event.target.value })} placeholder={provider.kind === "mock" ? "Mock Provider（本地模拟）不需要 API Key" : "留空则不覆盖已有密钥"} type="password" autoComplete="off" /></label>
-          <label>模型选项<select value={draft.model} onChange={(event) => setDraft({ ...draft, model: event.target.value })}>{modelOptions.map((model) => <option key={model} value={model}>{model}</option>)}</select></label>
+          <label>模型选项<select value={draft.model} onChange={(event) => setDraft({ ...draft, model: event.target.value })}>{modelOptions.map((model) => <option key={model.id} value={model.id}>{modelOptionLabel(model)}</option>)}</select></label>
           <label>自定义模型<input value={customModel} onChange={(event) => setCustomModel(event.target.value)} placeholder="填写后优先使用，例如厂商新模型名" /></label>
           <label>称呼<input value={draft.display_name} onChange={(event) => setDraft({ ...draft, display_name: event.target.value })} /></label>
           <label>目标语言<input value={draft.target_language} onChange={(event) => setDraft({ ...draft, target_language: event.target.value })} /></label>

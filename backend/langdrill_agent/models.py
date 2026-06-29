@@ -122,7 +122,9 @@ class ModelConfigRequest(BaseModel):
     model: str = "mock-tutor-v1"
     base_url: str = ""
     api_key: str = ""
-    thinking_level: Literal["auto", "low", "medium", "high"] = "auto"
+    thinking_level: str = "auto"
+    thinking_level_options: list[dict[str, str]] = Field(default_factory=list)
+    api_format: str = ""
 
 class AddCustomProviderRequest(BaseModel):
     name: str

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from copy import deepcopy
 from datetime import datetime
 from typing import Any
 
@@ -669,34 +670,190 @@ class ModelConfigService:
         "id": "mock",
         "label": "Mock Provider（本地模拟）",
         "kind": "mock",
+        "api_format": "mock",
+        "api_key_required": False,
+        "enabled": True,
         "base_url": "",
         "model": "mock-tutor-v1",
-        "model_options": ["mock-tutor-v1"],
+        "model_options": [
+            {
+                "id": "mock-tutor-v1",
+                "label": "mock-tutor-v1",
+                "context_tokens": 0,
+                "reasoning": {
+                    "default_level": "",
+                    "parameter": "",
+                    "levels": [],
+                },
+            }
+        ],
     }
     PROVIDERS = [
+        {
+            "id": "openai",
+            "label": "OpenAI GPT（OpenAI GPT）",
+            "kind": "openai-compatible",
+            "api_format": "openai-chat-completions",
+            "api_key_required": True,
+            "enabled": True,
+            "base_url": "https://api.openai.com/v1",
+            "model": "gpt-5.5",
+            "model_options": [
+                {
+                    "id": "gpt-5.5",
+                    "label": "gpt-5.5",
+                    "context_tokens": 1000000,
+                    "reasoning": {
+                        "default_level": "auto",
+                        "parameter": "openai_reasoning_effort",
+                        "levels": [
+                            {"id": "auto", "label": "自动", "api_value": ""},
+                            {"id": "minimal", "label": "极低", "api_value": "minimal"},
+                            {"id": "low", "label": "低", "api_value": "low"},
+                            {"id": "medium", "label": "中", "api_value": "medium"},
+                            {"id": "high", "label": "高", "api_value": "high"},
+                            {"id": "xhigh", "label": "极高", "api_value": "xhigh"},
+                        ],
+                    },
+                },
+                {
+                    "id": "gpt-5.4",
+                    "label": "gpt-5.4",
+                    "context_tokens": 1000000,
+                    "reasoning": {
+                        "default_level": "auto",
+                        "parameter": "openai_reasoning_effort",
+                        "levels": [
+                            {"id": "auto", "label": "自动", "api_value": ""},
+                            {"id": "minimal", "label": "极低", "api_value": "minimal"},
+                            {"id": "low", "label": "低", "api_value": "low"},
+                            {"id": "medium", "label": "中", "api_value": "medium"},
+                            {"id": "high", "label": "高", "api_value": "high"},
+                            {"id": "xhigh", "label": "极高", "api_value": "xhigh"},
+                        ],
+                    },
+                },
+            ],
+        },
+        {
+            "id": "claude",
+            "label": "Claude（Claude）",
+            "kind": "anthropic",
+            "api_format": "anthropic-messages",
+            "api_key_required": True,
+            "enabled": True,
+            "base_url": "https://api.anthropic.com",
+            "model": "claude-sonnet-4.7",
+            "model_options": [
+                {
+                    "id": "claude-sonnet-4.7",
+                    "label": "claude-sonnet-4.7",
+                    "context_tokens": 200000,
+                    "reasoning": {
+                        "default_level": "medium",
+                        "parameter": "anthropic_adaptive_thinking",
+                        "levels": [
+                            {"id": "off", "label": "关闭", "api_value": ""},
+                            {"id": "low", "label": "低", "api_value": "low"},
+                            {"id": "medium", "label": "中", "api_value": "medium"},
+                            {"id": "high", "label": "高", "api_value": "high"},
+                        ],
+                    },
+                },
+                {
+                    "id": "claude-opus-4.7",
+                    "label": "claude-opus-4.7",
+                    "context_tokens": 200000,
+                    "reasoning": {
+                        "default_level": "medium",
+                        "parameter": "anthropic_adaptive_thinking",
+                        "levels": [
+                            {"id": "off", "label": "关闭", "api_value": ""},
+                            {"id": "low", "label": "低", "api_value": "low"},
+                            {"id": "medium", "label": "中", "api_value": "medium"},
+                            {"id": "high", "label": "高", "api_value": "high"},
+                        ],
+                    },
+                },
+            ],
+        },
         {
             "id": "deepseek",
             "label": "DeepSeek（深度求索）",
             "kind": "openai-compatible",
+            "api_format": "openai-chat-completions",
+            "api_key_required": True,
+            "enabled": True,
             "base_url": "https://api.deepseek.com",
-            "model": "deepseek-chat",
-            "model_options": ["deepseek-chat", "deepseek-reasoner"],
+            "model": "deepseek-v4-pro",
+            "model_options": [
+                {
+                    "id": "deepseek-v4-pro",
+                    "label": "deepseek-v4-pro",
+                    "context_tokens": 1000000,
+                    "reasoning": {
+                        "default_level": "max",
+                        "parameter": "deepseek_thinking",
+                        "levels": [
+                            {"id": "off", "label": "关闭", "api_value": ""},
+                            {"id": "high", "label": "高", "api_value": "high"},
+                            {"id": "max", "label": "最高", "api_value": "max"},
+                        ],
+                    },
+                },
+                {
+                    "id": "deepseek-v4-flash",
+                    "label": "deepseek-v4-flash",
+                    "context_tokens": 1000000,
+                    "reasoning": {
+                        "default_level": "high",
+                        "parameter": "deepseek_thinking",
+                        "levels": [
+                            {"id": "off", "label": "关闭", "api_value": ""},
+                            {"id": "high", "label": "高", "api_value": "high"},
+                            {"id": "max", "label": "最高", "api_value": "max"},
+                        ],
+                    },
+                },
+            ],
         },
         {
             "id": "mimo",
             "label": "Xiaomi MiMo（小米 MiMo）",
-            "kind": "openai-compatible",
-            "base_url": "https://api.xiaomimimo.com/v1",
+            "kind": "anthropic",
+            "api_format": "anthropic-messages",
+            "api_key_required": True,
+            "enabled": True,
+            "base_url": "https://api.xiaomimimo.com/anthropic",
             "model": "mimo-v2.5-pro",
-            "model_options": ["mimo-v2.5-pro", "mimo-v2-pro"],
-        },
-        {
-            "id": "custom",
-            "label": "Custom OpenAI-compatible（自定义 OpenAI 兼容）",
-            "kind": "openai-compatible",
-            "base_url": "",
-            "model": "",
-            "model_options": [],
+            "model_options": [
+                {
+                    "id": "mimo-v2.5",
+                    "label": "mimo-v2.5",
+                    "context_tokens": 1000000,
+                    "reasoning": {
+                        "default_level": "enabled",
+                        "parameter": "anthropic_thinking_switch",
+                        "levels": [
+                            {"id": "off", "label": "关闭", "api_value": ""},
+                            {"id": "enabled", "label": "开启", "api_value": "enabled"},
+                        ],
+                    },
+                },
+                {
+                    "id": "mimo-v2.5-pro",
+                    "label": "mimo-v2.5-pro",
+                    "context_tokens": 1000000,
+                    "reasoning": {
+                        "default_level": "enabled",
+                        "parameter": "anthropic_thinking_switch",
+                        "levels": [
+                            {"id": "off", "label": "关闭", "api_value": ""},
+                            {"id": "enabled", "label": "开启", "api_value": "enabled"},
+                        ],
+                    },
+                },
+            ],
         },
     ]
 
@@ -704,50 +861,47 @@ class ModelConfigService:
         self.conn = conn
 
     def thinking_level_options(self, provider_id: str, model: str) -> list[dict[str, str]]:
-        model_name = (model or "").lower()
-        provider = (provider_id or "").lower()
-        supports_reasoning = provider in {"openai", "local", "custom"} and any(
-            keyword in model_name for keyword in ("o1", "o3", "o4", "gpt-5")
-        )
-        if supports_reasoning:
-            return [
-                {"id": "auto", "label": "自动", "api_value": ""},
-                {"id": "low", "label": "低", "api_value": "low"},
-                {"id": "medium", "label": "中", "api_value": "medium"},
-                {"id": "high", "label": "高", "api_value": "high"},
-            ]
-        return [
-            {"id": "auto", "label": "自动", "api_value": ""},
-            {"id": "low", "label": "低（提示词控制）", "api_value": ""},
-            {"id": "medium", "label": "中（提示词控制）", "api_value": ""},
-            {"id": "high", "label": "高（提示词控制）", "api_value": ""},
-        ]
+        model_config = self._model_config(provider_id, model)
+        reasoning = model_config.get("reasoning", {}) if model_config else {}
+        return [dict(item) for item in reasoning.get("levels", []) if item.get("id")]
 
-    def _normalize_thinking_level(self, value: str) -> str:
-        return value if value in {"auto", "low", "medium", "high"} else "auto"
+    def _normalize_thinking_level(
+        self,
+        value: str,
+        options: list[dict[str, str]] | None = None,
+        *,
+        default: str = "",
+    ) -> str:
+        if not options:
+            return ""
+        allowed = {item["id"] for item in options if item.get("id")}
+        if value in allowed:
+            return value
+        if default in allowed:
+            return default
+        return options[0]["id"]
 
     def providers(self) -> list[dict[str, Any]]:
         row = self.conn.execute("SELECT value_json FROM app_settings WHERE key='model.custom_providers'").fetchone()
         customs = loads(row["value_json"], []) if row else []
-        
+
         row_ov = self.conn.execute("SELECT value_json FROM app_settings WHERE key='model.provider_overrides'").fetchone()
         overrides = loads(row_ov["value_json"], {}) if row_ov else {}
-        
-        base_providers = [dict(p) for p in self.PROVIDERS]
-        builtin = [provider for provider in base_providers if provider["id"] != "custom"]
-        custom_template = next(provider for provider in base_providers if provider["id"] == "custom")
-        all_providers = builtin + customs + [custom_template]
-        for p in all_providers:
-            ov = overrides.get(p["id"])
-            if ov:
-                p["base_url"] = ov.get("base_url", p["base_url"])
-                added_models = ov.get("added_models", [])
-                if added_models:
-                    opts = p.get("model_options", []).copy()
-                    for m in added_models:
-                        if m not in opts:
-                            opts.append(m)
-                    p["model_options"] = opts
+
+        env_values = {**self._read_env(), **self._read_process_env()}
+        current_provider_id = self._current_provider_id(env_values)
+        all_providers = [self._apply_provider_overrides(deepcopy(p), overrides) for p in self.PROVIDERS]
+        all_providers.extend(self._apply_provider_overrides(self._normalize_custom_provider(p), overrides) for p in customs)
+        all_providers.append(deepcopy(self.MOCK_PROVIDER))
+
+        for provider in all_providers:
+            has_key = bool(self._provider_api_key(provider["id"], env_values, current_provider_id))
+            if provider["id"] == "mock":
+                has_key = False
+            provider["has_api_key"] = has_key
+            provider["visible_in_picker"] = provider["id"] == "mock" or (
+                bool(provider.get("enabled", True)) and (not provider.get("api_key_required", True) or has_key)
+            )
         return all_providers
 
     def current(self) -> dict[str, Any]:
@@ -758,17 +912,32 @@ class ModelConfigService:
         env_values = {**self._read_env(), **self._read_process_env()}
         provider_id = config.get("provider_id") or env_values.get("LANGDRILL_DEFAULT_PROVIDER") or "mock"
         provider = self.provider_by_id(provider_id)
-        thinking_level = self._normalize_thinking_level(config.get("thinking_level") or "auto")
+        model = config.get("model") or env_values.get("LANGDRILL_DEFAULT_MODEL") or provider.get("model", "")
+        options = self.thinking_level_options(provider_id, model)
+        model_config = self._model_config(provider_id, model)
+        reasoning = model_config.get("reasoning", {}) if model_config else {}
+        default_level = reasoning.get("default_level", "")
+        thinking_level = self._normalize_thinking_level(
+            config.get("thinking_level") or default_level,
+            options,
+            default=default_level,
+        )
+        has_key = bool(self._provider_api_key(provider_id, env_values, provider_id))
         if provider_id == "mock":
+            has_key = False
             return {
                 "provider_id": "mock",
                 "base_url": "",
-                "model": config.get("model") or provider.get("model", "mock-tutor-v1"),
-                "thinking_level": thinking_level,
-                "thinking_level_options": self.thinking_level_options(provider_id, config.get("model") or provider.get("model", "mock-tutor-v1")),
+                "model": model or provider.get("model", "mock-tutor-v1"),
+                "thinking_level": "auto",
+                "thinking_level_options": [{"id": "auto", "label": "自动", "api_value": ""}],
+                "thinking_api_value": "",
+                "reasoning_parameter": "",
+                "api_format": "mock",
                 "has_api_key": False,
+                "visible_in_picker": True,
             }
-        model = config.get("model") or env_values.get("LANGDRILL_DEFAULT_MODEL") or provider.get("model", "")
+        api_value = self._thinking_api_value(thinking_level, options)
         return {
             "provider_id": provider_id,
             "base_url": config.get("base_url")
@@ -777,7 +946,13 @@ class ModelConfigService:
             "model": model,
             "thinking_level": thinking_level,
             "thinking_level_options": self.thinking_level_options(provider_id, model),
-            "has_api_key": bool(env_values.get("LANGDRILL_PROVIDER_API_KEY", "")),
+            "thinking_api_value": api_value,
+            "reasoning_parameter": reasoning.get("parameter", ""),
+            "api_format": config.get("api_format") or provider.get("api_format", "openai-chat-completions"),
+            "has_api_key": has_key,
+            "visible_in_picker": provider_id == "mock" or (
+                bool(provider.get("enabled", True)) and (not provider.get("api_key_required", True) or has_key)
+            ),
         }
 
     def current_with_secret(self) -> dict[str, Any]:
@@ -786,14 +961,12 @@ class ModelConfigService:
             config["api_key"] = ""
             return config
         env_values = {**self._read_env(), **self._read_process_env()}
-        config["api_key"] = env_values.get("LANGDRILL_PROVIDER_API_KEY", "")
+        config["api_key"] = self._provider_api_key(str(config.get("provider_id", "")), env_values, str(config.get("provider_id", "")))
         return config
 
     def provider_by_id(self, provider_id: str) -> dict[str, Any]:
-        if provider_id == "mock":
-            return dict(self.MOCK_PROVIDER)
         all_providers = self.providers()
-        return next((item for item in all_providers if item["id"] == provider_id), all_providers[0])
+        return next((item for item in all_providers if item["id"] == provider_id), deepcopy(self.MOCK_PROVIDER))
 
     def save(
         self,
@@ -803,12 +976,28 @@ class ModelConfigService:
         api_key: str = "",
         *,
         thinking_level: str = "auto",
+        thinking_level_options: list[dict[str, str]] | None = None,
+        api_format: str = "",
     ) -> dict[str, Any]:
         provider = self.provider_by_id(provider_id)
         clean_base_url = (base_url or provider.get("base_url", "")).strip()
         clean_model = (model or provider.get("model", "")).strip()
-        clean_thinking_level = self._normalize_thinking_level(thinking_level)
-        
+        clean_api_format = (api_format or provider.get("api_format", "openai-chat-completions")).strip()
+        clean_options = self._normalize_thinking_options(thinking_level_options or self.thinking_level_options(provider_id, clean_model))
+        model_config = self._model_config(provider_id, clean_model)
+        reasoning = dict(model_config.get("reasoning", {})) if model_config else {}
+        if clean_options:
+            reasoning["levels"] = clean_options
+            reasoning.setdefault("parameter", self._default_reasoning_parameter(provider_id))
+            reasoning["default_level"] = thinking_level if thinking_level in {item["id"] for item in clean_options} else (
+                reasoning.get("default_level") or clean_options[0]["id"]
+            )
+        clean_thinking_level = self._normalize_thinking_level(
+            thinking_level,
+            clean_options,
+            default=reasoning.get("default_level", ""),
+        )
+
         self.conn.execute(
             """
             INSERT OR REPLACE INTO app_settings (key, value_json, updated_at)
@@ -821,29 +1010,48 @@ class ModelConfigService:
                         "base_url": clean_base_url,
                         "model": clean_model,
                         "thinking_level": clean_thinking_level,
+                        "api_format": clean_api_format,
                     }
                 ),
             ),
         )
 
-        # Save overrides so this provider remembers the base_url and added models
         row_ov = self.conn.execute("SELECT value_json FROM app_settings WHERE key='model.provider_overrides'").fetchone()
         overrides = loads(row_ov["value_json"], {}) if row_ov else {}
-        ov = overrides.setdefault(provider_id, {"added_models": []})
+        ov = overrides.setdefault(provider_id, {"added_models": [], "model_reasoning_overrides": {}})
         ov["base_url"] = clean_base_url
-        if clean_model and clean_model not in provider.get("model_options", []) and clean_model not in ov["added_models"]:
-            ov["added_models"].append(clean_model)
+        ov["api_format"] = clean_api_format
+        known_model_ids = {self._model_id(item) for item in provider.get("model_options", [])}
+        if clean_model and clean_model not in known_model_ids:
+            added = ov.setdefault("added_models", [])
+            if clean_model not in {self._model_id(item) for item in added}:
+                added.append(
+                    {
+                        "id": clean_model,
+                        "label": clean_model,
+                        "context_tokens": 0,
+                        "reasoning": reasoning,
+                    }
+                )
+        if clean_options:
+            reasoning["levels"] = clean_options
+            reasoning["default_level"] = clean_thinking_level
+            ov.setdefault("model_reasoning_overrides", {})[clean_model] = reasoning
 
         self.conn.execute(
             "INSERT OR REPLACE INTO app_settings (key, value_json, updated_at) VALUES ('model.provider_overrides', ?, CURRENT_TIMESTAMP)",
             (dumps(overrides),),
         )
+        api_key_updates = {}
+        if api_key:
+            api_key_updates[self._api_key_env_key(provider_id)] = api_key.strip()
+            api_key_updates["LANGDRILL_PROVIDER_API_KEY"] = api_key.strip()
         self._write_env(
             {
                 "LANGDRILL_DEFAULT_PROVIDER": provider_id,
                 "LANGDRILL_DEFAULT_MODEL": clean_model,
                 "LANGDRILL_PROVIDER_BASE_URL": clean_base_url,
-                **({"LANGDRILL_PROVIDER_API_KEY": api_key.strip()} if api_key else {}),
+                **api_key_updates,
             }
         )
         return self.current()
@@ -856,7 +1064,7 @@ class ModelConfigService:
             {
                 "LANGDRILL_DEFAULT_PROVIDER": "mimo",
                 "LANGDRILL_DEFAULT_MODEL": "mimo-v2.5-pro",
-                "LANGDRILL_PROVIDER_BASE_URL": "https://api.xiaomimimo.com/v1",
+                "LANGDRILL_PROVIDER_BASE_URL": "https://api.xiaomimimo.com/anthropic",
             }
         )
         return self.current()
@@ -865,18 +1073,137 @@ class ModelConfigService:
         row = self.conn.execute("SELECT value_json FROM app_settings WHERE key='model.custom_providers'").fetchone()
         customs = loads(row["value_json"], []) if row else []
         new_id = f"custom_{len(customs) + 1}_{int(datetime.now().timestamp())}"
+        clean_model = default_model.strip()
         customs.append({
             "id": new_id,
             "label": f"{name}（自定义）",
             "kind": "openai-compatible",
+            "api_format": "openai-chat-completions",
+            "api_key_required": True,
+            "enabled": True,
             "base_url": base_url.strip(),
-            "model": default_model.strip(),
-            "model_options": [default_model.strip()],
+            "model": clean_model,
+            "model_options": [clean_model] if clean_model else [],
         })
         self.conn.execute(
             "INSERT OR REPLACE INTO app_settings (key, value_json, updated_at) VALUES ('model.custom_providers', ?, CURRENT_TIMESTAMP)",
             (dumps(customs),),
         )
+
+    def _normalize_custom_provider(self, provider: dict[str, Any]) -> dict[str, Any]:
+        item = deepcopy(provider)
+        item.setdefault("kind", "openai-compatible")
+        item.setdefault("api_format", "openai-chat-completions")
+        item.setdefault("api_key_required", True)
+        item.setdefault("enabled", True)
+        item.setdefault("base_url", "")
+        item.setdefault("model", "")
+        item["model_options"] = [self._normalize_model_option(m) for m in item.get("model_options", []) if self._model_id(m)]
+        return item
+
+    def _apply_provider_overrides(self, provider: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
+        ov = overrides.get(provider["id"], {})
+        if ov:
+            provider["base_url"] = ov.get("base_url", provider.get("base_url", ""))
+            provider["api_format"] = ov.get("api_format", provider.get("api_format", "openai-chat-completions"))
+            provider["enabled"] = bool(ov.get("enabled", provider.get("enabled", True)))
+            model_options = [self._normalize_model_option(item) for item in provider.get("model_options", [])]
+            existing = {self._model_id(item) for item in model_options}
+            for model in ov.get("added_models", []):
+                normalized = self._normalize_model_option(model)
+                if normalized["id"] and normalized["id"] not in existing:
+                    model_options.append(normalized)
+                    existing.add(normalized["id"])
+            reasoning_overrides = ov.get("model_reasoning_overrides", {})
+            for model_item in model_options:
+                model_id = self._model_id(model_item)
+                if model_id in reasoning_overrides:
+                    model_item["reasoning"] = reasoning_overrides[model_id]
+            provider["model_options"] = model_options
+        else:
+            provider["model_options"] = [self._normalize_model_option(item) for item in provider.get("model_options", [])]
+        return provider
+
+    def _normalize_model_option(self, value: Any) -> dict[str, Any]:
+        if isinstance(value, str):
+            return {
+                "id": value,
+                "label": value,
+                "context_tokens": 0,
+                "reasoning": {"default_level": "", "parameter": self._default_reasoning_parameter(""), "levels": []},
+            }
+        item = dict(value or {})
+        item.setdefault("id", item.get("model", ""))
+        item.setdefault("label", item.get("id", ""))
+        item.setdefault("context_tokens", 0)
+        item.setdefault("reasoning", {"default_level": "", "parameter": self._default_reasoning_parameter(""), "levels": []})
+        if item["reasoning"]:
+            item["reasoning"]["levels"] = self._normalize_thinking_options(item["reasoning"].get("levels", []))
+        return item
+
+    def _normalize_thinking_options(self, options: list[dict[str, str]] | None) -> list[dict[str, str]]:
+        normalized: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for option in options or []:
+            option_id = str(option.get("id", "")).strip()
+            if not option_id or option_id in seen:
+                continue
+            seen.add(option_id)
+            normalized.append(
+                {
+                    "id": option_id,
+                    "label": str(option.get("label") or option_id).strip(),
+                    "api_value": str(option.get("api_value", "")).strip(),
+                }
+            )
+        return normalized
+
+    def _model_id(self, value: Any) -> str:
+        if isinstance(value, str):
+            return value
+        return str((value or {}).get("id") or (value or {}).get("model") or "")
+
+    def _model_config(self, provider_id: str, model: str) -> dict[str, Any]:
+        provider = next((item for item in self.providers() if item["id"] == provider_id), None)
+        if not provider:
+            return {}
+        model_id = model or provider.get("model", "")
+        return next((item for item in provider.get("model_options", []) if self._model_id(item) == model_id), {})
+
+    def _default_reasoning_parameter(self, provider_id: str) -> str:
+        provider = provider_id.lower()
+        if provider == "deepseek":
+            return "deepseek_thinking"
+        if provider == "mimo":
+            return "anthropic_thinking_switch"
+        if provider == "claude":
+            return "anthropic_adaptive_thinking"
+        if provider == "openai":
+            return "openai_reasoning_effort"
+        return "openai_reasoning_effort"
+
+    def _thinking_api_value(self, thinking_level: str, options: list[dict[str, str]]) -> str:
+        option = next((item for item in options if item.get("id") == thinking_level), None)
+        if not option:
+            return ""
+        return option.get("api_value") or option.get("id", "")
+
+    def _current_provider_id(self, env_values: dict[str, str]) -> str:
+        row = self.conn.execute("SELECT value_json FROM app_settings WHERE key='model.default'").fetchone()
+        config = loads(row["value_json"], {}) if row else {}
+        return str(config.get("provider_id") or env_values.get("LANGDRILL_DEFAULT_PROVIDER") or "mock")
+
+    def _api_key_env_key(self, provider_id: str) -> str:
+        clean = "".join(ch if ch.isalnum() else "_" for ch in provider_id.upper()).strip("_")
+        return f"LANGDRILL_PROVIDER_API_KEY_{clean or 'CUSTOM'}"
+
+    def _provider_api_key(self, provider_id: str, env_values: dict[str, str], current_provider_id: str | None = None) -> str:
+        specific = env_values.get(self._api_key_env_key(provider_id), "")
+        if specific:
+            return specific
+        if current_provider_id == provider_id:
+            return env_values.get("LANGDRILL_PROVIDER_API_KEY", "")
+        return ""
 
     def _read_env(self) -> dict[str, str]:
         env_path = PROJECT_ROOT / ".env"
@@ -896,11 +1223,18 @@ class ModelConfigService:
             "LANGDRILL_DEFAULT_MODEL",
             "LANGDRILL_PROVIDER_BASE_URL",
             "LANGDRILL_PROVIDER_API_KEY",
+            "LANGDRILL_PROVIDER_API_KEY_OPENAI",
+            "LANGDRILL_PROVIDER_API_KEY_CLAUDE",
+            "LANGDRILL_PROVIDER_API_KEY_DEEPSEEK",
+            "LANGDRILL_PROVIDER_API_KEY_MIMO",
         }
         values: dict[str, str] = {}
         for key in keys:
             value = os.environ.get(key)
             if value and value.strip():
+                values[key] = value
+        for key, value in os.environ.items():
+            if key.startswith("LANGDRILL_PROVIDER_API_KEY_") and value and value.strip():
                 values[key] = value
         return values
 
@@ -920,6 +1254,10 @@ class ModelConfigService:
             "LANGDRILL_DEFAULT_MODEL",
             "LANGDRILL_PROVIDER_BASE_URL",
             "LANGDRILL_PROVIDER_API_KEY",
+            "LANGDRILL_PROVIDER_API_KEY_OPENAI",
+            "LANGDRILL_PROVIDER_API_KEY_CLAUDE",
+            "LANGDRILL_PROVIDER_API_KEY_DEEPSEEK",
+            "LANGDRILL_PROVIDER_API_KEY_MIMO",
             "OPENAI_API_KEY",
             "OPENAI_BASE_URL",
             "OPENAI_MODEL",

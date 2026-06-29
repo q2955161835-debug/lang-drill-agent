@@ -15,17 +15,33 @@ export type ProviderOption = {
   id: string;
   label: string;
   kind: string;
+  api_format?: string;
+  api_key_required?: boolean;
+  enabled?: boolean;
+  has_api_key?: boolean;
+  visible_in_picker?: boolean;
   base_url: string;
   model: string;
-  model_options: string[];
+  model_options: ModelOption[];
 };
 
-export type ThinkingLevel = "auto" | "low" | "medium" | "high";
+export type ThinkingLevel = string;
 
 export type ThinkingLevelOption = {
   id: ThinkingLevel;
   label: string;
   api_value: string;
+};
+
+export type ModelOption = string | {
+  id: string;
+  label?: string;
+  context_tokens?: number;
+  reasoning?: {
+    default_level?: string;
+    parameter?: string;
+    levels?: ThinkingLevelOption[];
+  };
 };
 
 export type ModelConfig = {
@@ -35,7 +51,11 @@ export type ModelConfig = {
   api_key?: string;
   thinking_level?: ThinkingLevel;
   thinking_level_options?: ThinkingLevelOption[];
+  thinking_api_value?: string;
+  reasoning_parameter?: string;
+  api_format?: string;
   has_api_key?: boolean;
+  visible_in_picker?: boolean;
 };
 
 export type SessionItem = {

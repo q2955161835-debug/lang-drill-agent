@@ -149,20 +149,22 @@ npm run dev
 
 支持模式：
 
-- `mock`：本地模拟，无需 key（密钥）。
-- `openai`：OpenAI-compatible（OpenAI 兼容）接口。
-- `local`：本地 OpenAI-compatible（OpenAI 兼容）模型服务。
-- DeepSeek（深度求索）、Qwen（通义千问）、Zhipu AI（智谱）、Moonshot（月之暗面）、Xiaomi MiMo（小米 MiMo）等可按 OpenAI-compatible（OpenAI 兼容）方式配置。
-- `custom`：自定义 OpenAI-compatible（OpenAI 兼容）供应商。
+- `mock`：本地模拟，无需 key（密钥），用于无真实模型时调试学习流程。
+- `openai`：OpenAI/GPT，默认 OpenAI-compatible Chat Completions（OpenAI 兼容聊天补全）格式。
+- `claude`：Claude，默认 Anthropic Messages（Anthropic 消息接口）格式。
+- `deepseek`：DeepSeek（深度求索），默认 OpenAI-compatible Chat Completions（OpenAI 兼容聊天补全）格式。
+- `mimo`：Xiaomi MiMo（小米 MiMo），默认 Anthropic Messages（Anthropic 消息接口）格式。
+- 自定义供应商只有在设置页点击“添加供应商”并保存后才出现。
 
 网页设置和聊天栏快捷配置都会写入后端模型配置；供应商、模型名称和 Base URL（基础网址）同步写入本地 `.env`：
 
 - `LANGDRILL_DEFAULT_PROVIDER`：当前供应商。
 - `LANGDRILL_DEFAULT_MODEL`：当前模型名称。
 - `LANGDRILL_PROVIDER_BASE_URL`：当前 Base URL（基础网址）。
-- `LANGDRILL_PROVIDER_API_KEY`：当前 API Key（接口密钥）。
+- `LANGDRILL_PROVIDER_API_KEY`：当前 API Key（接口密钥）兼容变量。
+- `LANGDRILL_PROVIDER_API_KEY_OPENAI`、`LANGDRILL_PROVIDER_API_KEY_CLAUDE`、`LANGDRILL_PROVIDER_API_KEY_DEEPSEEK`、`LANGDRILL_PROVIDER_API_KEY_MIMO`：默认真实供应商专属 API Key（接口密钥）。
 
-模型名称在网页里同时提供供应商常见模型选项和自定义填写项。自定义模型不为空时优先使用自定义值，方便供应商新增模型后立即使用。thinking level（思考等级）保存到后端设置：支持 `reasoning_effort`（推理强度）的模型使用 API（接口）参数，不支持的模型使用提示词控制。
+聊天栏快捷模型选择只显示已启用且已配置 API Key（接口密钥）的真实供应商；没有添加的自定义供应商不会暴露。模型名称在网页里同时提供供应商常见模型选项和自定义填写项。thinking level（思考等级）跟随当前模型配置，写入模型 API（接口）的原生 reasoning（推理）参数；没有原生档位且未自定义添加档位的模型不显示思考等级选择。
 
 ## 数据与安全边界
 

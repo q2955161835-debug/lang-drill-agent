@@ -164,6 +164,8 @@ def save_model_config(request: ModelConfigRequest) -> dict:
             request.model,
             request.api_key,
             thinking_level=request.thinking_level,
+            thinking_level_options=request.thinking_level_options,
+            api_format=request.api_format,
         )
         return {"model_config": config, "providers": svc.providers()}
 
@@ -227,6 +229,9 @@ def chat(request: ChatRequest) -> ChatResponse:
             model_config.get("base_url") or "",
             model_config.get("api_key") or "",
             model_config.get("thinking_level") or "auto",
+            api_format=model_config.get("api_format") or "openai-chat-completions",
+            reasoning_parameter=model_config.get("reasoning_parameter") or "",
+            thinking_api_value=model_config.get("thinking_api_value") or "",
         )
 
         active_question = active  # 默认保持当前题

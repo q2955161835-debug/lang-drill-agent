@@ -8,7 +8,8 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - 以数据库作为唯一正式学习状态来源，保证题组、作答、掌握度、错题和会话历史可追踪。
 - 正式刷题必须先生成完整题组并写入数据库，再逐题展示、逐题判分、自动推进下一题。
 - Web（网页）体验以三栏学习工作台为主：左侧学习状态，中间聊天与题目，右侧分支/手机映像/截图导入。
-- 模型配置支持 Mock（本地模拟）、OpenAI-compatible（OpenAI 兼容）供应商、MiMo（小米米魔）和自定义 Base URL（基础网址）。
+- 模型配置支持默认四个真实供应商 OpenAI/GPT、Claude、DeepSeek（深度求索）、MiMo（小米米魔）和保存后才出现的自定义供应商；聊天栏模型选择只暴露已启用且已配置 API Key（接口密钥）的真实供应商。
+- 思考等级必须跟随当前模型的原生 reasoning（推理）配置；禁止把思考等级降级为提示词控制。没有原生档位或未自定义添加档位的模型，不在聊天栏暴露思考等级选择。
 - 启动链路必须适配中文路径、后台运行、日志落盘和 HTTP（HyperText Transfer Protocol，超文本传输协议）健康检查。
 
 ## GitHub（代码托管平台）
@@ -146,7 +147,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\dev\start-dev.ps
 - `.env` 是真实环境变量账本，必须留在 `.gitignore` 中，禁止提交。
 - `.env.example` 是假账本，只存变量名、占位值和必要说明。
 - 新增、删除或改名环境变量时，同步更新 `.env.example`、代码读取逻辑、启动文档和部署说明。
-- `start-dev.ps1` 只写入开发期默认 `LANGDRILL_DEFAULT_PROVIDER`、`LANGDRILL_DEFAULT_MODEL`、`LANGDRILL_PROVIDER_BASE_URL`，必须保留已有 `LANGDRILL_PROVIDER_API_KEY`。
+- `start-dev.ps1` 只写入开发期默认 `LANGDRILL_DEFAULT_PROVIDER`、`LANGDRILL_DEFAULT_MODEL`、`LANGDRILL_PROVIDER_BASE_URL`，必须保留已有 `LANGDRILL_PROVIDER_API_KEY` 与 `LANGDRILL_PROVIDER_API_KEY_<PROVIDER_ID>` 形式的供应商专属密钥。
+- 默认真实供应商密钥变量：`LANGDRILL_PROVIDER_API_KEY_OPENAI`、`LANGDRILL_PROVIDER_API_KEY_CLAUDE`、`LANGDRILL_PROVIDER_API_KEY_DEEPSEEK`、`LANGDRILL_PROVIDER_API_KEY_MIMO`；自定义供应商使用同规则生成的动态变量名。
 - 如怀疑敏感信息已经提交到 GitHub（代码托管平台），必须提醒用户撤销旧密钥、创建新密钥并清理 Git 历史。
 
 ## 验收标准与报告
