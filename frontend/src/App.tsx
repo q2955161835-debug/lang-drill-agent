@@ -33,6 +33,7 @@ import type {
   SessionItem,
   SyllabusStatus,
   ThemeMode,
+  ThinkingLevel,
   TokenUsage
 } from "./types";
 
@@ -60,6 +61,18 @@ function MessageItem({ message }: { message: Message }) {
     <article className={`message ${message.role}`} ref={container}>
       <div className="avatar">{message.role === "user" ? <UserCircle size={18} /> : <Sparkle size={18} />}</div>
       <div className="bubble">{message.content}</div>
+    </article>
+  );
+}
+
+function ThinkingBubble() {
+  return (
+    <article className="message assistant thinking-message" aria-live="polite" aria-label="模型正在思考">
+      <div className="avatar"><Sparkle size={18} /></div>
+      <div className="bubble thinking-bubble">
+        <span>模型正在思考</span>
+        <span className="thinking-dots" aria-hidden="true"><i /> <i /> <i /></span>
+      </div>
     </article>
   );
 }
@@ -142,6 +155,13 @@ const DEFAULT_MODEL_CONFIG: ModelConfig = {
   provider_id: "mimo",
   base_url: "https://api.xiaomimimo.com/v1",
   model: "mimo-v2.5-pro",
+  thinking_level: "auto",
+  thinking_level_options: [
+    { id: "auto", label: "自动", api_value: "" },
+    { id: "low", label: "低", api_value: "low" },
+    { id: "medium", label: "中", api_value: "medium" },
+    { id: "high", label: "高", api_value: "high" }
+  ],
   has_api_key: false
 };
 
@@ -237,8 +257,17 @@ function normalizeProviders(providers: ProviderOption[] | undefined) {
 function normalizeModelConfig(config: ModelConfig | undefined) {
   return {
     ...DEFAULT_MODEL_CONFIG,
-    ...(config || {})
+    ...(config || {}),
+    thinking_level: (config?.thinking_level || DEFAULT_MODEL_CONFIG.thinking_level) as ThinkingLevel,
+    thinking_level_options: config?.thinking_level_options?.length
+      ? config.thinking_level_options
+      : DEFAULT_MODEL_CONFIG.thinking_level_options
   };
+}
+
+function thinkingLevelLabel(config: ModelConfig) {
+  const current = config.thinking_level || "auto";
+  return config.thinking_level_options?.find((item) => item.id === current)?.label || "自动";
 }
 
 const personalityOptions = [
@@ -259,6 +288,7 @@ function groupSessions(sessions: SessionItem[]) {
 
 export default function App() {
   const appRef = useRef<HTMLDivElement | null>(null);
+  const messageEndRef = useRef<HTMLDivElement | null>(null);
   const [profile, setProfile] = useState<Profile>(MOCK_PROFILE);
   const [providers, setProviders] = useState<ProviderOption[]>(FALLBACK_PROVIDERS);
   const [modelConfig, setModelConfig] = useState<ModelConfig>(DEFAULT_MODEL_CONFIG);
@@ -348,6 +378,10 @@ export default function App() {
     media.addEventListener("change", applyTheme);
     return () => media.removeEventListener("change", applyTheme);
   }, [fontSize, themeMode]);
+
+  useEffect(() => {
+    messageEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages, activeQuestion, sending]);
 
   useEffect(() => {
     apiGet<{
@@ -474,6 +508,19 @@ export default function App() {
     }
   }, []);
 
+  const saveQuickModelConfig = useCallback(async (nextConfig: ModelConfig) => {
+    const data = await apiPost<{ model_config: ModelConfig; providers?: ProviderOption[] }>("/api/model-config", {
+      provider_id: nextConfig.provider_id,
+      base_url: nextConfig.base_url,
+      model: nextConfig.model,
+      thinking_level: nextConfig.thinking_level || "auto"
+    });
+    setModelConfig(normalizeModelConfig(data.model_config));
+    if (data.providers) {
+      setProviders(normalizeProviders(data.providers));
+    }
+  }, []);
+
   const toggleDate = useCallback((date: string) => {
     setExpandedDates((current) => ({ ...current, [date]: !current[date] }));
   }, []);
@@ -558,6 +605,10 @@ export default function App() {
       <main className="chat-main panel-motion">
         <div className="message-stream" onMouseUp={() => setSelectedText(window.getSelection()?.toString() || "")}>
           {emptyContext && <LongTermPanel profile={profile} tokenUsage={tokenUsage} />}
+          {messages.map((message) => (
+            <MessageItem key={message.id} message={message} />
+          ))}
+          {sending && <ThinkingBubble />}
           {activeQuestion?.status === "ready" && (
             <QuestionDock
               question={activeQuestion}
@@ -566,9 +617,7 @@ export default function App() {
               onSubmit={(option, extraPrompt) => void sendQuestionAnswer(option, extraPrompt)}
             />
           )}
-          {messages.map((message) => (
-            <MessageItem key={message.id} message={message} />
-          ))}
+          <div ref={messageEndRef} />
         </div>
         {selectedText && (
           <InteractiveButton className="branch-fab" onClick={startBranch}>
@@ -582,6 +631,45 @@ export default function App() {
               {profile.display_name}，今天打算从哪里开始？
             </div>
           )}
+          <div className="chat-config-bar" aria-label="聊天模型快捷配置">
+            <select
+              value={modelConfig.provider_id}
+              onChange={(event) => {
+                const nextProvider = selectedProvider(providers, event.target.value);
+                const nextModel = nextProvider.model_options?.[0] || nextProvider.model || "";
+                void saveQuickModelConfig({
+                  ...modelConfig,
+                  provider_id: nextProvider.id,
+                  base_url: nextProvider.base_url,
+                  model: nextModel
+                });
+              }}
+              title="模型供应商"
+            >
+              {providers.map((provider) => (
+                <option key={provider.id} value={provider.id}>{provider.label}</option>
+              ))}
+            </select>
+            <select
+              value={modelConfig.model}
+              onChange={(event) => void saveQuickModelConfig({ ...modelConfig, model: event.target.value })}
+              title="模型"
+            >
+              {uniqueModelOptions(selectedProvider(providers, modelConfig.provider_id), modelConfig.model).map((model) => (
+                <option key={model} value={model}>{model}</option>
+              ))}
+            </select>
+            <select
+              value={modelConfig.thinking_level || "auto"}
+              onChange={(event) => void saveQuickModelConfig({ ...modelConfig, thinking_level: event.target.value as ThinkingLevel })}
+              title="思考等级"
+            >
+              {(modelConfig.thinking_level_options || DEFAULT_MODEL_CONFIG.thinking_level_options || []).map((option) => (
+                <option key={option.id} value={option.id}>思考：{option.label}</option>
+              ))}
+            </select>
+            <span title="不同模型会自动适配 API 参数或提示词控制">当前：{thinkingLevelLabel(modelConfig)}</span>
+          </div>
           <div className="composer">
             <textarea
               value={input}
@@ -1040,6 +1128,14 @@ function SettingsDialog({
                 <select value={modelDraft.model} onChange={(event) => setModelDraft({ ...modelDraft, model: event.target.value })}>
                   {modelOptions.map((model) => (
                     <option key={model} value={model}>{model}</option>
+                  ))}
+                </select>
+                <select
+                  value={modelDraft.thinking_level || "auto"}
+                  onChange={(event) => setModelDraft({ ...modelDraft, thinking_level: event.target.value as ThinkingLevel })}
+                >
+                  {(modelDraft.thinking_level_options || DEFAULT_MODEL_CONFIG.thinking_level_options || []).map((option) => (
+                    <option key={option.id} value={option.id}>思考等级：{option.label}</option>
                   ))}
                 </select>
                 <input

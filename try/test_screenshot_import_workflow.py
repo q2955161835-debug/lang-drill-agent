@@ -124,4 +124,5 @@ def test_imported_vocabulary_can_seed_fallback_question_and_mastery_update(tmp_p
     assert result.is_correct is True
     assert row["mastery_score"] > 0.2
     assert row["due_at"]
-    assert active is None
+    assert active is not None
+    assert active["sequence"] == 2

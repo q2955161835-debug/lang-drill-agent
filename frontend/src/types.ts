@@ -20,11 +20,21 @@ export type ProviderOption = {
   model_options: string[];
 };
 
+export type ThinkingLevel = "auto" | "low" | "medium" | "high";
+
+export type ThinkingLevelOption = {
+  id: ThinkingLevel;
+  label: string;
+  api_value: string;
+};
+
 export type ModelConfig = {
   provider_id: string;
   base_url: string;
   model: string;
   api_key?: string;
+  thinking_level?: ThinkingLevel;
+  thinking_level_options?: ThinkingLevelOption[];
   has_api_key?: boolean;
 };
 

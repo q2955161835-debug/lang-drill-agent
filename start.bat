@@ -9,8 +9,11 @@ set "VENV_PY=%ROOT%.venv\Scripts\python.exe"
 set "TASKKILL=%SystemRoot%\System32\taskkill.exe"
 set "PING=%SystemRoot%\System32\ping.exe"
 set "POWERSHELL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+set "BACKEND_LOG=%ROOT%logs\langdrill-backend.out.log"
+set "FRONTEND_LOG=%ROOT%logs\langdrill-frontend.out.log"
 
 cd /d "%ROOT%"
+if not exist "%ROOT%logs" mkdir "%ROOT%logs"
 
 echo ========================================
 echo Lang Drill Agent 一键启动
@@ -83,11 +86,11 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [2/3] 启动后端 API：http://127.0.0.1:8000
-start "%BACKEND_TITLE%" /D "%ROOT%" cmd /k "set PYTHONPATH=%ROOT%backend&& call ""%VENV_PY%"" -m langdrill_agent.cli serve"
+echo [2/3] 后台启动后端 API：http://127.0.0.1:8000
+"%POWERSHELL%" -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath $env:ComSpec -WindowStyle Hidden -WorkingDirectory '%ROOT%' -ArgumentList '/c','set PYTHONPATH=%ROOT%backend&& ""%VENV_PY%"" -m langdrill_agent.cli serve > ""%BACKEND_LOG%"" 2>&1'"
 
-echo [3/3] 启动前端 Web：http://127.0.0.1:5173
-start "%FRONTEND_TITLE%" /D "%ROOT%frontend" cmd /k "npm run dev"
+echo [3/3] 后台启动前端 Web：http://127.0.0.1:5173
+"%POWERSHELL%" -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath $env:ComSpec -WindowStyle Hidden -WorkingDirectory '%ROOT%frontend' -ArgumentList '/c','npm run dev > ""%FRONTEND_LOG%"" 2>&1'"
 
 echo 等待服务初始化...
 "%PING%" 127.0.0.1 -n 7 >nul
@@ -96,8 +99,9 @@ echo 正在打开浏览器...
 start "" "http://127.0.0.1:5173"
 
 echo.
-echo 已启动。关闭服务请运行 stop.bat。
+echo 已在后台启动。关闭服务请运行 stop.bat。
+echo 后端日志：%BACKEND_LOG%
+echo 前端日志：%FRONTEND_LOG%
 echo 如果浏览器暂时打不开，请等待几秒后手动访问：http://127.0.0.1:5173
 echo.
-pause
 endlocal

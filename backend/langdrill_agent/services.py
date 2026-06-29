@@ -197,6 +197,38 @@ class SessionService:
             "active_question": active_q,
         }
 
+    def question_progress(self, session_id: str) -> dict[str, int]:
+        row = self.conn.execute(
+            """
+            SELECT
+              COUNT(id) AS total,
+              SUM(CASE WHEN status='answered' THEN 1 ELSE 0 END) AS done,
+              SUM(CASE WHEN status='ready' THEN 1 ELSE 0 END) AS ready
+            FROM questions
+            WHERE session_id=?
+            """,
+            (session_id,),
+        ).fetchone()
+        return {
+            "total": int(row["total"] or 0),
+            "done": int(row["done"] or 0),
+            "ready": int(row["ready"] or 0),
+        }
+
+    def mark_completed_if_finished(self, session_id: str) -> bool:
+        progress = self.question_progress(session_id)
+        if progress["total"] and not progress["ready"]:
+            self.conn.execute(
+                """
+                UPDATE study_sessions
+                SET status='completed', updated_at=CURRENT_TIMESTAMP
+                WHERE id=?
+                """,
+                (session_id,),
+            )
+            return True
+        return False
+
     def _daily_scope(self, date: str, exam_id: str) -> dict[str, str]:
         profile = ProfileService(self.conn).get()
         row = self.conn.execute(
@@ -266,7 +298,7 @@ class SessionService:
             """
             SELECT term, mastery_score
             FROM knowledge_items
-            WHERE exam_id=? AND DATE(created_at)=?
+            WHERE exam_id=? AND DATE(created_at, 'localtime')=?
             """,
             (exam_id, date),
         ).fetchall()
@@ -302,6 +334,31 @@ class QuestionService:
         ).fetchone()
         return self._row_to_payload(row) if row else None
 
+    def question_progress(self, session_id: str) -> dict[str, int]:
+        row = self.conn.execute(
+            """
+            SELECT
+              COUNT(id) AS total,
+              SUM(CASE WHEN status='answered' THEN 1 ELSE 0 END) AS done,
+              SUM(CASE WHEN status='ready' THEN 1 ELSE 0 END) AS ready
+            FROM questions
+            WHERE session_id=?
+            """,
+            (session_id,),
+        ).fetchone()
+        return {
+            "total": int(row["total"] or 0),
+            "done": int(row["done"] or 0),
+            "ready": int(row["ready"] or 0),
+        }
+
+    def next_sequence(self, session_id: str) -> int:
+        row = self.conn.execute(
+            "SELECT COALESCE(MAX(sequence), 0) AS max_seq FROM questions WHERE session_id=?",
+            (session_id,),
+        ).fetchone()
+        return int(row["max_seq"] or 0) + 1
+
     def question_by_id(self, question_id: str, session_id: str) -> dict[str, Any] | None:
         row = self.conn.execute(
             """
@@ -336,6 +393,10 @@ class QuestionService:
                 dumps(question.source_refs),
             ),
         )
+
+    def save_questions(self, questions: list[Question]) -> None:
+        for question in questions:
+            self.save_question(question)
 
     def mark_answered(self, question_id: str) -> None:
         self.conn.execute("UPDATE questions SET status='answered' WHERE id=?", (question_id,))
@@ -642,6 +703,29 @@ class ModelConfigService:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
 
+    def thinking_level_options(self, provider_id: str, model: str) -> list[dict[str, str]]:
+        model_name = (model or "").lower()
+        provider = (provider_id or "").lower()
+        supports_reasoning = provider in {"openai", "local", "custom"} and any(
+            keyword in model_name for keyword in ("o1", "o3", "o4", "gpt-5")
+        )
+        if supports_reasoning:
+            return [
+                {"id": "auto", "label": "自动", "api_value": ""},
+                {"id": "low", "label": "低", "api_value": "low"},
+                {"id": "medium", "label": "中", "api_value": "medium"},
+                {"id": "high", "label": "高", "api_value": "high"},
+            ]
+        return [
+            {"id": "auto", "label": "自动", "api_value": ""},
+            {"id": "low", "label": "低（提示词控制）", "api_value": ""},
+            {"id": "medium", "label": "中（提示词控制）", "api_value": ""},
+            {"id": "high", "label": "高（提示词控制）", "api_value": ""},
+        ]
+
+    def _normalize_thinking_level(self, value: str) -> str:
+        return value if value in {"auto", "low", "medium", "high"} else "auto"
+
     def providers(self) -> list[dict[str, Any]]:
         row = self.conn.execute("SELECT value_json FROM app_settings WHERE key='model.custom_providers'").fetchone()
         customs = loads(row["value_json"], []) if row else []
@@ -674,21 +758,25 @@ class ModelConfigService:
         env_values = {**self._read_env(), **self._read_process_env()}
         provider_id = config.get("provider_id") or env_values.get("LANGDRILL_DEFAULT_PROVIDER") or "mock"
         provider = self.provider_by_id(provider_id)
+        thinking_level = self._normalize_thinking_level(config.get("thinking_level") or "auto")
         if provider_id == "mock":
             return {
                 "provider_id": "mock",
                 "base_url": "",
                 "model": config.get("model") or provider.get("model", "mock-tutor-v1"),
+                "thinking_level": thinking_level,
+                "thinking_level_options": self.thinking_level_options(provider_id, config.get("model") or provider.get("model", "mock-tutor-v1")),
                 "has_api_key": False,
             }
+        model = config.get("model") or env_values.get("LANGDRILL_DEFAULT_MODEL") or provider.get("model", "")
         return {
             "provider_id": provider_id,
             "base_url": config.get("base_url")
             or env_values.get("LANGDRILL_PROVIDER_BASE_URL")
             or provider.get("base_url", ""),
-            "model": config.get("model")
-            or env_values.get("LANGDRILL_DEFAULT_MODEL")
-            or provider.get("model", ""),
+            "model": model,
+            "thinking_level": thinking_level,
+            "thinking_level_options": self.thinking_level_options(provider_id, model),
             "has_api_key": bool(env_values.get("LANGDRILL_PROVIDER_API_KEY", "")),
         }
 
@@ -707,10 +795,19 @@ class ModelConfigService:
         all_providers = self.providers()
         return next((item for item in all_providers if item["id"] == provider_id), all_providers[0])
 
-    def save(self, provider_id: str, base_url: str, model: str, api_key: str = "") -> dict[str, Any]:
+    def save(
+        self,
+        provider_id: str,
+        base_url: str,
+        model: str,
+        api_key: str = "",
+        *,
+        thinking_level: str = "auto",
+    ) -> dict[str, Any]:
         provider = self.provider_by_id(provider_id)
         clean_base_url = (base_url or provider.get("base_url", "")).strip()
         clean_model = (model or provider.get("model", "")).strip()
+        clean_thinking_level = self._normalize_thinking_level(thinking_level)
         
         self.conn.execute(
             """
@@ -723,6 +820,7 @@ class ModelConfigService:
                         "provider_id": provider_id,
                         "base_url": clean_base_url,
                         "model": clean_model,
+                        "thinking_level": clean_thinking_level,
                     }
                 ),
             ),

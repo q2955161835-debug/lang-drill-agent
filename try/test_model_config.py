@@ -64,10 +64,41 @@ def test_mock_config_does_not_inherit_real_provider_env(tmp_path, monkeypatch):
     config = service.current()
     secret_config = service.current_with_secret()
 
-    assert config == {
-        "provider_id": "mock",
-        "base_url": "",
-        "model": "mock-tutor-v1",
-        "has_api_key": False,
-    }
+    assert config["provider_id"] == "mock"
+    assert config["base_url"] == ""
+    assert config["model"] == "mock-tutor-v1"
+    assert config["thinking_level"] == "auto"
+    assert config["thinking_level_options"][0]["id"] == "auto"
+    assert config["has_api_key"] is False
     assert secret_config["api_key"] == ""
+
+
+def test_model_config_saves_thinking_level(tmp_path, monkeypatch):
+    monkeypatch.delenv("LANGDRILL_DEFAULT_PROVIDER", raising=False)
+    monkeypatch.delenv("LANGDRILL_DEFAULT_MODEL", raising=False)
+    monkeypatch.delenv("LANGDRILL_PROVIDER_BASE_URL", raising=False)
+    monkeypatch.delenv("LANGDRILL_PROVIDER_API_KEY", raising=False)
+    monkeypatch.setattr(services_module, "PROJECT_ROOT", tmp_path)
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """
+        CREATE TABLE app_settings (
+          key TEXT PRIMARY KEY,
+          value_json TEXT NOT NULL,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
+    service = ModelConfigService(conn)
+    config = service.save(
+        "mimo",
+        "https://api.xiaomimimo.com/v1",
+        "mimo-v2.5-pro",
+        thinking_level="high",
+    )
+
+    assert config["thinking_level"] == "high"
+    assert {item["id"] for item in config["thinking_level_options"]} == {"auto", "low", "medium", "high"}

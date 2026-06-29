@@ -21,11 +21,19 @@ class ModelResult:
 
 
 class ModelProvider:
-    def __init__(self, provider_id: str, model: str, base_url: str = "", api_key: str = ""):
+    def __init__(
+        self,
+        provider_id: str,
+        model: str,
+        base_url: str = "",
+        api_key: str = "",
+        thinking_level: str = "auto",
+    ):
         self.provider_id = provider_id
         self.model = model
         self.base_url = base_url
         self.api_key = api_key
+        self.thinking_level = thinking_level if thinking_level in {"auto", "low", "medium", "high"} else "auto"
 
     def complete(self, pack: PromptPack) -> ModelResult:
         if self.provider_id == "mock":
@@ -50,6 +58,21 @@ class ModelProvider:
             model=self.model,
         )
 
+    def _thinking_instruction(self) -> str:
+        if self.thinking_level == "low":
+            return "优先快速响应，只做必要推理，答案保持简洁。"
+        if self.thinking_level == "medium":
+            return "进行适中推理，兼顾速度和准确性。"
+        if self.thinking_level == "high":
+            return "进行更充分的内部推理与校验，但只输出最终结论和必要解释。"
+        return ""
+
+    def _supports_reasoning_effort(self) -> bool:
+        model_name = self.model.lower()
+        return self.provider_id in {"openai", "local", "custom"} and any(
+            keyword in model_name for keyword in ("o1", "o3", "o4", "gpt-5")
+        )
+
     def _openai_compatible(self, pack: PromptPack) -> ModelResult:
         started = time.perf_counter()
         base_url = (self.base_url or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")).rstrip("/")
@@ -61,14 +84,21 @@ class ModelProvider:
             raise RuntimeError("缺少 API key，请写入 .env。")
 
         system = "\n\n".join(module["content"] for module in pack.system_modules)
+        developer_context: dict[str, Any] = {"context_pack": pack.context_pack}
+        thinking_instruction = self._thinking_instruction()
+        if thinking_instruction:
+            developer_context["thinking_level"] = self.thinking_level
+            developer_context["thinking_instruction"] = thinking_instruction
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": [
                 {"role": "system", "content": system},
-                {"role": "developer", "content": dumps({"context_pack": pack.context_pack})},
+                {"role": "developer", "content": dumps(developer_context)},
                 {"role": "user", "content": pack.user_content},
             ],
         }
+        if self._supports_reasoning_effort() and self.thinking_level != "auto":
+            payload["reasoning_effort"] = self.thinking_level
         if pack.output_schema:
             payload["response_format"] = {"type": "json_object"}
 

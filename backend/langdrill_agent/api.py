@@ -83,6 +83,29 @@ def startup() -> None:
     init_db()
 
 
+def _question_progress_message(
+    progress: dict[str, int],
+    active_question: dict | None,
+    *,
+    created: int = 0,
+    opening_message: str = "",
+    prefix: str = "",
+) -> str:
+    total = progress.get("total", 0)
+    done = progress.get("done", 0)
+    if active_question:
+        sequence = int(active_question.get("sequence") or done + 1)
+        lead = opening_message.strip() or prefix.strip()
+        if not lead:
+            lead = f"已准备好第 {sequence} 题 / 共 {total or sequence} 题。"
+        if created:
+            lead = f"{lead}\n\n本轮已先生成并入库 {created} 道题。"
+        return f"{lead}\n\n当前进度：第 {sequence} 题 / 共 {total or sequence} 题。"
+    if total and done >= total:
+        return f"本轮题目已完成：{done}/{total}。可以输入新的学习内容生成下一轮题组，或输入“总结”查看今日复盘。"
+    return prefix or "还没有可展示的题目。请输入今日学习内容，我会先生成完整题组再开始。"
+
+
 @app.get("/api/bootstrap")
 def bootstrap() -> dict:
     init_db()
@@ -140,6 +163,7 @@ def save_model_config(request: ModelConfigRequest) -> dict:
             request.base_url,
             request.model,
             request.api_key,
+            thinking_level=request.thinking_level,
         )
         return {"model_config": config, "providers": svc.providers()}
 
@@ -202,12 +226,13 @@ def chat(request: ChatRequest) -> ChatResponse:
             model_config.get("model") or settings.default_model,
             model_config.get("base_url") or "",
             model_config.get("api_key") or "",
+            model_config.get("thinking_level") or "auto",
         )
 
         active_question = active  # 默认保持当前题
 
         if task.value == "answer_question" and active:
-            # ── 答题 ──
+            # ── 答题：判题、回写，再自动推进到下一道库存题 ──
             answer_content = selected_option or request.content
             result = EvaluatorTutorAgent(conn, provider).evaluate(
                 session_id,
@@ -215,8 +240,20 @@ def chat(request: ChatRequest) -> ChatResponse:
                 answer_content,
                 extra_prompt=extra_prompt,
             )
-            assistant_content = result.feedback
+            session_service.mark_completed_if_finished(session_id)
             active_question = QuestionService(conn).active_question(session_id)
+            progress = QuestionService(conn).question_progress(session_id)
+            if active_question:
+                assistant_content = (
+                    f"{result.feedback}\n\n"
+                    f"下一题已就绪：第 {active_question.get('sequence')} 题 / 共 {progress['total']} 题。"
+                )
+            else:
+                assistant_content = (
+                    f"{result.feedback}\n\n"
+                    f"本轮题目已完成：{progress['done']}/{progress['total']}。"
+                    "可以输入新的学习内容开启下一轮，或输入“总结”查看今日复盘。"
+                )
 
         elif task.value == "explanation" and active:
             # ── 追问 / 讲解：围绕当前题进行解释，不消耗作答次数 ──
@@ -240,6 +277,16 @@ def chat(request: ChatRequest) -> ChatResponse:
             )
             model_result = provider.complete(pack)
             assistant_content = model_result.content
+
+        elif task.value == "continue_drill":
+            # ── 推进：只取数据库里的下一道题，不重新初始化今日面板 ──
+            active_question = QuestionService(conn).active_question(session_id)
+            progress = QuestionService(conn).question_progress(session_id)
+            assistant_content = _question_progress_message(
+                progress,
+                active_question,
+                prefix="我会继续当前题组，不重新开始。",
+            )
 
         elif task.value == "settings":
             # ── 设置：引导用户去设置面板 ──
@@ -273,12 +320,26 @@ def chat(request: ChatRequest) -> ChatResponse:
             assistant_content = f"已识别到分支对话请求。请使用选中文本功能或右侧分支面板继续。选中内容：{request.selected_text[:60]}"
 
         else:
-            # ── 默认：日常训练 + 出题 ──
-            OrchestratorAgent(conn, provider).handle_daily_drill(session_id, request.content)
-            question = QuestionAuthorAgent(conn, provider).ensure_first_question(session_id)
-            assistant_content = "已初始化今日学习面板，并准备好第一题。"
-            active_question = question.model_dump()
-            active_question["status"] = "ready"
+            # ── 默认：有库存题先继续；无库存时先生成完整题组入库，再展示第一题 ──
+            progress_before = QuestionService(conn).question_progress(session_id)
+            if active and progress_before["ready"]:
+                active_question = active
+                assistant_content = _question_progress_message(
+                    progress_before,
+                    active_question,
+                    prefix="当前题组仍在进行中。",
+                )
+            else:
+                OrchestratorAgent(conn, provider).handle_daily_drill(session_id, request.content)
+                author_result = QuestionAuthorAgent(conn, provider).ensure_question_set(session_id, request.content)
+                active_question = QuestionService(conn).active_question(session_id)
+                progress = QuestionService(conn).question_progress(session_id)
+                assistant_content = _question_progress_message(
+                    progress,
+                    active_question,
+                    created=int(author_result.get("created", 0)),
+                    opening_message=str(author_result.get("opening_message") or ""),
+                )
 
         msg_id = session_service.add_message(
             session_id,

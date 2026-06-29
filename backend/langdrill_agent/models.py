@@ -15,6 +15,7 @@ class AgentName(str, Enum):
 class TaskType(str, Enum):
     onboarding = "onboarding"
     daily_drill = "daily_drill"
+    continue_drill = "continue_drill"
     answer_question = "answer_question"
     explanation = "explanation"
     branch_chat = "branch_chat"
@@ -66,6 +67,22 @@ class Question(BaseModel):
     source_refs: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class AuthoredQuestion(BaseModel):
+    type: Literal["multiple_choice", "short_answer", "cloze", "translation"] = "multiple_choice"
+    prompt: str = Field(min_length=6)
+    options: list[str] = Field(default_factory=list)
+    answer: dict[str, Any]
+    explanation: str = Field(min_length=6)
+    knowledge_tags: list[str] = Field(default_factory=list)
+    difficulty: float = Field(ge=0, le=1, default=0.5)
+    source_refs: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class AuthoredQuestionSet(BaseModel):
+    opening_message: str = ""
+    questions: list[AuthoredQuestion] = Field(default_factory=list)
+
+
 class EvaluationResult(BaseModel):
     is_correct: bool
     feedback: str
@@ -105,6 +122,7 @@ class ModelConfigRequest(BaseModel):
     model: str = "mock-tutor-v1"
     base_url: str = ""
     api_key: str = ""
+    thinking_level: Literal["auto", "low", "medium", "high"] = "auto"
 
 class AddCustomProviderRequest(BaseModel):
     name: str

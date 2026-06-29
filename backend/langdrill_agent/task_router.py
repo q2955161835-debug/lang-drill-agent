@@ -26,6 +26,7 @@ _SETTINGS_KEYWORDS = (
 )
 
 _SUMMARY_KEYWORDS = ("总结", "复盘", "今天表现", "今日表现", "复习报告")
+_CONTINUE_KEYWORDS = ("下一题", "继续", "下一个", "next", "Next", "NEXT")
 
 
 class TaskRouter:
@@ -63,5 +64,9 @@ class TaskRouter:
         if has_active_question and _ANSWER_PATTERN.match(text):
             return TaskType.answer_question
 
-        # 7. 默认：日常训练
+        # 7. 推进：只取数据库里的下一道待答题，不重新初始化
+        if any(keyword == text or keyword in text for keyword in _CONTINUE_KEYWORDS):
+            return TaskType.continue_drill
+
+        # 8. 默认：日常训练
         return TaskType.daily_drill
