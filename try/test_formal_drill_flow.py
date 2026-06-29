@@ -94,10 +94,13 @@ def test_chat_generates_formal_question_set_and_auto_advances(tmp_path: Path, mo
 
 
 def test_start_bat_uses_hidden_background_processes() -> None:
-    script = (Path(__file__).resolve().parents[1] / "start.bat").read_text(encoding="utf-8")
+    root = Path(__file__).resolve().parents[1]
+    script = (root / "start.bat").read_text(encoding="utf-8")
+    launcher = (root / "scripts" / "dev" / "start-dev.ps1").read_text(encoding="utf-8")
 
     assert "cmd /k" not in script
-    assert "WindowStyle Hidden" in script
-    assert "langdrill-backend.out.log" in script
-    assert "langdrill-frontend.out.log" in script
-    assert "已在后台启动" in script
+    assert "scripts\\dev\\start-dev.ps1" in script
+    assert "WindowStyle Hidden" in launcher
+    assert "langdrill-backend.out.log" in launcher
+    assert "langdrill-frontend.out.log" in launcher
+    assert "Wait-LangDrillHttp" in launcher

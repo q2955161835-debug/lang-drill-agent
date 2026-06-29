@@ -1,7 +1,5 @@
 # Lang Drill Agent（语言学习训练 Agent）
 
-![Lang Drill Agent（语言学习训练 Agent）海报](doc/assets/lang-drill-agent-poster.png)
-
 Lang Drill Agent（语言学习训练 Agent）是一个面向长期语言学习、刷题训练、错题复盘和考试备考的多 Agent（智能体）系统。它把 `语言学习-lang-drill-skill` 制作为可运行项目，同时支持 CLI（Command Line Interface，命令行接口）和 Web（网页）前端。
 
 当前公开定位重点面向英语四级/六级（CET-4/CET-6，大学英语四级/六级）与日语四级/六级（CJT4/CJT6，大学日语四级/六级）备考：围绕考纲词汇、语法范围、阅读/听力/翻译/写作题型、真题风格索引、错题回流和间隔复习，把“每天刷什么、怎么判题、错题何时回来”沉淀为可追踪的学习流程。
@@ -115,7 +113,12 @@ Windows 一键启动：
 .\start.bat
 ```
 
-脚本会自动初始化默认英语/CET-4 档案，在后台启动后端 `http://127.0.0.1:8000` 和前端 `http://127.0.0.1:5173`，把运行日志写入 `logs/`，并打开浏览器，不再额外留下后端/前端可见终端。
+`start.bat` 是轻量入口，实际启动逻辑在 `scripts/dev/start-dev.ps1`。脚本会自动初始化默认英语/CET-4 档案，清理 `5173` / `8000` 端口，在后台启动后端 `http://127.0.0.1:8000` 和前端 `http://127.0.0.1:5173`，等待两个 HTTP（HyperText Transfer Protocol，超文本传输协议）健康检查通过后再打开浏览器。
+
+运行日志写入：
+
+- 后端：`logs/langdrill-backend.out.log` / `logs/langdrill-backend.err.log`
+- 前端：`logs/langdrill-frontend.out.log` / `logs/langdrill-frontend.err.log`
 
 停止服务：
 
@@ -179,10 +182,12 @@ npm run dev
 backend/langdrill_agent/        共享后端内核、API（接口）、CLI（命令行接口）、服务层和 Agent（智能体）
 backend/langdrill_agent/migrations/ SQLite（轻量数据库）schema（结构定义）
 frontend/                       React（前端框架）+ Vite（前端构建工具）网页前端
-archive/optimized-out/          已下线旧功能模块归档
+scripts/dev/                    开发期启动与维护脚本
+src-tauri/                      Tauri（桌面壳）Windows 桌面封装骨架
 doc/                            架构说明、项目地图、进展记录和 README（说明文档）资源
-doc/assets/                     README（说明文档）海报等展示资源
 try/                            测试和调试文件，可清理
+archive/optimized-out/          已下线旧功能模块归档
+logs/                           本地运行日志，不提交
 ```
 
 ## 验证
@@ -190,7 +195,9 @@ try/                            测试和调试文件，可清理
 ```powershell
 py -m ruff check backend try
 py -m pytest try
+py -m pytest try/test_startup_scripts.py -q
 py try\full_chain_smoke.py
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\dev\start-dev.ps1 -NoBrowser -SkipInstall
 cd frontend
 npm run build
 ```
