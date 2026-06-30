@@ -1688,13 +1688,13 @@ class ModelConfigService:
         )
         return self.current()
 
-    def add_custom_provider(self, name: str, base_url: str, default_model: str) -> None:
+    def add_custom_provider(self, name: str, base_url: str, default_model: str) -> dict[str, Any]:
         row = self.conn.execute("SELECT value_json FROM app_settings WHERE key='model.custom_providers'").fetchone()
         customs = loads(row["value_json"], []) if row else []
         new_id = f"custom_{len(customs) + 1}_{int(datetime.now().timestamp())}"
         clean_name = name.strip() or "Custom Provider"
         clean_model = default_model.strip()
-        customs.append({
+        provider = {
             "id": new_id,
             "label": clean_name,
             "kind": "openai-compatible",
@@ -1704,11 +1704,13 @@ class ModelConfigService:
             "base_url": base_url.strip(),
             "model": clean_model,
             "model_options": [clean_model] if clean_model else [],
-        })
+        }
+        customs.append(provider)
         self.conn.execute(
             "INSERT OR REPLACE INTO app_settings (key, value_json, updated_at) VALUES ('model.custom_providers', ?, CURRENT_TIMESTAMP)",
             (dumps(customs),),
         )
+        return self._normalize_custom_provider(provider)
 
     def _normalize_custom_provider(self, provider: dict[str, Any]) -> dict[str, Any]:
         item = deepcopy(provider)

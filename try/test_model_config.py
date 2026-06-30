@@ -1,6 +1,9 @@
 import sqlite3
 
+from fastapi.testclient import TestClient
+
 import langdrill_agent.services as services_module
+from langdrill_agent.api import app
 from langdrill_agent.services import ModelConfigService
 
 
@@ -91,11 +94,41 @@ def test_custom_provider_label_uses_raw_name_without_suffix(tmp_path, monkeypatc
     monkeypatch.setattr(services_module, "PROJECT_ROOT", tmp_path)
     service = ModelConfigService(_settings_conn())
 
-    service.add_custom_provider("MyProvider", "https://example.test/v1", "my-model")
+    created = service.add_custom_provider("MyProvider", "https://example.test/v1", "my-model")
 
     custom_provider = next(item for item in service.providers() if item["id"].startswith("custom_"))
+    assert created["id"] == custom_provider["id"]
+    assert created["model"] == "my-model"
+    assert created["model_options"][0]["id"] == "my-model"
+    assert created["model_options"][0]["label"] == "my-model"
     assert custom_provider["label"] == "MyProvider"
+    assert custom_provider["base_url"] == "https://example.test/v1"
     assert "（" not in custom_provider["label"]
+
+
+def test_add_custom_provider_api_returns_provider_and_refreshed_list(tmp_path, monkeypatch):
+    monkeypatch.setenv("LANGDRILL_USER_DATA_DIR", str(tmp_path / "user"))
+    monkeypatch.setenv("LANGDRILL_DB_PATH", str(tmp_path / "user" / "data" / "langdrill_agent.db"))
+    monkeypatch.setattr(services_module, "PROJECT_ROOT", tmp_path)
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/config/providers/custom",
+        json={
+            "name": "ApiProvider",
+            "base_url": "https://api.example.test/v1",
+            "default_model": "api-model",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    provider = data["provider"]
+    providers = data["providers"]
+    assert provider["label"] == "ApiProvider"
+    assert provider["base_url"] == "https://api.example.test/v1"
+    assert provider["model"] == "api-model"
+    assert any(item["id"] == provider["id"] for item in providers)
 
 
 def test_provider_visibility_requires_configured_api_key(tmp_path, monkeypatch):

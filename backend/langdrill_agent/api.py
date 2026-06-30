@@ -391,8 +391,8 @@ def add_custom_provider(request: AddCustomProviderRequest) -> dict:
     init_db()
     with transaction() as conn:
         svc = ModelConfigService(conn)
-        svc.add_custom_provider(request.name, request.base_url, request.default_model)
-        return {"status": "ok"}
+        provider = svc.add_custom_provider(request.name, request.base_url, request.default_model)
+        return {"status": "ok", "provider": provider, "providers": svc.providers()}
 
 
 @app.post("/api/settings/defaults")

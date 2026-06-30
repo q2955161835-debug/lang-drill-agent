@@ -752,6 +752,19 @@ h1, h2, h3, h4, .brand, .kicker { font-weight: 750; letter-spacing: -0.03em; }
 .inline-row { display: flex; gap: 10px; align-items: center; }
 .inline-row select, .inline-row input { flex: 1; }
 .square-action { width: 44px; justify-content: center; }
+.inline-action.square-action { width: 44px; min-width: 44px; padding-inline: 0; }
+.custom-provider-form {
+  display: grid;
+  gap: 10px;
+  padding: 4px 0 8px;
+}
+.custom-provider-form .form-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.custom-provider-form .form-actions .inline-action {
+  min-width: 112px;
+}
 .inline-link {
   display: inline-flex;
   align-items: center;

@@ -1452,6 +1452,13 @@ function SettingsDialog({
   const [draft, setDraft] = useState(profile);
   const [modelDraft, setModelDraft] = useState<ModelConfig>({ ...modelConfig, api_key: "" });
   const [customModel, setCustomModel] = useState("");
+  const [customProviderOpen, setCustomProviderOpen] = useState(false);
+  const [customProviderSaving, setCustomProviderSaving] = useState(false);
+  const [customProviderDraft, setCustomProviderDraft] = useState({
+    name: "",
+    base_url: "",
+    default_model: ""
+  });
   const [appearanceDraft, setAppearanceDraft] = useState({ themeMode, fontSize });
   const [reviewIntensity, setReviewIntensity] = useState(3);
   const [saveState, setSaveState] = useState("");
@@ -1709,16 +1716,50 @@ function SettingsDialog({
       onClose();
     }
   };
+  const openCustomProviderForm = () => {
+    setCustomProviderOpen(true);
+    setSaveState("请填写自定义供应商信息。");
+  };
+  const cancelCustomProviderForm = () => {
+    setCustomProviderOpen(false);
+    setCustomProviderDraft({ name: "", base_url: "", default_model: "" });
+    setSaveState("");
+  };
   const handleAddCustomProvider = async () => {
-    const name = window.prompt("请输入新的自定义提供商名称（例如：MyProvider）：");
-    if (!name) return;
+    const name = customProviderDraft.name.trim();
+    const baseUrl = customProviderDraft.base_url.trim();
+    const defaultModel = customProviderDraft.default_model.trim();
+    if (!name || !baseUrl || !defaultModel) {
+      setSaveState("请填写供应商名称、Base URL（基础网址）和默认模型。");
+      return;
+    }
+    setCustomProviderSaving(true);
     try {
-      await apiPost("/api/config/providers/custom", { name, base_url: "", default_model: "" });
-      const data = await apiGet<{ providers: ProviderOption[] }>("/api/bootstrap");
-      onProvidersChange(normalizeProviders(data.providers));
-      setSaveState(`提供商 [${name}] 添加成功，请在下拉列表中选择。`);
+      const data = await apiPost<{ provider: ProviderOption; providers: ProviderOption[] }>("/api/config/providers/custom", {
+        name,
+        base_url: baseUrl,
+        default_model: defaultModel
+      });
+      const nextProviders = normalizeProviders(data.providers);
+      const nextProvider = nextProviders.find((item) => item.id === data.provider.id) || normalizeProviders([data.provider])[0];
+      onProvidersChange(nextProviders);
+      setModelDraft({
+        ...modelDraft,
+        provider_id: nextProvider.id,
+        base_url: nextProvider.base_url,
+        api_format: nextProvider.api_format,
+        model: nextProvider.model,
+        thinking_level: defaultThinkingLevelForModel(nextProvider, nextProvider.model),
+        thinking_level_options: thinkingOptionsForModel(nextProvider, nextProvider.model)
+      });
+      setCustomModel("");
+      setCustomProviderDraft({ name: "", base_url: "", default_model: "" });
+      setCustomProviderOpen(false);
+      setSaveState(`提供商 [${name}] 添加成功，已切换到该供应商。`);
     } catch (e) {
       setSaveState(`添加失败: ${e instanceof Error ? e.message : e}`);
+    } finally {
+      setCustomProviderSaving(false);
     }
   };
   const handleAddThinkingLevel = () => {
@@ -1808,8 +1849,55 @@ function SettingsDialog({
                       <option key={provider.id} value={provider.id}>{provider.label}</option>
                     ))}
                   </select>
-                  <button className="inline-action square-action" onClick={() => void handleAddCustomProvider()} title="新增自定义提供商">+</button>
+                  <button
+                    type="button"
+                    className="inline-action square-action"
+                    onClick={openCustomProviderForm}
+                    title="新增自定义提供商"
+                    aria-label="新增自定义提供商"
+                  >
+                    <Plus size={18} />
+                  </button>
                 </div>
+                {customProviderOpen && (
+                  <div className="custom-provider-form">
+                    <label className="field-label">
+                      <span>供应商名称</span>
+                      <input
+                        value={customProviderDraft.name}
+                        onChange={(event) => setCustomProviderDraft({ ...customProviderDraft, name: event.target.value })}
+                        placeholder="例如：MyProvider"
+                      />
+                    </label>
+                    <label className="field-label">
+                      <span>Base URL（基础网址）</span>
+                      <input
+                        value={customProviderDraft.base_url}
+                        onChange={(event) => setCustomProviderDraft({ ...customProviderDraft, base_url: event.target.value })}
+                        placeholder="https://api.example.com/v1"
+                      />
+                    </label>
+                    <label className="field-label">
+                      <span>默认模型</span>
+                      <input
+                        value={customProviderDraft.default_model}
+                        onChange={(event) => setCustomProviderDraft({ ...customProviderDraft, default_model: event.target.value })}
+                        placeholder="provider-model-name"
+                      />
+                    </label>
+                    <div className="inline-row form-actions">
+                      <button type="button" className="inline-action" onClick={cancelCustomProviderForm} disabled={customProviderSaving}>取消</button>
+                      <button
+                        type="button"
+                        className="inline-action primary-inline"
+                        onClick={() => void handleAddCustomProvider()}
+                        disabled={customProviderSaving}
+                      >
+                        {customProviderSaving ? "添加中..." : "添加供应商"}
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <input
                   value={modelDraft.base_url}
                   onChange={(event) => setModelDraft({ ...modelDraft, base_url: event.target.value })}

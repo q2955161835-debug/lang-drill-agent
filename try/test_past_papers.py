@@ -150,10 +150,13 @@ def test_manual_import_adds_paper_and_question_type(tmp_path: Path, monkeypatch)
         service.save_question_types("custom", ["口译", "情景写作"])
         updated = service.status("custom")
 
-    assert status["current_papers"][0]["title"] == "自定义考试 2025 样卷"
+    imported_paper = next(
+        paper for paper in status["current_papers"] if paper["title"] == "自定义考试 2025 样卷"
+    )
+    assert imported_paper["title"] == "自定义考试 2025 样卷"
     assert {"口译", "情景写作"} <= type_ids
     assert updated["enabled_question_type_ids"] == ["口译", "情景写作"]
-    metadata = status["current_papers"][0]["metadata"]
+    metadata = imported_paper["metadata"]
     assert Path(metadata["raw_path"]).exists()
     assert Path(metadata["parsed_path"]).exists()
     assert metadata["parse_status"] == "parsed"
