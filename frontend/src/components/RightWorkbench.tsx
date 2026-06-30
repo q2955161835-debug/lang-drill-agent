@@ -11,7 +11,7 @@ import {
 import type { DailyPanel, Message, ScreenshotImportResult } from "../types";
 import { apiGet, apiPost } from "../api";
 
-type WorkbenchTab = "branch" | "mirror" | "screenshot" | "voice";
+export type WorkbenchTab = "branch" | "mirror" | "screenshot" | "voice";
 
 type RightWorkbenchProps = {
   open: boolean;
@@ -19,6 +19,8 @@ type RightWorkbenchProps = {
   branchMessages: Message[];
   sessionId: string | null;
   onToggle: () => void;
+  activeTab: WorkbenchTab;
+  onTabChange: (tab: WorkbenchTab) => void;
   onSendBranchMessage: (content: string) => void;
   onDailyPanelChange: (panel: DailyPanel) => void;
   onScreenshotImportComplete: (result: ScreenshotImportResult) => void;
@@ -47,12 +49,12 @@ export function RightWorkbench({
   branchMessages,
   sessionId,
   onToggle,
+  activeTab,
+  onTabChange,
   onSendBranchMessage,
   onDailyPanelChange,
   onScreenshotImportComplete,
 }: RightWorkbenchProps) {
-  const [activeTab, setActiveTab] = useState<WorkbenchTab>("branch");
-
   return (
     <aside className={`right-rail panel-motion ${open ? "open" : "closed"}`}>
       <button className="right-toggle" onClick={onToggle} title="展开右侧工作台">
@@ -75,7 +77,7 @@ export function RightWorkbench({
                   key={tab.id}
                   className={activeTab === tab.id ? "active" : ""}
                   disabled={tab.disabled}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => onTabChange(tab.id)}
                   role="tab"
                   aria-selected={activeTab === tab.id}
                 >
@@ -206,6 +208,10 @@ function ScreenshotImportPanel({
   const parse = async (startDrill: boolean) => {
     if (loading) return;
     setLoading(true);
+    setStatus(startDrill ? "截图解析中，随后会生成题目..." : "截图解析中...");
+    const generationTimer = startDrill
+      ? window.setTimeout(() => setStatus("题目生成中，请稍等..."), 800)
+      : undefined;
     try {
       const data = await apiPost<ScreenshotImportResult>("/api/screenshot/parse", {
         text,
@@ -226,6 +232,7 @@ function ScreenshotImportPanel({
     } catch (err) {
       setStatus(`截图处理失败：${err instanceof Error ? err.message : "未知错误"}`);
     } finally {
+      if (generationTimer !== undefined) window.clearTimeout(generationTimer);
       setLoading(false);
     }
   };

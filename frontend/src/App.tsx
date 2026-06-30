@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import {
@@ -6,11 +6,14 @@ import {
   CaretDown,
   ChatCircleText,
   CheckCircle,
+  CircleNotch,
   GearSix,
   GitBranch,
+  ImageSquare,
   ListBullets,
   Moon,
   PaperPlaneRight,
+  PlayCircle,
   Plus,
   ShieldCheck,
   Sidebar,
@@ -22,7 +25,7 @@ import {
 } from "@phosphor-icons/react";
 import { apiDelete, apiGet, apiPost } from "./api";
 import { ContextMenu, type ContextMenuItem } from "./components/ContextMenu";
-import { RightWorkbench } from "./components/RightWorkbench";
+import { RightWorkbench, type WorkbenchTab } from "./components/RightWorkbench";
 import type {
   DailyPanel,
   ExamOption,
@@ -69,12 +72,12 @@ function MessageItem({ message, onContextMenu }: { message: Message; onContextMe
   );
 }
 
-function ThinkingBubble() {
+function ThinkingBubble({ label }: { label: string }) {
   return (
-    <article className="message assistant thinking-message" aria-live="polite" aria-label="模型正在思考">
+    <article className="message assistant thinking-message" aria-live="polite" aria-label={label}>
       <div className="avatar"><Sparkle size={18} /></div>
       <div className="bubble thinking-bubble">
-        <span>模型正在思考</span>
+        <span>{label}</span>
         <span className="thinking-dots" aria-hidden="true"><i /> <i /> <i /></span>
       </div>
     </article>
@@ -254,9 +257,50 @@ const DEFAULT_LEARNING_STATS: LearningStats = {
 };
 
 const DRAFT_SESSION_ID = "__draft_new_chat__";
+const DEFAULT_CONTEXT_LIMIT = 1_000_000;
+const DEFAULT_TOKEN_USAGE: TokenUsage = {
+  input: 0,
+  output: 0,
+  total: 0,
+  estimated_current_context: 0,
+  context_limit: DEFAULT_CONTEXT_LIMIT,
+  context_percent: 0,
+  context_messages: 0,
+  compressed_context_tokens: 0,
+  sessions_total: 0,
+  messages_total: 0,
+  active_days: 0,
+  current_streak_days: 0,
+  most_used_model: "",
+  most_used_model_percent: 0,
+  model_breakdown: [],
+  daily_activity: []
+};
 
 function isOptionAnswer(content: string) {
   return /^(?:选择?\s*)?[A-D]$/i.test(content.trim()) || /^答案是\s*[A-D]$/i.test(content.trim());
+}
+
+function looksLikeScreenshotVocabulary(content: string) {
+  const lines = content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  let terms = 0;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (/^[A-Za-z][A-Za-z'-]{1,40}$/.test(lines[index]) && lines[index + 1] && /[\u4e00-\u9fff]|^(?:n|v|vi|vt|adj|adv|prep|conj|pron|num|art|aux)\./i.test(lines[index + 1])) {
+      terms += 1;
+    }
+  }
+  return terms >= 3;
+}
+
+function formatNumber(value: number | undefined) {
+  return Math.round(value || 0).toLocaleString("zh-CN");
+}
+
+function formatCompactNumber(value: number | undefined) {
+  const amount = value || 0;
+  if (amount >= 100_000_000) return `${(amount / 100_000_000).toFixed(1)}亿`;
+  if (amount >= 10_000) return `${(amount / 10_000).toFixed(1)}万`;
+  return formatNumber(amount);
 }
 
 function cleanQuestionPrompt(question: Question) {
@@ -404,13 +448,16 @@ export default function App() {
   const [dailyPanel, setDailyPanel] = useState<DailyPanel>(DEFAULT_PANEL);
   const [learningStats, setLearningStats] = useState<LearningStats>(DEFAULT_LEARNING_STATS);
   const [activeQuestion, setActiveQuestion] = useState<Question | null>(null);
-  const [tokenUsage, setTokenUsage] = useState({ input: 0, output: 0, total: 0, estimated_current_context: 0 });
+  const [tokenUsage, setTokenUsage] = useState<TokenUsage>(DEFAULT_TOKEN_USAGE);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [loadingLabel, setLoadingLabel] = useState("模型正在思考");
+  const [compressingContext, setCompressingContext] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [pendingNewSession, setPendingNewSession] = useState(false);
   const [leftOpen, setLeftOpen] = useState(() => localStorage.getItem("leftOpen") !== "false");
   const [rightOpen, setRightOpen] = useState(false);
+  const [workbenchTab, setWorkbenchTab] = useState<WorkbenchTab>("branch");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => (localStorage.getItem("themeMode") as ThemeMode | null) || "system");
@@ -526,7 +573,7 @@ export default function App() {
     apiGet<{
       profile: Profile;
       sessions: SessionItem[];
-      token_usage: typeof tokenUsage;
+      token_usage: TokenUsage;
       learning_stats?: LearningStats;
       providers: ProviderOption[];
       model_config: ModelConfig;
@@ -540,20 +587,29 @@ export default function App() {
         setExamOptions(data.exam_options?.length ? data.exam_options : DEFAULT_EXAM_OPTIONS);
         setSyllabusStatus(data.syllabus_status || DEFAULT_SYLLABUS_STATUS);
         setSessions(data.sessions);
-        setTokenUsage(data.token_usage);
+        setTokenUsage({ ...DEFAULT_TOKEN_USAGE, ...data.token_usage });
         setLearningStats(data.learning_stats || DEFAULT_LEARNING_STATS);
         setOnboardingOpen(data.profile.exam_id === "unassigned");
       })
       .catch(() => setOnboardingOpen(true));
   }, []);
 
-  const sendMessage = useCallback(async () => {
-    const content = input.trim();
-    if (!content || sending) return;
-    const userMessage: Message = { id: `local-${Date.now()}`, role: "user", content };
+  const postChatContent = useCallback(async (content: string, forceNewSession = pendingNewSession) => {
+    const cleanContent = content.trim();
+    if (!cleanContent || sending) return;
+    const likelyScreenshot = looksLikeScreenshotVocabulary(cleanContent);
+    const nextLabel = likelyScreenshot
+      ? "截图解析中"
+      : activeQuestion && isOptionAnswer(cleanContent)
+        ? "模型正在判题"
+        : "题目生成中";
+    setLoadingLabel(nextLabel);
+    const generationTimer = likelyScreenshot
+      ? window.setTimeout(() => setLoadingLabel("题目生成中"), 900)
+      : undefined;
+    const userMessage: Message = { id: `local-${Date.now()}`, role: "user", content: cleanContent };
     setMessages((current) => [...current, userMessage]);
-    setInput("");
-    if (activeQuestion && isOptionAnswer(content)) {
+    if (activeQuestion && isOptionAnswer(cleanContent)) {
       setActiveQuestion(null);
     }
     setSending(true);
@@ -563,15 +619,15 @@ export default function App() {
         message: Message;
         daily_panel: DailyPanel;
         active_question: Question | null;
-        token_usage: typeof tokenUsage;
+        token_usage: TokenUsage;
         learning_stats?: LearningStats;
-      }>("/api/chat", { content, session_id: activeSessionId, force_new_session: pendingNewSession });
+      }>("/api/chat", { content: cleanContent, session_id: activeSessionId, force_new_session: forceNewSession });
       setActiveSessionId(data.session_id);
       setPendingNewSession(false);
       setMessages((current) => [...current, data.message]);
       setDailyPanel(data.daily_panel);
       setActiveQuestion(data.active_question);
-      setTokenUsage(data.token_usage);
+      setTokenUsage({ ...DEFAULT_TOKEN_USAGE, ...data.token_usage });
       if (data.learning_stats) setLearningStats(data.learning_stats);
       const refreshed = await apiGet<{ sessions: SessionItem[] }>("/api/sessions");
       setSessions(refreshed.sessions);
@@ -583,9 +639,17 @@ export default function App() {
       };
       setMessages((current) => [...current, errorMsg]);
     } finally {
+      if (generationTimer !== undefined) window.clearTimeout(generationTimer);
       setSending(false);
     }
-  }, [activeQuestion, activeSessionId, input, pendingNewSession, sending]);
+  }, [activeQuestion, activeSessionId, pendingNewSession, sending]);
+
+  const sendMessage = useCallback(async () => {
+    const content = input.trim();
+    if (!content || sending) return;
+    setInput("");
+    await postChatContent(content, pendingNewSession);
+  }, [input, pendingNewSession, postChatContent, sending]);
 
   const sendQuestionAnswer = useCallback(async (selectedOption: string, extraPrompt: string) => {
     if (!activeQuestion || sending) return;
@@ -597,6 +661,7 @@ export default function App() {
     const userMessage: Message = { id: `local-${Date.now()}`, role: "user", content: visibleContent };
     setMessages((current) => [...current, userMessage]);
     setActiveQuestion(null);
+    setLoadingLabel("模型正在判题");
     setSending(true);
     try {
       const data = await apiPost<{
@@ -604,7 +669,7 @@ export default function App() {
         message: Message;
         daily_panel: DailyPanel;
         active_question: Question | null;
-        token_usage: typeof tokenUsage;
+        token_usage: TokenUsage;
         learning_stats?: LearningStats;
       }>("/api/chat", {
         content: "",
@@ -617,7 +682,7 @@ export default function App() {
       setMessages((current) => [...current, data.message]);
       setDailyPanel(data.daily_panel);
       setActiveQuestion(data.active_question);
-      setTokenUsage(data.token_usage);
+      setTokenUsage({ ...DEFAULT_TOKEN_USAGE, ...data.token_usage });
       if (data.learning_stats) setLearningStats(data.learning_stats);
       const refreshed = await apiGet<{ sessions: SessionItem[] }>("/api/sessions");
       setSessions(refreshed.sessions);
@@ -729,11 +794,42 @@ export default function App() {
     }
     if (result.daily_panel) setDailyPanel(result.daily_panel);
     if (result.active_question !== undefined) setActiveQuestion(result.active_question || null);
-    if (result.token_usage) setTokenUsage(result.token_usage);
+    if (result.token_usage) setTokenUsage({ ...DEFAULT_TOKEN_USAGE, ...result.token_usage });
     if (result.learning_stats) setLearningStats(result.learning_stats);
     if (result.sessions) setSessions(result.sessions);
     if (result.auto_started) setRightOpen(false);
   }, []);
+
+  const hasTodayImportedContent = (dailyPanel.knowledge_total || 0) > 0 || dailyPanel.questions_total > 0;
+
+  const quickStartToday = useCallback(() => {
+    if (!hasTodayImportedContent) {
+      setWorkbenchTab("screenshot");
+      setRightOpen(true);
+      return;
+    }
+    void postChatContent("继续今天的答题", false);
+  }, [hasTodayImportedContent, postChatContent]);
+
+  const compressContext = useCallback(async () => {
+    if (!activeSessionId || compressingContext) return;
+    setCompressingContext(true);
+    try {
+      const data = await apiPost<{ token_usage: TokenUsage; method: string; note: string }>("/api/context/compress", {
+        session_id: activeSessionId
+      });
+      setTokenUsage({ ...DEFAULT_TOKEN_USAGE, ...data.token_usage });
+    } catch (err) {
+      const errorMsg: Message = {
+        id: `context-error-${Date.now()}`,
+        role: "assistant",
+        content: `上下文压缩失败：${err instanceof Error ? err.message : "未知错误"}`
+      };
+      setMessages((current) => [...current, errorMsg]);
+    } finally {
+      setCompressingContext(false);
+    }
+  }, [activeSessionId, compressingContext]);
 
   const deleteSession = useCallback(async (sessionId: string) => {
     if (!window.confirm("确认删除这个会话？相关消息、题目、作答和分支记录会一并删除。")) return;
@@ -825,14 +921,14 @@ export default function App() {
                               messages: Message[];
                               daily_panel: DailyPanel;
                               active_question: Question | null;
-                              token_usage: typeof tokenUsage;
+                              token_usage: TokenUsage;
                               learning_stats?: LearningStats;
                             }>(`/api/sessions/${item.id}`);
                             if (detail.messages) {
                               setMessages(detail.messages);
                               setDailyPanel(detail.daily_panel);
                               setActiveQuestion(detail.active_question);
-                              setTokenUsage(detail.token_usage);
+                              setTokenUsage({ ...DEFAULT_TOKEN_USAGE, ...detail.token_usage });
                               if (detail.learning_stats) setLearningStats(detail.learning_stats);
                               setPendingNewSession(false);
                             }
@@ -866,11 +962,18 @@ export default function App() {
             setSelectedText(text);
           }}
         >
-          <LongTermPanel profile={profile} tokenUsage={tokenUsage} learningStats={learningStats} compact={!emptyContext} />
+          <LongTermPanel
+            profile={profile}
+            tokenUsage={tokenUsage}
+            learningStats={learningStats}
+            dailyPanel={dailyPanel}
+            compact={!emptyContext}
+            onQuickStart={quickStartToday}
+          />
           {messages.map((message) => (
             <MessageItem key={message.id} message={message} onContextMenu={showMessageMenu} />
           ))}
-          {sending && <ThinkingBubble />}
+          {sending && <ThinkingBubble label={loadingLabel} />}
           {activeQuestion?.status === "ready" && (
             <QuestionDock
               question={activeQuestion}
@@ -972,6 +1075,12 @@ export default function App() {
                 }
               }}
             />
+            <ContextMeter
+              tokenUsage={tokenUsage}
+              disabled={!activeSessionId || compressingContext}
+              compressing={compressingContext}
+              onCompress={() => void compressContext()}
+            />
             <InteractiveButton className={`send-button ${sending ? "sending" : ""}`} onClick={() => void sendMessage()} title="发送">
               {sending ? <span className="spinner" /> : <PaperPlaneRight size={20} weight="fill" />}
             </InteractiveButton>
@@ -984,6 +1093,8 @@ export default function App() {
         branchId={branchId}
         branchMessages={branchMessages}
         sessionId={activeSessionId}
+        activeTab={workbenchTab}
+        onTabChange={setWorkbenchTab}
         onToggle={() => setRightOpen((value) => !value)}
         onSendBranchMessage={(content) => void sendBranchMessage(content)}
         onDailyPanelChange={setDailyPanel}
@@ -1012,6 +1123,7 @@ export default function App() {
           }}
           onProvidersChange={setProviders}
           onLearningStatsChange={setLearningStats}
+          onTokenUsageChange={(nextUsage) => setTokenUsage({ ...DEFAULT_TOKEN_USAGE, ...nextUsage })}
           onOpenOnboarding={() => {
             setSettingsOpen(false);
             setOnboardingOpen(true);
@@ -1083,18 +1195,23 @@ function LongTermPanel({
   profile,
   tokenUsage,
   learningStats,
-  compact = false
+  dailyPanel,
+  compact = false,
+  onQuickStart
 }: {
   profile: Profile;
   tokenUsage: TokenUsage;
   learningStats: LearningStats;
+  dailyPanel: DailyPanel;
   compact?: boolean;
+  onQuickStart: () => void;
 }) {
   const questionTotal = learningStats.questions_total || 0;
   const wordsTotal = learningStats.words_total || 0;
   const accuracyText = learningStats.attempts_total ? `${Math.round(learningStats.accuracy * 100)}%` : "未开始";
   const questionPercent = questionTotal ? Math.round((learningStats.questions_done / questionTotal) * 100) : 0;
   const wordPercent = wordsTotal ? Math.round((learningStats.words_mastered / wordsTotal) * 100) : 0;
+  const hasTodayContent = (dailyPanel.knowledge_total || 0) > 0 || dailyPanel.questions_total > 0;
   return (
     <section className={`long-panel ${compact ? "compact" : ""}`}>
       <div className="long-grid">
@@ -1113,6 +1230,10 @@ function LongTermPanel({
       <div className="learning-stat-strip" aria-label="长期学习统计">
         <span><ListBullets size={16} /> 当前考试：{learningStats.exam_name || profile.exam_name}</span>
         <span><Brain size={16} /> 累计 token（令牌）：{(tokenUsage.total || 0).toLocaleString("zh-CN")}</span>
+        <button className="quick-start-button" onClick={onQuickStart}>
+          {hasTodayContent ? <PlayCircle size={17} /> : <ImageSquare size={17} />}
+          <span>{hasTodayContent ? "快速开始" : "导入截图"}</span>
+        </button>
       </div>
     </section>
   );
@@ -1125,6 +1246,51 @@ function Stat({ icon, label, value, detail }: { icon: ReactNode; label: string; 
       <strong>{value}</strong>
       <span>{label}</span>
       <small>{detail}</small>
+    </div>
+  );
+}
+
+function ContextMeter({
+  tokenUsage,
+  disabled,
+  compressing,
+  onCompress
+}: {
+  tokenUsage: TokenUsage;
+  disabled: boolean;
+  compressing: boolean;
+  onCompress: () => void;
+}) {
+  const limit = tokenUsage.context_limit || DEFAULT_CONTEXT_LIMIT;
+  const current = tokenUsage.estimated_current_context || 0;
+  const percent = Math.min(100, Math.round(((tokenUsage.context_percent ?? current / limit) || 0) * 100));
+  return (
+    <div className="context-meter-wrap">
+      <button
+        className="context-meter-button"
+        type="button"
+        aria-label="上下文容量"
+        style={{ "--context-percent": `${percent}%` } as CSSProperties}
+      >
+        {compressing ? <CircleNotch size={19} className="context-spin" /> : <span />}
+      </button>
+      <div className="context-popover">
+        <div className="context-popover-head">
+          <strong>上下文容量</strong>
+          <span>{formatCompactNumber(current)} / {formatCompactNumber(limit)}（{percent}%）</span>
+        </div>
+        <div className="thin-progress compact">
+          <span style={{ width: `${Math.max(4, percent)}%` }} />
+        </div>
+        <dl>
+          <div><dt>消息数</dt><dd>{formatNumber(tokenUsage.context_messages)}</dd></div>
+          <div><dt>压缩摘要</dt><dd>{formatCompactNumber(tokenUsage.compressed_context_tokens)}</dd></div>
+          <div><dt>压缩方式</dt><dd>{tokenUsage.compression_method || "未压缩"}</dd></div>
+        </dl>
+        <button className="inline-action context-compress" disabled={disabled} onClick={onCompress}>
+          {compressing ? "压缩中..." : "压缩上下文"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -1200,6 +1366,7 @@ function SettingsDialog({
   onAppearanceChange,
   onProvidersChange,
   onLearningStatsChange,
+  onTokenUsageChange,
   onOpenOnboarding
 }: {
   profile: Profile;
@@ -1207,7 +1374,7 @@ function SettingsDialog({
   modelConfig: ModelConfig;
   themeMode: ThemeMode;
   fontSize: number;
-  tokenUsage: Record<string, number>;
+  tokenUsage: TokenUsage;
   sessions: SessionItem[];
   examOptions: ExamOption[];
   syllabusStatus: SyllabusStatus;
@@ -1219,6 +1386,7 @@ function SettingsDialog({
   onAppearanceChange: (themeMode: ThemeMode, fontSize: number) => void;
   onProvidersChange: (providers: ProviderOption[]) => void;
   onLearningStatsChange: (stats: LearningStats) => void;
+  onTokenUsageChange: (usage: TokenUsage) => void;
   onOpenOnboarding: () => void;
 }) {
   const [draft, setDraft] = useState(profile);
@@ -1227,6 +1395,7 @@ function SettingsDialog({
   const [appearanceDraft, setAppearanceDraft] = useState({ themeMode, fontSize });
   const [reviewIntensity, setReviewIntensity] = useState(3);
   const [saveState, setSaveState] = useState("");
+  const [contextLimit, setContextLimit] = useState(tokenUsage.context_limit || DEFAULT_CONTEXT_LIMIT);
   const [activeSettingsTab, setActiveSettingsTab] = useState("model");
   const [syllabusDraft, setSyllabusDraft] = useState(syllabusStatus);
   const [syllabusMessage, setSyllabusMessage] = useState("");
@@ -1412,6 +1581,13 @@ function SettingsDialog({
   };
   const currentExamOption = examOptions.find((item) => item.id === draft.exam_id) || examOptions[0];
   const tokenMax = Math.max(tokenUsage.total || 0, 1);
+  const saveContextLimit = async () => {
+    const data = await apiPost<{ token_usage: TokenUsage }>("/api/context/settings", {
+      max_tokens: contextLimit
+    });
+    onTokenUsageChange(data.token_usage);
+    setSaveState("上下文容量已保存。");
+  };
   const settingTabs = [
     { id: "model", label: "模型", icon: GearSix },
     { id: "exam", label: "考试", icon: Target },
@@ -1550,19 +1726,78 @@ function SettingsDialog({
               </SettingSection>
             )}
             {activeSettingsTab === "tokens" && (
-              <SettingSection title="令牌统计">
+              <SettingSection title="使用统计">
+                <div className="usage-dashboard">
+                  {[
+                    ["tokens 用量", formatCompactNumber(tokenUsage.total), `${formatNumber(tokenUsage.total)} tokens`],
+                    ["会话数量", formatNumber(tokenUsage.sessions_total), "已创建会话"],
+                    ["消息数量", formatNumber(tokenUsage.messages_total), "主会话消息"],
+                    ["活跃天数", formatNumber(tokenUsage.active_days), "有学习记录的日期"],
+                    ["当前连续天数", formatNumber(tokenUsage.current_streak_days), "按本地日期计算"],
+                    ["最常用模型", tokenUsage.most_used_model || "暂无", `${Math.round((tokenUsage.most_used_model_percent || 0) * 100)}%`]
+                  ].map(([label, value, detail]) => (
+                    <div className="usage-card" key={label}>
+                      <span>{label}</span>
+                      <strong>{value}</strong>
+                      <small>{detail}</small>
+                    </div>
+                  ))}
+                </div>
+                <div className="context-setting-row">
+                  <label className="field-label">
+                    <span>上下文容量上限</span>
+                    <input
+                      type="number"
+                      min="1000"
+                      max="10000000"
+                      step="1000"
+                      value={contextLimit}
+                      onChange={(event) => setContextLimit(Number(event.target.value || DEFAULT_CONTEXT_LIMIT))}
+                    />
+                    <small>默认 1,000,000；聊天栏右下角圆圈会按这个上限显示占用。</small>
+                  </label>
+                  <button className="inline-action" onClick={() => void saveContextLimit()}>保存容量</button>
+                </div>
+                {saveState && <p className="hint">{saveState}</p>}
                 <div className="token-dashboard">
-                  <div className="token-hero"><strong>{tokenUsage.total}</strong><span>累计 token（令牌）</span></div>
+                  <div className="token-hero"><strong>{formatCompactNumber(tokenUsage.total)}</strong><span>累计 token（令牌）</span></div>
                   {[
                     ["输入", tokenUsage.input],
                     ["输出", tokenUsage.output],
                     ["当前上下文估算", tokenUsage.estimated_current_context]
                   ].map(([label, value]) => (
                     <div className="token-meter" key={label}>
-                      <div><span>{label}</span><strong>{value}</strong></div>
+                      <div><span>{label}</span><strong>{formatNumber(Number(value))}</strong></div>
                       <div className="thin-progress compact"><span style={{ width: `${Math.max(8, (Number(value) / tokenMax) * 100)}%` }} /></div>
                     </div>
                   ))}
+                </div>
+                <div className="activity-panel">
+                  <div className="activity-head">
+                    <strong>近 30 天活动</strong>
+                    <span>较少</span>
+                    <i /><i /><i /><i /><i />
+                    <span>较多</span>
+                  </div>
+                  <div className="activity-grid">
+                    {(tokenUsage.daily_activity || []).map((item) => {
+                      const maxTokens = Math.max(...(tokenUsage.daily_activity || []).map((day) => day.tokens), 1);
+                      const level = item.tokens ? Math.max(1, Math.ceil((item.tokens / maxTokens) * 5)) : 0;
+                      return <span key={item.date} className={`activity-cell level-${level}`} title={`${item.date}：${formatNumber(item.tokens)} tokens`} />;
+                    })}
+                  </div>
+                </div>
+                <div className="model-usage-panel">
+                  {(tokenUsage.model_breakdown || []).map((item) => (
+                    <div className="model-usage-row" key={`${item.provider_id}-${item.model}`}>
+                      <div>
+                        <strong>{item.model}</strong>
+                        <span>{formatCompactNumber(item.tokens)} tokens · {item.calls} 次调用</span>
+                      </div>
+                      <small>{Math.round(item.percent * 100)}%</small>
+                    </div>
+                  ))}
+                  {!(tokenUsage.model_breakdown || []).length && <p className="hint">暂无模型调用记录。</p>}
                 </div>
               </SettingSection>
             )}

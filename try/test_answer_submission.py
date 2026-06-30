@@ -10,6 +10,7 @@ from langdrill_agent.models import ChatRequest, TaskType
 from langdrill_agent.models import Question
 from langdrill_agent.services import QuestionService, SessionService
 from langdrill_agent.task_router import TaskRouter
+from langdrill_agent.utils import dumps
 
 
 def test_selected_option_routes_as_answer_even_with_extra_prompt() -> None:
@@ -45,9 +46,28 @@ def test_chat_answers_question_by_id_without_model_reroute(
 ) -> None:
     db_path = tmp_path / "answer.db"
     monkeypatch.setenv("LANGDRILL_DB_PATH", str(db_path))
+    monkeypatch.setenv("LANGDRILL_DEFAULT_PROVIDER", "mock")
+    monkeypatch.setenv("LANGDRILL_DEFAULT_MODEL", "mock-tutor-v1")
     init_db(db_path)
 
     with transaction(db_path) as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO app_settings (key, value_json, updated_at)
+            VALUES ('model.default', ?, CURRENT_TIMESTAMP)
+            """,
+            (
+                dumps(
+                    {
+                        "provider_id": "mock",
+                        "base_url": "",
+                        "model": "mock-tutor-v1",
+                        "api_format": "mock",
+                        "has_api_key": False,
+                    }
+                ),
+            ),
+        )
         session_id = SessionService(conn).ensure_session(None, "answer test", force_new=True)
         QuestionService(conn).save_question(
             Question(
@@ -80,3 +100,10 @@ def test_chat_answers_question_by_id_without_model_reroute(
     payload = response.json()
     assert "判断：正确" in payload["message"]["content"]
     assert payload["active_question"] is None
+
+    with transaction(db_path) as conn:
+        calls = conn.execute(
+            "SELECT task_type FROM model_calls WHERE agent_name='evaluator_tutor'"
+        ).fetchall()
+
+    assert [row["task_type"] for row in calls] == ["answer_evaluation"]

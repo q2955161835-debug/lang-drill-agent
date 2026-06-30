@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from .agents import EvaluatorTutorAgent, OrchestratorAgent, QuestionAuthorAgent, token_totals
 from .config import load_settings
+from .context import ContextService
 from .db import init_db, transaction
 from .logging_config import configure_logging
 from .learning_stats import LearningStatsService
@@ -19,6 +20,8 @@ from .models import (
     BranchRequest,
     ChatRequest,
     ChatResponse,
+    ContextCompressRequest,
+    ContextSettingsRequest,
     InitRequest,
     ModelConfigRequest,
     PhoneMirrorStartRequest,
@@ -163,6 +166,121 @@ def _screenshot_target_count(parsed: dict) -> int:
     return max(6, min(12, word_count))
 
 
+def _looks_like_inline_screenshot_words(parsed: dict) -> bool:
+    words = parsed.get("words") or []
+    options = parsed.get("options") or []
+    return parsed.get("confidence") == "vocabulary_list" and len(words) >= 3 and not options
+
+
+def _screenshot_import_response(
+    conn,
+    *,
+    parsed: dict,
+    session_id: str | None,
+    source_image_path: str = "",
+    force_new_session: bool = False,
+    auto_start_drill: bool = False,
+) -> dict:
+    service = ScreenshotImportService()
+    profile = ProfileService(conn).get()
+    session_service = SessionService(conn)
+    if force_new_session or auto_start_drill or not session_id:
+        session_id = session_service.ensure_session(None, _screenshot_session_title(parsed), force_new=True)
+    imported_count = service.import_words(
+        conn,
+        session_id=session_id,
+        parsed=parsed,
+        exam_id=profile.exam_id,
+        source_image_path=source_image_path,
+    )
+    user_content = f"截图导入文本：\n{parsed['raw_text']}"
+    user_msg_id = session_service.add_message(
+        session_id,
+        "user",
+        user_content,
+        {
+            "source": "screenshot_import",
+            "parsed": parsed,
+            "imported_count": imported_count,
+            "source_image_path": source_image_path,
+        },
+    )
+    response = {
+        **parsed,
+        "imported": True,
+        "imported_count": imported_count,
+        "session_id": session_id,
+        "message_id": user_msg_id,
+        "messages": [{"id": user_msg_id, "role": "user", "content": user_content}],
+        "daily_panel": session_service.daily_panel(session_id),
+        "learning_stats": LearningStatsService(conn).overview(),
+        "token_usage": token_totals(conn, session_id),
+        "sessions": session_service.list_sessions_by_date(),
+    }
+    if not auto_start_drill or not imported_count:
+        return response
+    try:
+        provider = _current_model_provider(conn)
+        author_result = QuestionAuthorAgent(conn, provider).ensure_question_set(
+            session_id,
+            _screenshot_drill_content(parsed, profile.exam_name),
+            target_count=_screenshot_target_count(parsed),
+        )
+        active_question = QuestionService(conn).active_question(session_id)
+        progress = QuestionService(conn).question_progress(session_id)
+        assistant_content = _question_progress_message(
+            progress,
+            active_question,
+            created=int(author_result.get("created", 0)),
+            opening_message=str(author_result.get("opening_message") or ""),
+            prefix=f"已导入 {imported_count} 个截图词汇，并自动生成考试式题组。",
+        )
+        assistant_msg_id = session_service.add_message(
+            session_id,
+            "assistant",
+            assistant_content,
+            {"active_question": active_question, "source": "screenshot_auto_drill"},
+        )
+        response.update(
+            {
+                "auto_started": True,
+                "active_question": active_question,
+                "message": {"id": assistant_msg_id, "role": "assistant", "content": assistant_content},
+                "messages": [
+                    *response["messages"],
+                    {"id": assistant_msg_id, "role": "assistant", "content": assistant_content},
+                ],
+                "daily_panel": session_service.daily_panel(session_id),
+                "learning_stats": LearningStatsService(conn).overview(),
+                "token_usage": token_totals(conn, session_id),
+                "sessions": session_service.list_sessions_by_date(),
+            }
+        )
+    except RuntimeError as exc:
+        logger.warning("model request failed during screenshot auto drill", exc_info=True)
+        assistant_content = _model_request_error_message(exc)
+        assistant_msg_id = session_service.add_message(
+            session_id,
+            "assistant",
+            assistant_content,
+            {"source": "screenshot_auto_drill_error"},
+        )
+        response.update(
+            {
+                "auto_started": False,
+                "generation_error": str(exc),
+                "message": {"id": assistant_msg_id, "role": "assistant", "content": assistant_content},
+                "messages": [
+                    *response["messages"],
+                    {"id": assistant_msg_id, "role": "assistant", "content": assistant_content},
+                ],
+                "sessions": session_service.list_sessions_by_date(),
+                "token_usage": token_totals(conn, session_id),
+            }
+        )
+    return response
+
+
 def _record_model_call(
     conn,
     *,
@@ -289,6 +407,30 @@ def reset_settings_defaults() -> dict:
 def chat(request: ChatRequest) -> ChatResponse:
     init_db()
     with transaction() as conn:
+        if not request.selected_option and not request.question_id and not request.selected_text:
+            parsed = ScreenshotImportService().parse_text(request.content)
+            if _looks_like_inline_screenshot_words(parsed):
+                imported = _screenshot_import_response(
+                    conn,
+                    parsed=parsed,
+                    session_id=None,
+                    force_new_session=True,
+                    auto_start_drill=True,
+                )
+                message = imported.get("message") or {
+                    "id": imported.get("message_id", ""),
+                    "role": "assistant",
+                    "content": f"已导入 {imported.get('imported_count', 0)} 个截图词汇。",
+                }
+                session_id = str(imported["session_id"])
+                return ChatResponse(
+                    session_id=session_id,
+                    message=message,
+                    daily_panel=imported.get("daily_panel", {}),
+                    active_question=imported.get("active_question"),
+                    token_usage=token_totals(conn, session_id),
+                    learning_stats=LearningStatsService(conn).overview(),
+                )
         session_service = SessionService(conn)
         selected_option = (request.selected_option or "").strip().upper()
         extra_prompt = (request.extra_prompt or "").strip()
@@ -572,9 +714,33 @@ def get_session(session_id: str) -> dict:
         detail = SessionService(conn).load_session_detail(session_id)
         if not detail:
             return {"error": "session_not_found"}
-        detail["token_usage"] = token_totals(conn)
+        detail["token_usage"] = token_totals(conn, session_id)
         detail["learning_stats"] = LearningStatsService(conn).overview()
         return detail
+
+
+@app.get("/api/context")
+def context_status(session_id: str | None = None) -> dict:
+    init_db()
+    with transaction() as conn:
+        return {"token_usage": token_totals(conn, session_id), "settings": ContextService(conn).settings()}
+
+
+@app.post("/api/context/settings")
+def context_settings(request: ContextSettingsRequest) -> dict:
+    init_db()
+    with transaction() as conn:
+        settings = ContextService(conn).save_settings(request.max_tokens)
+        return {"settings": settings, "token_usage": token_totals(conn, request.session_id)}
+
+
+@app.post("/api/context/compress")
+def context_compress(request: ContextCompressRequest) -> dict:
+    init_db()
+    with transaction() as conn:
+        result = ContextService(conn).compress_session(request.session_id, request.target_tokens)
+        result["token_usage"] = {**token_totals(conn, request.session_id), **result["token_usage"]}
+        return result
 
 
 @app.delete("/api/sessions/{session_id}")
@@ -663,98 +829,11 @@ def screenshot_parse(request: ScreenshotImportRequest) -> dict:
         return parsed
     init_db()
     with transaction() as conn:
-        profile = ProfileService(conn).get()
-        session_service = SessionService(conn)
-        session_id = request.session_id
-        if request.force_new_session or request.auto_start_drill or not session_id:
-            session_id = session_service.ensure_session(None, _screenshot_session_title(parsed), force_new=True)
-        imported_count = service.import_words(
+        return _screenshot_import_response(
             conn,
-            session_id=session_id,
             parsed=parsed,
-            exam_id=profile.exam_id,
+            session_id=request.session_id,
             source_image_path=request.source_image_path,
+            force_new_session=request.force_new_session,
+            auto_start_drill=request.auto_start_drill,
         )
-        user_msg_id = session_service.add_message(
-            session_id,
-            "user",
-            f"截图导入文本：\n{parsed['raw_text']}",
-            {
-                "source": "screenshot_import",
-                "parsed": parsed,
-                "imported_count": imported_count,
-                "source_image_path": request.source_image_path,
-            },
-        )
-        response = {
-            **parsed,
-            "imported": True,
-            "imported_count": imported_count,
-            "session_id": session_id,
-            "message_id": user_msg_id,
-            "messages": [{"id": user_msg_id, "role": "user", "content": f"截图导入文本：\n{parsed['raw_text']}"}],
-            "daily_panel": session_service.daily_panel(session_id),
-            "learning_stats": LearningStatsService(conn).overview(),
-            "token_usage": token_totals(conn),
-            "sessions": session_service.list_sessions_by_date(),
-        }
-        if request.auto_start_drill and imported_count:
-            try:
-                provider = _current_model_provider(conn)
-                author_result = QuestionAuthorAgent(conn, provider).ensure_question_set(
-                    session_id,
-                    _screenshot_drill_content(parsed, profile.exam_name),
-                    target_count=_screenshot_target_count(parsed),
-                )
-                active_question = QuestionService(conn).active_question(session_id)
-                progress = QuestionService(conn).question_progress(session_id)
-                assistant_content = _question_progress_message(
-                    progress,
-                    active_question,
-                    created=int(author_result.get("created", 0)),
-                    opening_message=str(author_result.get("opening_message") or ""),
-                    prefix=f"已导入 {imported_count} 个截图词汇，并自动生成考试式题组。",
-                )
-                assistant_msg_id = session_service.add_message(
-                    session_id,
-                    "assistant",
-                    assistant_content,
-                    {"active_question": active_question, "source": "screenshot_auto_drill"},
-                )
-                response.update(
-                    {
-                        "auto_started": True,
-                        "active_question": active_question,
-                        "message": {"id": assistant_msg_id, "role": "assistant", "content": assistant_content},
-                        "messages": [
-                            *response["messages"],
-                            {"id": assistant_msg_id, "role": "assistant", "content": assistant_content},
-                        ],
-                        "daily_panel": session_service.daily_panel(session_id),
-                        "learning_stats": LearningStatsService(conn).overview(),
-                        "token_usage": token_totals(conn),
-                        "sessions": session_service.list_sessions_by_date(),
-                    }
-                )
-            except RuntimeError as exc:
-                logger.warning("model request failed during screenshot auto drill", exc_info=True)
-                assistant_content = _model_request_error_message(exc)
-                assistant_msg_id = session_service.add_message(
-                    session_id,
-                    "assistant",
-                    assistant_content,
-                    {"source": "screenshot_auto_drill_error"},
-                )
-                response.update(
-                    {
-                        "auto_started": False,
-                        "generation_error": str(exc),
-                        "message": {"id": assistant_msg_id, "role": "assistant", "content": assistant_content},
-                        "messages": [
-                            *response["messages"],
-                            {"id": assistant_msg_id, "role": "assistant", "content": assistant_content},
-                        ],
-                        "sessions": session_service.list_sessions_by_date(),
-                    }
-                )
-        return response

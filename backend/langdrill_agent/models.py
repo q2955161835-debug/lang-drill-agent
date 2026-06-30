@@ -51,8 +51,18 @@ class ChatResponse(BaseModel):
     message: dict[str, Any]
     daily_panel: dict[str, Any]
     active_question: dict[str, Any] | None = None
-    token_usage: dict[str, int]
+    token_usage: dict[str, Any]
     learning_stats: dict[str, Any]
+
+
+class ContextSettingsRequest(BaseModel):
+    max_tokens: int = Field(default=1_000_000, ge=1_000, le=10_000_000)
+    session_id: str | None = None
+
+
+class ContextCompressRequest(BaseModel):
+    session_id: str
+    target_tokens: int | None = Field(default=None, ge=500, le=200_000)
 
 
 class Question(BaseModel):

@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime
 import logging
 import re
+from typing import Any
 
 from .algorithm import MasteryInputs, mastery_score, next_review_at
+from .context import ContextService
 from .models import AuthoredQuestionSet, EvaluationResult, Question, TaskType
 from .prompt_engine import PromptAssembler, PromptRegistry
 from .providers import ModelProvider
 from .services import ProfileService, QuestionService, SessionService
-from .utils import dumps, estimate_tokens, loads, new_id
+from .utils import dumps, loads, new_id
 from .validator import QuestionValidator
 
 
@@ -778,8 +779,8 @@ class EvaluatorTutorAgent:
             f"讲解：{question_payload['explanation']}\n\n"
             f"知识点：{', '.join(question_payload.get('knowledge_tags', []))}"
         )
-        if extra_prompt.strip():
-            feedback = self._feedback_with_extra_prompt(
+        try:
+            feedback = self._feedback_with_model(
                 session_id=session_id,
                 question_payload=question_payload,
                 user_answer=user_answer,
@@ -787,6 +788,8 @@ class EvaluatorTutorAgent:
                 base_feedback=feedback,
                 extra_prompt=extra_prompt.strip(),
             )
+        except RuntimeError:
+            logger.warning("model request failed during answer feedback, using base feedback", exc_info=True)
         attempt_id = new_id("att")
         self.conn.execute(
             """
@@ -848,7 +851,7 @@ class EvaluatorTutorAgent:
                     (score, due_at, row["id"]),
                 )
 
-    def _feedback_with_extra_prompt(
+    def _feedback_with_model(
         self,
         *,
         session_id: str,
@@ -859,6 +862,7 @@ class EvaluatorTutorAgent:
         extra_prompt: str,
     ) -> str:
         profile = ProfileService(self.conn).get()
+        context = ContextService(self.conn).prompt_context(session_id)
         pack = self.assembler.assemble(
             task_type="evaluation",
             exam_id=profile.exam_id,
@@ -866,11 +870,15 @@ class EvaluatorTutorAgent:
             context_pack={
                 "task_type": TaskType.answer_question.value,
                 "session_id": session_id,
+                "profile": profile.model_dump(),
+                "conversation_context": context,
                 "question": {
                     "id": question_payload.get("id"),
                     "sequence": question_payload.get("sequence"),
                     "prompt": question_payload.get("prompt"),
                     "options": question_payload.get("options", []),
+                    "answer": question_payload.get("answer", {}),
+                    "explanation": question_payload.get("explanation", ""),
                     "knowledge_tags": question_payload.get("knowledge_tags", []),
                 },
                 "programmatic_judgement": "correct" if is_correct else "incorrect",
@@ -878,8 +886,10 @@ class EvaluatorTutorAgent:
             },
             user_content=(
                 f"用户选择：{user_answer}\n"
-                f"用户额外提问：{extra_prompt}\n\n"
-                "请基于程序判定补充讲解，回答额外提问。不要更改正确答案。"
+                f"用户额外提问：{extra_prompt or '无'}\n\n"
+                "请基于程序判定、完整会话上下文、用户学习目标和背景，生成一段定制化判题讲解。"
+                "必须保留对错结论和正确答案，不要更改正确答案；如果用户没有额外提问，也要主动解释为什么对/错，"
+                "指出最该复习的知识点，并给出下一题前的一句具体提醒。"
             ),
             allow_global_user_prompt=True,
         )
@@ -894,7 +904,7 @@ class EvaluatorTutorAgent:
             (
                 new_id("call"),
                 self.name,
-                "evaluation_extra_prompt",
+                "answer_evaluation",
                 self.provider.provider_id,
                 result.model,
                 dumps([m["id"] for m in pack.system_modules]),
@@ -904,16 +914,17 @@ class EvaluatorTutorAgent:
                 "not_required",
             ),
         )
-        return result.content.strip() or base_feedback
+        model_feedback = result.content.strip()
+        if not model_feedback:
+            return base_feedback
+        if model_feedback.startswith("{") and "\"message\"" in model_feedback:
+            return f"{base_feedback}\n\n模型补充：{model_feedback}"
+        return model_feedback
 
 
-def token_totals(conn: sqlite3.Connection) -> dict[str, int]:
-    row = conn.execute(
-        "SELECT COALESCE(SUM(input_tokens),0) AS input, COALESCE(SUM(output_tokens),0) AS output FROM model_calls"
-    ).fetchone()
+def token_totals(conn: sqlite3.Connection, session_id: str | None = None) -> dict[str, Any]:
+    context = ContextService(conn)
     return {
-        "input": int(row["input"]),
-        "output": int(row["output"]),
-        "total": int(row["input"]) + int(row["output"]),
-        "estimated_current_context": estimate_tokens(datetime.now().isoformat()),
+        **context.global_usage_stats(),
+        **context.usage(session_id),
     }

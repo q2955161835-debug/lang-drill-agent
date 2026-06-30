@@ -126,6 +126,32 @@ export type TokenUsage = {
   output: number;
   total: number;
   estimated_current_context: number;
+  context_limit?: number;
+  context_percent?: number;
+  context_messages?: number;
+  compressed_context_tokens?: number;
+  compression_method?: string;
+  compression_available?: boolean;
+  compression_project?: string;
+  compression_project_url?: string;
+  sessions_total?: number;
+  messages_total?: number;
+  active_days?: number;
+  current_streak_days?: number;
+  most_used_model?: string;
+  most_used_model_percent?: number;
+  model_breakdown?: Array<{
+    provider_id: string;
+    model: string;
+    tokens: number;
+    calls: number;
+    percent: number;
+  }>;
+  daily_activity?: Array<{
+    date: string;
+    tokens: number;
+    calls: number;
+  }>;
 };
 
 export type ExamOption = {
