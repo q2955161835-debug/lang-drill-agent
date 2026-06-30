@@ -27,6 +27,7 @@ import { apiDelete, apiGet, apiPost } from "./api";
 import { ContextMenu, type ContextMenuItem } from "./components/ContextMenu";
 import { RightWorkbench, type WorkbenchTab } from "./components/RightWorkbench";
 import type {
+  AnsweredQuestion,
   DailyPanel,
   ExamOption,
   LearningStats,
@@ -49,6 +50,7 @@ gsap.registerPlugin(useGSAP);
 
 function MessageItem({ message, onContextMenu }: { message: Message; onContextMenu: (event: MouseEvent, message: Message) => void }) {
   const container = useRef<HTMLElement>(null);
+  const answeredQuestion = message.payload?.answered_question;
   
   useGSAP(() => {
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -68,7 +70,10 @@ function MessageItem({ message, onContextMenu }: { message: Message; onContextMe
   return (
     <article className={`message ${message.role}`} ref={container} onContextMenu={(event) => onContextMenu(event, message)}>
       <div className="avatar">{message.role === "user" ? <UserCircle size={18} /> : <Sparkle size={18} />}</div>
-      <div className="bubble">{message.content}</div>
+      <div className="message-stack">
+        {answeredQuestion && <QuestionReviewCard question={answeredQuestion} />}
+        <div className="bubble">{message.content}</div>
+      </div>
     </article>
   );
 }
@@ -348,6 +353,28 @@ function formatCompactNumber(value: number | undefined) {
 
 function cleanQuestionPrompt(question: Question) {
   return question.prompt.replace(/^第\s*\d+\s*题\s*\/\s*共\s*\d+\s*题\s*\n?/, "").trim();
+}
+
+function optionLetter(index: number) {
+  return String.fromCharCode(65 + index);
+}
+
+function selectedLetterForQuestion(question: AnsweredQuestion) {
+  const directLetter = (question.selected_option || "").trim().toUpperCase();
+  if (/^[A-D]$/.test(directLetter)) return directLetter;
+  const answerText = (question.selected_answer || "").trim();
+  if (!answerText) return "";
+  const index = question.options.findIndex((option) => option.trim() === answerText);
+  return index >= 0 ? optionLetter(index) : "";
+}
+
+function correctLetterForQuestion(question: Question) {
+  const directLetter = (question.answer?.letter || "").trim().toUpperCase();
+  if (/^[A-D]$/.test(directLetter)) return directLetter;
+  const correctText = (question.answer?.correct || "").trim();
+  if (!correctText) return "";
+  const index = question.options.findIndex((option) => option.trim() === correctText);
+  return index >= 0 ? optionLetter(index) : "";
 }
 
 function toDateTimeLocalValue(value?: string | null) {
@@ -1351,6 +1378,41 @@ function ContextMeter({
   );
 }
 
+function QuestionReviewCard({ question }: { question: AnsweredQuestion }) {
+  const selectedLetter = selectedLetterForQuestion(question);
+  const correctLetter = correctLetterForQuestion(question);
+  const total = Math.max(question.set_total || 0, question.sequence || 1);
+  const resultText = question.is_correct ? "回答正确" : "回答错误";
+  return (
+    <section className={`question-review-card ${question.is_correct ? "correct" : "incorrect"}`} aria-label="已回答题目">
+      <div className="question-review-head">
+        {question.is_correct ? <CheckCircle size={18} /> : <X size={18} />}
+        <span>已回答：第 {question.sequence || 1} 题 / 共 {total} 题</span>
+        <strong>{resultText}</strong>
+      </div>
+      <p>{cleanQuestionPrompt(question)}</p>
+      <div className="review-options" aria-label="上一题选项回顾">
+        {question.options.map((option, index) => {
+          const letter = optionLetter(index);
+          const isSelected = selectedLetter === letter;
+          const isCorrect = correctLetter === letter;
+          const marker = isSelected && isCorrect ? "你的选择 / 正确答案" : isCorrect ? "正确答案" : isSelected ? "你的选择" : "";
+          return (
+            <div
+              key={`${letter}-${option}`}
+              className={`review-option ${isSelected ? "selected" : ""} ${isCorrect ? "correct" : ""}`}
+            >
+              <span className="review-letter">{letter}</span>
+              <span>{option}</span>
+              {marker && <small>{marker}</small>}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function QuestionDock({
   question,
   sending,
@@ -1373,11 +1435,11 @@ function QuestionDock({
       <div className="options">
         {question.options.map((option, index) => (
           <button
-            key={option}
-            className={selectedOption === String.fromCharCode(65 + index) ? "selected" : ""}
-            onClick={() => setSelectedOption(String.fromCharCode(65 + index))}
+            key={`${index}-${option}`}
+            className={selectedOption === optionLetter(index) ? "selected" : ""}
+            onClick={() => setSelectedOption(optionLetter(index))}
           >
-            {String.fromCharCode(65 + index)}. {option}
+            {optionLetter(index)}. {option}
           </button>
         ))}
       </div>

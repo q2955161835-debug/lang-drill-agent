@@ -17,6 +17,14 @@ from .validator import QuestionValidator
 
 logger = logging.getLogger(__name__)
 
+_CJK_TEXT_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\u3040-\u30ff]")
+_ENGLISH_TERM_RE = re.compile(r"^[A-Za-z][A-Za-z' -]{1,80}$")
+_ENGLISH_EXAM_IDS = {"cet4", "cet6", "ielts", "toefl", "gaokao-english"}
+
+
+def _looks_like_english_term(value: object) -> bool:
+    return bool(_ENGLISH_TERM_RE.fullmatch(str(value or "").strip()))
+
 
 class OrchestratorAgent:
     name = "orchestrator"
@@ -89,6 +97,8 @@ class OrchestratorAgent:
                 pieces = re.split(r"[:：]", line, maxsplit=1)
                 term = pieces[0].strip()
                 meaning = pieces[1].strip() if len(pieces) > 1 else ""
+            if exam_id in _ENGLISH_EXAM_IDS and not _looks_like_english_term(term):
+                continue
             if not term or not meaning:
                 continue
             existing = self.conn.execute(
@@ -220,6 +230,7 @@ class QuestionAuthorAgent:
                     "必须真实参考 past_paper_context.selected_papers 中当前选中的历年真题试卷索引、来源和风格摘要。",
                     "只能生成 past_paper_context.enabled_question_types 中已勾选的题型；如果用户关闭某类题型，本轮题组不要生成该题型。",
                     "选择题选项优先使用英文单词、短语、句子或同义改写，禁止只出“选择中文释义 / 最合适理解”的词卡题。",
+                    "英语考试题目的选择题选项必须全部是英文内容，不得混入中文释义、日文、调试词、来源说明或用户输入里的中文元信息。",
                     "每题必须考语境理解、搭配、语法或阅读推断，不能只靠中英文同形或裸释义猜答案。",
                     "每题必须有准确答案、讲解和 knowledge_tags。",
                     "每题 source_refs 至少包含一个被参考的真题试卷 id、year、title、source_url 和 boundary。",
@@ -294,8 +305,12 @@ class QuestionAuthorAgent:
             (exam_id, limit),
         ).fetchall()
         seen_terms = {str(item.get("term") or "").lower() for item in explicit_pool}
-        pool = [*explicit_pool]
-        pool.extend(dict(row) for row in rows if str(row["term"] or "").lower() not in seen_terms)
+        pool = [item for item in explicit_pool if self._allow_pool_item(exam_id, item)]
+        pool.extend(
+            dict(row)
+            for row in rows
+            if str(row["term"] or "").lower() not in seen_terms and self._allow_pool_item(exam_id, dict(row))
+        )
         pool = pool[:limit]
         text = requested_content.strip()
         if text and not pool:
@@ -313,6 +328,10 @@ class QuestionAuthorAgent:
                 }
             )
         return pool
+
+    @staticmethod
+    def _allow_pool_item(exam_id: str, item: dict[str, object]) -> bool:
+        return exam_id not in _ENGLISH_EXAM_IDS or _looks_like_english_term(item.get("term"))
 
     def _explicit_content_pool(self, requested_content: str) -> list[dict[str, object]]:
         pool: list[dict[str, object]] = []
@@ -431,17 +450,18 @@ class QuestionAuthorAgent:
     def _validate_questions(self, questions: list[Question]) -> None:
         if not questions:
             raise ValueError("题组为空")
+        profile = self.profile_service.get()
         letters: list[str] = []
         for question in questions:
             self.validator.validate(question)
-            self._validate_exam_style(question)
+            self._validate_exam_style(question, profile.exam_id, profile.target_language)
             letter = str(question.answer.get("letter", "")).upper()
             if letter:
                 letters.append(letter)
         if len(letters) >= 4 and len(set(letters)) == 1:
             raise ValueError("整套题答案选项过度集中")
 
-    def _validate_exam_style(self, question: Question) -> None:
+    def _validate_exam_style(self, question: Question, exam_id: str, target_language: str) -> None:
         if question.type not in {"multiple_choice", "cloze"}:
             return
         prompt = question.prompt.strip()
@@ -463,6 +483,14 @@ class QuestionAuthorAgent:
         )
         if not has_exam_context:
             raise ValueError("题干缺少明确语境或空缺")
+        if self._requires_english_options(exam_id, target_language):
+            for option in question.options:
+                if _CJK_TEXT_RE.search(option):
+                    raise ValueError("英语考试选择题选项不得包含中文、日文或其他 CJK 字符")
+
+    @staticmethod
+    def _requires_english_options(exam_id: str, target_language: str) -> bool:
+        return exam_id in _ENGLISH_EXAM_IDS or target_language.strip().lower() in {"英语", "english"}
 
     def _fallback_question_set(
         self,
@@ -733,7 +761,7 @@ class QuestionAuthorAgent:
             """,
             (exam_id, correct_term),
         ).fetchall()
-        return [dict(row) for row in rows]
+        return [dict(row) for row in rows if self._allow_pool_item(exam_id, dict(row))]
 
     def _save_question(self, question: Question) -> None:
         QuestionService(self.conn).save_question(question)

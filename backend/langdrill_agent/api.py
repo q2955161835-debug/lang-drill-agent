@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 
 from fastapi import FastAPI
@@ -131,6 +132,27 @@ def _question_progress_message(
     if total and done >= total:
         return f"本轮题目已完成：{done}/{total}。可以输入新的学习内容生成下一轮题组，或输入“总结”查看今日复盘。"
     return prefix or "还没有可展示的题目。请输入今日学习内容，我会先生成完整题组再开始。"
+
+
+def _answered_question_snapshot(question_payload: dict, selected_option: str, is_correct: bool) -> dict:
+    selected_text = selected_option.strip()
+    selected_letter = ""
+    match = re.search(r"[A-D]", selected_text.upper())
+    if match:
+        selected_letter = match.group(0)
+    options = question_payload.get("options") or []
+    selected_answer = selected_text
+    if selected_letter:
+        index = ord(selected_letter) - ord("A")
+        if 0 <= index < len(options):
+            selected_answer = str(options[index])
+    return {
+        **question_payload,
+        "status": "answered",
+        "selected_option": selected_letter or selected_text,
+        "selected_answer": selected_answer,
+        "is_correct": is_correct,
+    }
 
 
 def _model_request_error_message(exc: RuntimeError) -> str:
@@ -469,6 +491,7 @@ def chat(request: ChatRequest) -> ChatResponse:
         provider = _current_model_provider(conn)
 
         active_question = active  # 默认保持当前题
+        answered_question: dict | None = None
 
         if task.value == "answer_question" and active:
             # ── 答题：判题、回写，再自动推进到下一道库存题 ──
@@ -480,6 +503,7 @@ def chat(request: ChatRequest) -> ChatResponse:
                     answer_content,
                     extra_prompt=extra_prompt,
                 )
+                answered_question = _answered_question_snapshot(active, answer_content, result.is_correct)
                 session_service.mark_completed_if_finished(session_id)
                 active_question = QuestionService(conn).active_question(session_id)
                 progress = QuestionService(conn).question_progress(session_id)
@@ -602,17 +626,21 @@ def chat(request: ChatRequest) -> ChatResponse:
                     active_question = QuestionService(conn).active_question(session_id)
                     assistant_content = _model_request_error_message(exc)
 
+        assistant_payload = {"active_question": active_question}
+        if answered_question:
+            assistant_payload["answered_question"] = answered_question
         msg_id = session_service.add_message(
             session_id,
             "assistant",
             assistant_content,
-            {"active_question": active_question},
+            assistant_payload,
         )
         return ChatResponse(
             session_id=session_id,
-            message={"id": msg_id, "role": "assistant", "content": assistant_content},
+            message={"id": msg_id, "role": "assistant", "content": assistant_content, "payload": assistant_payload},
             daily_panel=session_service.daily_panel(session_id),
             active_question=active_question,
+            answered_question=answered_question,
             token_usage=token_totals(conn),
             learning_stats=LearningStatsService(conn).overview(),
         )

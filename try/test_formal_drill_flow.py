@@ -70,6 +70,8 @@ def test_chat_generates_formal_question_set_and_auto_advances(tmp_path: Path, mo
     assert "判断：" in answered["message"]["content"]
     assert "下一题已就绪" in answered["message"]["content"]
     assert answered["active_question"]["sequence"] == 2
+    assert answered["answered_question"]["id"] == first_question["id"]
+    assert answered["answered_question"]["status"] == "answered"
 
     with transaction(db_path) as conn:
         question_rows = conn.execute(
@@ -93,6 +95,43 @@ def test_chat_generates_formal_question_set_and_auto_advances(tmp_path: Path, mo
     assert "不重新开始" in continued["message"]["content"]
     assert "已初始化今日学习面板" not in continued["message"]["content"]
     assert continued["active_question"]["id"] == answered["active_question"]["id"]
+
+
+def test_chinese_colon_preface_is_not_used_as_english_option(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "colon_preface.db"
+    monkeypatch.setenv("LANGDRILL_DB_PATH", str(db_path))
+    monkeypatch.setenv("LANGDRILL_DEFAULT_PROVIDER", "mock")
+    monkeypatch.setenv("LANGDRILL_DEFAULT_MODEL", "mock-tutor-v1")
+    init_db(db_path)
+    _use_mock_provider(db_path)
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/chat",
+        json={
+            "content": "\n".join(
+                [
+                    "真实联调：请根据以下 CET-4 词汇生成一组选择题",
+                    "laser: n. 激光",
+                    "robe: n. 长袍",
+                    "loyalty: n. 忠诚",
+                    "context: n. 语境",
+                ]
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    options = payload["active_question"]["options"]
+    assert "真实联调" not in options
+    assert all(not any("\u4e00" <= char <= "\u9fff" for char in option) for option in options)
+    with transaction(db_path) as conn:
+        row = conn.execute(
+            "SELECT id FROM knowledge_items WHERE term='真实联调' AND exam_id='cet4'"
+        ).fetchone()
+
+    assert row is None
 
 
 def test_start_bat_uses_hidden_background_processes() -> None:

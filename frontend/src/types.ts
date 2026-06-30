@@ -115,10 +115,24 @@ export type Question = {
   set_done?: number;
 };
 
+export type AnsweredQuestion = Question & {
+  selected_option?: string;
+  selected_answer?: string;
+  is_correct?: boolean;
+};
+
+export type MessagePayload = {
+  active_question?: Question | null;
+  answered_question?: AnsweredQuestion;
+  source?: string;
+  [key: string]: unknown;
+};
+
 export type Message = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  payload?: MessagePayload;
 };
 
 export type TokenUsage = {

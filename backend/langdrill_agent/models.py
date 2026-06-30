@@ -51,6 +51,7 @@ class ChatResponse(BaseModel):
     message: dict[str, Any]
     daily_panel: dict[str, Any]
     active_question: dict[str, Any] | None = None
+    answered_question: dict[str, Any] | None = None
     token_usage: dict[str, Any]
     learning_stats: dict[str, Any]
 

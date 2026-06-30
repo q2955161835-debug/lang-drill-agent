@@ -200,10 +200,15 @@ class SessionService:
 
     def load_session_messages(self, session_id: str) -> list[dict[str, Any]]:
         rows = self.conn.execute(
-            "SELECT id, role, content, created_at FROM messages WHERE session_id=? ORDER BY created_at ASC",
+            "SELECT id, role, content, payload_json, created_at FROM messages WHERE session_id=? ORDER BY created_at ASC",
             (session_id,),
         ).fetchall()
-        return [dict(row) for row in rows]
+        messages: list[dict[str, Any]] = []
+        for row in rows:
+            message = dict(row)
+            message["payload"] = loads(message.pop("payload_json"), {})
+            messages.append(message)
+        return messages
 
     def load_session_detail(self, session_id: str) -> dict[str, Any]:
         row = self.conn.execute("SELECT * FROM study_sessions WHERE id=?", (session_id,)).fetchone()
