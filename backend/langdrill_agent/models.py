@@ -181,5 +181,30 @@ class SyllabusSelectRequest(BaseModel):
     source_id: str
 
 
+class PastPaperSelectRequest(BaseModel):
+    exam_id: str
+    paper_ids: list[str] = Field(default_factory=list)
+
+
+class PastPaperImportRequest(BaseModel):
+    exam_id: str
+    title: str
+    year: int | None = None
+    source_url: str = ""
+    local_path: str = ""
+    summary: str = ""
+    question_types: list[str] = Field(default_factory=list)
+
+
+class PastPaperSearchImportRequest(BaseModel):
+    exam_id: str
+    source_website: str = ""
+
+
+class QuestionTypeSelectRequest(BaseModel):
+    exam_id: str
+    enabled_type_ids: list[str] = Field(default_factory=list)
+
+
 class PhoneMirrorStartRequest(BaseModel):
     device_id: str = ""

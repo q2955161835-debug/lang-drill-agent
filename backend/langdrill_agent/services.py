@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 from copy import deepcopy
 from datetime import datetime
@@ -675,6 +676,330 @@ class SyllabusService:
             "is_latest_checked": 0,
             "checked_at": None,
         }
+
+
+class PastPaperService:
+    DEFAULT_RECENT_YEARS = [2025, 2024, 2023]
+    EXAM_PAPER_SOURCES = {
+        "cet4": {
+            "source_website": "https://cet.neea.edu.cn/",
+            "title_prefix": "大学英语四级",
+            "description": "CET-4（大学英语四级）真题按听力、阅读、翻译和写作组织。",
+            "question_types": [
+                {"id": "listening", "label": "听力理解", "description": "短篇新闻、长对话和听力篇章。"},
+                {"id": "reading", "label": "阅读理解", "description": "选词填空、长篇匹配和仔细阅读。"},
+                {"id": "translation", "label": "汉译英翻译", "description": "段落翻译，偏中国文化与社会话题。"},
+                {"id": "writing", "label": "短文写作", "description": "议论文、应用文或图表类写作。"},
+                {"id": "context_vocabulary", "label": "语境词汇", "description": "从真题语境抽取搭配、词义和近义辨析。"},
+            ],
+        },
+        "cet6": {
+            "source_website": "https://cet.neea.edu.cn/",
+            "title_prefix": "大学英语六级",
+            "description": "CET-6（大学英语六级）真题强调更高难度阅读、听力和写译表达。",
+            "question_types": [
+                {"id": "listening", "label": "听力理解", "description": "讲座、长对话和篇章理解。"},
+                {"id": "reading", "label": "阅读理解", "description": "选词填空、信息匹配和仔细阅读。"},
+                {"id": "translation", "label": "汉译英翻译", "description": "段落翻译，重视准确表达。"},
+                {"id": "writing", "label": "短文写作", "description": "观点论证、问题解决或图表表达。"},
+                {"id": "context_vocabulary", "label": "语境词汇", "description": "近义辨析、搭配和篇章词义。"},
+            ],
+        },
+        "cjt4": {
+            "source_website": "https://cet.neea.edu.cn/",
+            "title_prefix": "大学日语四级",
+            "description": "CJT-4（大学日语四级）按文字词汇、语法、阅读、翻译和听力组织。",
+            "question_types": [
+                {"id": "vocabulary", "label": "文字词汇", "description": "假名、汉字、词义和用法。"},
+                {"id": "grammar", "label": "语法结构", "description": "助词、句型、活用和固定表达。"},
+                {"id": "reading", "label": "阅读理解", "description": "短文理解和信息推断。"},
+                {"id": "translation", "label": "翻译表达", "description": "中日互译和句意转换。"},
+                {"id": "listening", "label": "听力理解", "description": "对话和短篇听力。"},
+            ],
+        },
+        "ielts": {
+            "source_website": "https://ielts.org/take-a-test/preparation",
+            "title_prefix": "雅思学术类",
+            "description": "IELTS（雅思）公开样题按听、说、读、写四科参考，不默认保存完整真题原文。",
+            "question_types": [
+                {"id": "listening", "label": "Listening", "description": "听力信息定位、拼写和匹配。"},
+                {"id": "reading", "label": "Reading", "description": "判断、匹配、填空和主旨题。"},
+                {"id": "writing_task1", "label": "Writing Task 1", "description": "图表、流程或地图描述。"},
+                {"id": "writing_task2", "label": "Writing Task 2", "description": "议论文任务。"},
+                {"id": "speaking", "label": "Speaking", "description": "Part 1-3 口语问答。"},
+            ],
+        },
+        "toefl": {
+            "source_website": "https://www.ets.org/toefl/test-takers/ibt/prepare.html",
+            "title_prefix": "TOEFL iBT",
+            "description": "TOEFL iBT（托福网考）按阅读、听力、口语和写作综合任务组织。",
+            "question_types": [
+                {"id": "reading", "label": "Reading", "description": "学术文章理解、词汇和推断。"},
+                {"id": "listening", "label": "Listening", "description": "讲座和校园对话。"},
+                {"id": "speaking", "label": "Speaking", "description": "独立与综合口语。"},
+                {"id": "writing", "label": "Writing", "description": "综合写作和学术讨论写作。"},
+            ],
+        },
+        "gaokao-english": {
+            "source_website": "https://www.moe.gov.cn/",
+            "title_prefix": "高考英语",
+            "description": "高考英语按地区卷型差异参考，默认只保留题型结构和来源索引。",
+            "question_types": [
+                {"id": "listening", "label": "听力", "description": "短对话、长对话和独白。"},
+                {"id": "reading", "label": "阅读理解", "description": "细节、推断、主旨和词义猜测。"},
+                {"id": "cloze", "label": "完形填空", "description": "篇章语义、搭配和逻辑衔接。"},
+                {"id": "grammar_fill", "label": "语法填空", "description": "词形、时态、非谓语和从句。"},
+                {"id": "writing", "label": "写作", "description": "应用文、读后续写或概要写作。"},
+            ],
+        },
+        "custom": {
+            "source_website": "",
+            "title_prefix": "自定义考试",
+            "description": "自定义考试需要用户补充来源、样卷和题型。",
+            "question_types": [
+                {"id": "vocabulary", "label": "词汇", "description": "词义、搭配和语境用法。"},
+                {"id": "grammar", "label": "语法", "description": "句法结构和表达规则。"},
+                {"id": "reading", "label": "阅读", "description": "短文理解、信息定位和推断。"},
+                {"id": "writing", "label": "写作", "description": "短文、应用文或开放表达。"},
+                {"id": "translation", "label": "翻译", "description": "双语转换或句意改写。"},
+            ],
+        },
+    }
+
+    def __init__(self, conn: sqlite3.Connection):
+        self.conn = conn
+
+    def status(self, exam_id: str | None = None) -> dict[str, Any]:
+        profile = ProfileService(self.conn).get()
+        target_exam = exam_id or profile.exam_id
+        self.seed_default_papers(target_exam)
+        papers = self._papers(target_exam)
+        selected_ids = self._selected_paper_ids(target_exam)
+        if not selected_ids:
+            selected_ids = [paper["id"] for paper in papers[:3]]
+        selected_set = set(selected_ids)
+        current_papers = [paper for paper in papers if paper["id"] in selected_set]
+        source_info = self._source_info(target_exam)
+        question_types = self._question_type_options(target_exam)
+        enabled_ids = self._enabled_question_type_ids(target_exam)
+        if not enabled_ids:
+            enabled_ids = [item["id"] for item in question_types]
+        return {
+            "exam_id": target_exam,
+            "description": source_info["description"],
+            "source_website": source_info["source_website"],
+            "papers": papers,
+            "selected_paper_ids": selected_ids,
+            "current_papers": current_papers,
+            "question_types": question_types,
+            "enabled_question_type_ids": enabled_ids,
+        }
+
+    def generation_context(self, exam_id: str) -> dict[str, Any]:
+        status = self.status(exam_id)
+        enabled = set(status["enabled_question_type_ids"])
+        question_types = [item for item in status["question_types"] if item["id"] in enabled]
+        papers = []
+        for paper in status["current_papers"]:
+            metadata = loads(paper.get("metadata_json", "{}"), {})
+            papers.append(
+                {
+                    "id": paper["id"],
+                    "title": paper["title"],
+                    "year": paper["year"],
+                    "source_url": paper["source_url"],
+                    "local_path": paper["local_path"],
+                    "trusted_level": paper["trusted_level"],
+                    "copyright_boundary": paper["copyright_boundary"],
+                    "summary": metadata.get("summary", ""),
+                    "question_types": metadata.get("question_types", []),
+                }
+            )
+        return {
+            "source_website": status["source_website"],
+            "selected_papers": papers,
+            "enabled_question_types": question_types,
+            "rules": [
+                "生成题目时必须参考 selected_papers 的年份、来源、题型和风格摘要。",
+                "source_refs 至少写入一个当前选中真题试卷 id/year/title/source_url。",
+                "禁止复刻或长段引用完整真题原文；只做题型、难度、主题和风格参考。",
+                "只生成 enabled_question_types 中已勾选的题型；未勾选题型不得进入本轮题组。",
+            ],
+        }
+
+    def seed_default_papers(self, exam_id: str) -> None:
+        source_info = self._source_info(exam_id)
+        question_type_ids = [item["id"] for item in self._question_type_options(exam_id)]
+        for year in self.DEFAULT_RECENT_YEARS:
+            paper_id = f"paper_{exam_id}_{year}"
+            title = f"{source_info['title_prefix']} {year} 年真题参考索引"
+            summary = f"默认近三年真题索引，用于参考 {source_info['title_prefix']} 的题型结构、难度和常见主题。"
+            self.conn.execute(
+                """
+                INSERT OR IGNORE INTO exam_assets
+                (id, exam_id, asset_type, title, year, source_url, trusted_level, copyright_boundary, metadata_json)
+                VALUES (?, ?, 'past_paper', ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    paper_id,
+                    exam_id,
+                    title,
+                    year,
+                    source_info["source_website"],
+                    "needs_verification",
+                    "style_reference_only",
+                    dumps({"summary": summary, "question_types": question_type_ids, "import_mode": "default_recent_index"}),
+                ),
+            )
+
+    def select_papers(self, exam_id: str, paper_ids: list[str]) -> dict[str, Any]:
+        self.seed_default_papers(exam_id)
+        existing = {paper["id"] for paper in self._papers(exam_id)}
+        clean_ids = [paper_id for paper_id in paper_ids if paper_id in existing]
+        if not clean_ids and paper_ids:
+            raise ValueError("选择的真题试卷不存在。")
+        self.conn.execute(
+            """
+            INSERT OR REPLACE INTO app_settings (key, value_json, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            """,
+            (f"past_papers.selected.{exam_id}", dumps({"paper_ids": clean_ids})),
+        )
+        return self.status(exam_id)
+
+    def save_question_types(self, exam_id: str, enabled_type_ids: list[str]) -> dict[str, Any]:
+        known = {item["id"] for item in self._question_type_options(exam_id)}
+        clean_ids = [type_id for type_id in enabled_type_ids if type_id in known]
+        self.conn.execute(
+            """
+            INSERT OR REPLACE INTO app_settings (key, value_json, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            """,
+            (f"past_papers.question_types.{exam_id}", dumps({"enabled_type_ids": clean_ids})),
+        )
+        return self.status(exam_id)
+
+    def manual_import(
+        self,
+        *,
+        exam_id: str,
+        title: str,
+        year: int | None,
+        source_url: str,
+        local_path: str,
+        summary: str,
+        question_types: list[str],
+    ) -> dict[str, Any]:
+        clean_title = title.strip()
+        if not clean_title:
+            raise ValueError("试卷标题不能为空。")
+        clean_types = [item.strip() for item in question_types if item.strip()]
+        paper_id = new_id("paper")
+        self.conn.execute(
+            """
+            INSERT INTO exam_assets
+            (id, exam_id, asset_type, title, year, source_url, local_path,
+             trusted_level, copyright_boundary, metadata_json)
+            VALUES (?, ?, 'past_paper', ?, ?, ?, ?, 'user_imported', 'reference_only', ?)
+            """,
+            (
+                paper_id,
+                exam_id,
+                clean_title,
+                year,
+                source_url.strip(),
+                local_path.strip(),
+                dumps({"summary": summary.strip(), "question_types": clean_types, "import_mode": "manual"}),
+            ),
+        )
+        status = self.status(exam_id)
+        next_selected = [paper_id, *[item for item in status["selected_paper_ids"] if item != paper_id]][:6]
+        return self.select_papers(exam_id, next_selected)
+
+    def search_import(self, exam_id: str, source_website: str = "") -> dict[str, Any]:
+        source_info = self._source_info(exam_id)
+        clean_source = source_website.strip() or source_info["source_website"]
+        self.seed_default_papers(exam_id)
+        for year in self.DEFAULT_RECENT_YEARS:
+            paper_id = f"paper_{exam_id}_{year}"
+            self.conn.execute(
+                """
+                UPDATE exam_assets
+                SET source_url=CASE WHEN source_url='' THEN ? ELSE source_url END,
+                    trusted_level='needs_verification'
+                WHERE id=? AND exam_id=?
+                """,
+                (clean_source, paper_id, exam_id),
+            )
+        status = self.status(exam_id)
+        return {
+            **status,
+            "message": (
+                "已按当前考试生成近三年真题搜索导入索引；"
+                "本地版本记录来源网站和题型摘要，完整原文需用户按版权边界手动核验。"
+            ),
+        }
+
+    def _papers(self, exam_id: str) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            """
+            SELECT id, exam_id, asset_type, title, year, source_url, local_path,
+                   trusted_level, copyright_boundary, metadata_json, created_at
+            FROM exam_assets
+            WHERE exam_id=? AND asset_type='past_paper'
+            ORDER BY COALESCE(year, 0) DESC, created_at DESC
+            """,
+            (exam_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def _selected_paper_ids(self, exam_id: str) -> list[str]:
+        row = self.conn.execute(
+            "SELECT value_json FROM app_settings WHERE key=?",
+            (f"past_papers.selected.{exam_id}",),
+        ).fetchone()
+        data = loads(row["value_json"], {}) if row else {}
+        return [str(item) for item in data.get("paper_ids", []) if str(item).strip()]
+
+    def _enabled_question_type_ids(self, exam_id: str) -> list[str]:
+        row = self.conn.execute(
+            "SELECT value_json FROM app_settings WHERE key=?",
+            (f"past_papers.question_types.{exam_id}",),
+        ).fetchone()
+        data = loads(row["value_json"], {}) if row else {}
+        return [str(item) for item in data.get("enabled_type_ids", []) if str(item).strip()]
+
+    def _source_info(self, exam_id: str) -> dict[str, Any]:
+        info = dict(self.EXAM_PAPER_SOURCES.get(exam_id) or self.EXAM_PAPER_SOURCES["custom"])
+        if exam_id not in self.EXAM_PAPER_SOURCES:
+            option = SyllabusService(self.conn)._exam_option(exam_id)
+            info["title_prefix"] = option.get("name") or exam_id
+            info["source_website"] = option.get("official_url") or ""
+        return info
+
+    def _question_type_options(self, exam_id: str) -> list[dict[str, str]]:
+        info = self._source_info(exam_id)
+        options = [dict(item) for item in info.get("question_types", [])]
+        seen = {item["id"] for item in options}
+        rows = self.conn.execute(
+            """
+            SELECT metadata_json FROM exam_assets
+            WHERE exam_id=? AND asset_type='past_paper'
+            """,
+            (exam_id,),
+        ).fetchall()
+        for row in rows:
+            metadata = loads(row["metadata_json"], {})
+            for label in metadata.get("question_types", []) or []:
+                clean_label = str(label).strip()
+                if not clean_label:
+                    continue
+                type_id = re.sub(r"[^a-z0-9_\-\u4e00-\u9fff]+", "_", clean_label.lower()).strip("_")
+                if not type_id or type_id in seen:
+                    continue
+                seen.add(type_id)
+                options.append({"id": type_id, "label": clean_label, "description": "来自已导入试卷的题型。"})
+        return options
 
 
 class ModelConfigService:

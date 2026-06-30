@@ -779,6 +779,41 @@ h1, h2, h3, h4, .brand, .kicker { font-weight: 750; letter-spacing: -0.03em; }
   padding: 16px;
 }
 .syllabus-current strong { font-size: 1.5rem; }
+.paper-list, .question-type-grid, .paper-import-grid {
+  display: grid;
+  gap: 10px;
+}
+.check-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  border: var(--border-thin);
+  border-radius: var(--radius-sm);
+  background: var(--surface-strong);
+  padding: 12px;
+}
+.check-row input {
+  width: 16px;
+  height: 16px;
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+.check-row span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.check-row strong {
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+.check-row small {
+  color: var(--muted);
+  font-weight: 650;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
 .strong-hint { color: var(--accent); font-weight: 750; }
 .token-dashboard { display: grid; gap: 12px; }
 .usage-dashboard {

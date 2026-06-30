@@ -33,6 +33,7 @@ import type {
   Message,
   ModelConfig,
   ModelOption,
+  PastPaperStatus,
   Profile,
   ProviderOption,
   Question,
@@ -244,6 +245,23 @@ const DEFAULT_SYLLABUS_STATUS: SyllabusStatus = {
   sources: []
 };
 
+const DEFAULT_PAST_PAPER_STATUS: PastPaperStatus = {
+  exam_id: "cet4",
+  description: "CET-4（大学英语四级）真题按听力、阅读、翻译和写作组织。",
+  source_website: "https://cet.neea.edu.cn/",
+  papers: [],
+  selected_paper_ids: [],
+  current_papers: [],
+  question_types: [
+    { id: "listening", label: "听力理解", description: "短篇新闻、长对话和听力篇章。" },
+    { id: "reading", label: "阅读理解", description: "选词填空、长篇匹配和仔细阅读。" },
+    { id: "translation", label: "汉译英翻译", description: "段落翻译，偏中国文化与社会话题。" },
+    { id: "writing", label: "短文写作", description: "议论文、应用文或图表类写作。" },
+    { id: "context_vocabulary", label: "语境词汇", description: "从真题语境抽取搭配、词义和近义辨析。" }
+  ],
+  enabled_question_type_ids: ["listening", "reading", "translation", "writing", "context_vocabulary"]
+};
+
 const DEFAULT_LEARNING_STATS: LearningStats = {
   exam_id: "cet4",
   exam_name: "大学英语四级",
@@ -452,6 +470,7 @@ export default function App() {
   const [modelConfig, setModelConfig] = useState<ModelConfig>(DEFAULT_MODEL_CONFIG);
   const [examOptions, setExamOptions] = useState<ExamOption[]>(DEFAULT_EXAM_OPTIONS);
   const [syllabusStatus, setSyllabusStatus] = useState<SyllabusStatus>(DEFAULT_SYLLABUS_STATUS);
+  const [pastPaperStatus, setPastPaperStatus] = useState<PastPaperStatus>(DEFAULT_PAST_PAPER_STATUS);
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [dailyPanel, setDailyPanel] = useState<DailyPanel>(DEFAULT_PANEL);
@@ -588,6 +607,7 @@ export default function App() {
       model_config: ModelConfig;
       exam_options?: ExamOption[];
       syllabus_status?: SyllabusStatus;
+      past_paper_status?: PastPaperStatus;
     }>("/api/bootstrap")
       .then((data) => {
         setProfile(data.profile);
@@ -595,6 +615,7 @@ export default function App() {
         setModelConfig(normalizeModelConfig(data.model_config));
         setExamOptions(data.exam_options?.length ? data.exam_options : DEFAULT_EXAM_OPTIONS);
         setSyllabusStatus(data.syllabus_status || DEFAULT_SYLLABUS_STATUS);
+        setPastPaperStatus(data.past_paper_status || DEFAULT_PAST_PAPER_STATUS);
         setSessions(data.sessions);
         setTokenUsage({ ...DEFAULT_TOKEN_USAGE, ...data.token_usage });
         setLearningStats(data.learning_stats || DEFAULT_LEARNING_STATS);
@@ -1125,10 +1146,12 @@ export default function App() {
           sessions={sessions}
           examOptions={examOptions}
           syllabusStatus={syllabusStatus}
+          pastPaperStatus={pastPaperStatus}
           onClose={() => setSettingsOpen(false)}
           onProfileChange={setProfile}
           onSessionsChange={setSessions}
           onSyllabusStatusChange={setSyllabusStatus}
+          onPastPaperStatusChange={setPastPaperStatus}
           onModelConfigChange={setModelConfig}
           onAppearanceChange={(nextTheme, nextFontSize) => {
             setThemeMode(nextTheme);
@@ -1375,10 +1398,12 @@ function SettingsDialog({
   sessions,
   examOptions,
   syllabusStatus,
+  pastPaperStatus,
   onClose,
   onProfileChange,
   onSessionsChange,
   onSyllabusStatusChange,
+  onPastPaperStatusChange,
   onModelConfigChange,
   onAppearanceChange,
   onProvidersChange,
@@ -1395,10 +1420,12 @@ function SettingsDialog({
   sessions: SessionItem[];
   examOptions: ExamOption[];
   syllabusStatus: SyllabusStatus;
+  pastPaperStatus: PastPaperStatus;
   onClose: () => void;
   onProfileChange: (profile: Profile) => void;
   onSessionsChange: (sessions: SessionItem[]) => void;
   onSyllabusStatusChange: (status: SyllabusStatus) => void;
+  onPastPaperStatusChange: (status: PastPaperStatus) => void;
   onModelConfigChange: (config: ModelConfig) => void;
   onAppearanceChange: (themeMode: ThemeMode, fontSize: number) => void;
   onProvidersChange: (providers: ProviderOption[]) => void;
@@ -1416,11 +1443,23 @@ function SettingsDialog({
   const [activeSettingsTab, setActiveSettingsTab] = useState("model");
   const [syllabusDraft, setSyllabusDraft] = useState(syllabusStatus);
   const [syllabusMessage, setSyllabusMessage] = useState("");
+  const [pastPaperDraft, setPastPaperDraft] = useState(pastPaperStatus);
+  const [pastPaperMessage, setPastPaperMessage] = useState("");
+  const [paperImportDraft, setPaperImportDraft] = useState({
+    title: "",
+    year: "",
+    source_url: "",
+    local_path: "",
+    summary: "",
+    question_types: ""
+  });
   const [customExam, setCustomExam] = useState({
     name: "",
     target_language: "",
     syllabus_mode: "auto",
     syllabus_url: "",
+    paper_source_url: "",
+    default_question_types: "",
     local_path: "",
     notes: ""
   });
@@ -1460,6 +1499,13 @@ function SettingsDialog({
         exam_name: customExam.name || "自定义考试",
         target_language: customExam.target_language || draft.target_language
       });
+      try {
+        const paperStatus = await apiGet<PastPaperStatus>("/api/past-papers/status?exam_id=custom");
+        setPastPaperDraft(paperStatus);
+        onPastPaperStatusChange(paperStatus);
+      } catch {
+        setPastPaperMessage("自定义考试真题状态读取失败，请确认后端已启动。");
+      }
       return;
     }
     setDraft({
@@ -1472,8 +1518,11 @@ function SettingsDialog({
       const status = await apiGet<SyllabusStatus>(`/api/syllabus/status?exam_id=${encodeURIComponent(option.id)}`);
       setSyllabusDraft(status);
       onSyllabusStatusChange(status);
+      const paperStatus = await apiGet<PastPaperStatus>(`/api/past-papers/status?exam_id=${encodeURIComponent(option.id)}`);
+      setPastPaperDraft(paperStatus);
+      onPastPaperStatusChange(paperStatus);
     } catch {
-      setSyllabusMessage("考纲状态读取失败，请确认后端已启动。");
+      setSyllabusMessage("考纲或真题状态读取失败，请确认后端已启动。");
     }
   };
   const checkSyllabus = async () => {
@@ -1503,6 +1552,81 @@ function SettingsDialog({
       setSyllabusMessage(err instanceof Error ? err.message : "切换失败");
     }
   };
+  const togglePastPaper = async (paperId: string) => {
+    const selected = new Set(pastPaperDraft.selected_paper_ids);
+    if (selected.has(paperId)) {
+      selected.delete(paperId);
+    } else {
+      selected.add(paperId);
+    }
+    try {
+      const status = await apiPost<PastPaperStatus>("/api/past-papers/select", {
+        exam_id: draft.exam_id,
+        paper_ids: Array.from(selected)
+      });
+      setPastPaperDraft(status);
+      onPastPaperStatusChange(status);
+      setPastPaperMessage(`当前参考 ${status.selected_paper_ids.length} 套历年真题试卷。`);
+    } catch (err) {
+      setPastPaperMessage(err instanceof Error ? err.message : "真题选择保存失败");
+    }
+  };
+  const toggleQuestionType = async (typeId: string) => {
+    const selected = new Set(pastPaperDraft.enabled_question_type_ids);
+    if (selected.has(typeId)) {
+      selected.delete(typeId);
+    } else {
+      selected.add(typeId);
+    }
+    try {
+      const status = await apiPost<PastPaperStatus>("/api/past-papers/question-types", {
+        exam_id: draft.exam_id,
+        enabled_type_ids: Array.from(selected)
+      });
+      setPastPaperDraft(status);
+      onPastPaperStatusChange(status);
+      setPastPaperMessage("题型生成范围已保存。");
+    } catch (err) {
+      setPastPaperMessage(err instanceof Error ? err.message : "题型保存失败");
+    }
+  };
+  const importPastPaper = async () => {
+    if (!paperImportDraft.title.trim()) {
+      setPastPaperMessage("请先填写试卷标题。");
+      return;
+    }
+    try {
+      const status = await apiPost<PastPaperStatus>("/api/past-papers/import", {
+        exam_id: draft.exam_id,
+        title: paperImportDraft.title,
+        year: paperImportDraft.year ? Number(paperImportDraft.year) : null,
+        source_url: paperImportDraft.source_url,
+        local_path: paperImportDraft.local_path,
+        summary: paperImportDraft.summary,
+        question_types: paperImportDraft.question_types.split(/[，,\n]/).map((item) => item.trim()).filter(Boolean)
+      });
+      setPastPaperDraft(status);
+      onPastPaperStatusChange(status);
+      setPaperImportDraft({ title: "", year: "", source_url: "", local_path: "", summary: "", question_types: "" });
+      setPastPaperMessage("已导入试卷索引并加入当前参考列表。");
+    } catch (err) {
+      setPastPaperMessage(err instanceof Error ? err.message : "手动导入失败");
+    }
+  };
+  const searchImportPastPapers = async () => {
+    setPastPaperMessage("正在创建联网搜索导入索引...");
+    try {
+      const status = await apiPost<PastPaperStatus>("/api/past-papers/search-import", {
+        exam_id: draft.exam_id,
+        source_website: paperImportDraft.source_url || customExam.paper_source_url || pastPaperDraft.source_website
+      });
+      setPastPaperDraft(status);
+      onPastPaperStatusChange(status);
+      setPastPaperMessage(status.message || "已导入近三年真题搜索索引。");
+    } catch (err) {
+      setPastPaperMessage(err instanceof Error ? err.message : "联网搜索导入失败");
+    }
+  };
   const saveModelConfig = async () => {
     const finalModel = customModel.trim() || modelDraft.model;
     const data = await apiPost<{ model_config: ModelConfig; providers?: ProviderOption[] }>("/api/model-config", {
@@ -1519,7 +1643,7 @@ function SettingsDialog({
   const saveSettings = async () => {
     // 持久化 profile 到后端
     try {
-      const profileData = await apiPost<{ profile: Profile; sessions?: SessionItem[]; syllabus_status?: SyllabusStatus; learning_stats?: LearningStats }>("/api/profile", {
+      const profileData = await apiPost<{ profile: Profile; sessions?: SessionItem[]; syllabus_status?: SyllabusStatus; past_paper_status?: PastPaperStatus; learning_stats?: LearningStats }>("/api/profile", {
         display_name: draft.display_name,
         target_language: draft.target_language,
         exam_id: draft.exam_id,
@@ -1535,6 +1659,10 @@ function SettingsDialog({
       if (profileData.syllabus_status) {
         onSyllabusStatusChange(profileData.syllabus_status);
         setSyllabusDraft(profileData.syllabus_status);
+      }
+      if (profileData.past_paper_status) {
+        onPastPaperStatusChange(profileData.past_paper_status);
+        setPastPaperDraft(profileData.past_paper_status);
       }
       if (profileData.learning_stats) onLearningStatsChange(profileData.learning_stats);
     } catch {
@@ -1590,9 +1718,11 @@ function SettingsDialog({
     setCustomModel("");
     setReviewIntensity(3);
     setAppearanceDraft({ themeMode: "system", fontSize: 16 });
+    setPastPaperDraft(DEFAULT_PAST_PAPER_STATUS);
     onProfileChange(nextProfile);
     onModelConfigChange(nextModel);
     onProvidersChange(nextProviders);
+    onPastPaperStatusChange(DEFAULT_PAST_PAPER_STATUS);
     onAppearanceChange("system", 16);
     setSaveState("已恢复默认设置。");
   };
@@ -1715,6 +1845,8 @@ function SettingsDialog({
                       <option value="manual">手动导入本地文件</option>
                     </select>
                     <input value={customExam.syllabus_url} onChange={(event) => setCustomExam({ ...customExam, syllabus_url: event.target.value })} placeholder="官方考纲网址" />
+                    <input value={customExam.paper_source_url} onChange={(event) => setCustomExam({ ...customExam, paper_source_url: event.target.value })} placeholder="历年真题来源网站" />
+                    <input value={customExam.default_question_types} onChange={(event) => setCustomExam({ ...customExam, default_question_types: event.target.value })} placeholder="题型清单，用逗号分隔" />
                     <input value={customExam.local_path} onChange={(event) => setCustomExam({ ...customExam, local_path: event.target.value })} placeholder="本地考纲文件路径" />
                     <textarea value={customExam.notes} onChange={(event) => setCustomExam({ ...customExam, notes: event.target.value })} placeholder="题型、分值、考试时间、评分偏好等补充设置" />
                   </div>
@@ -1740,6 +1872,61 @@ function SettingsDialog({
                 </select>
                 <p className="hint">若官方内容没有变化，会提示已是最新考纲；若发现新年份，会保留旧年份并加入可切换列表。</p>
                 {syllabusMessage && <p className="hint strong-hint">{syllabusMessage}</p>}
+              </SettingSection>
+            )}
+            {activeSettingsTab === "syllabus" && (
+              <SettingSection title="历年真题与题型">
+                <div className="syllabus-current">
+                  <strong>{pastPaperDraft.current_papers.length || 0} 套</strong>
+                  <span>当前参考：{pastPaperDraft.current_papers.map((paper) => paper.year || paper.title).join("、") || "暂无"}</span>
+                </div>
+                <div className="settings-summary-line">{pastPaperDraft.description}</div>
+                <div className="inline-row">
+                  <button className="inline-action" onClick={() => void searchImportPastPapers()}><Sparkle size={16} /> 大模型联网搜索导入</button>
+                  {pastPaperDraft.source_website && <a className="inline-link" href={pastPaperDraft.source_website} target="_blank" rel="noreferrer">打开来源网站</a>}
+                </div>
+                <div className="paper-list">
+                  {pastPaperDraft.papers.map((paper) => (
+                    <label className="check-row" key={paper.id}>
+                      <input
+                        type="checkbox"
+                        checked={pastPaperDraft.selected_paper_ids.includes(paper.id)}
+                        onChange={() => void togglePastPaper(paper.id)}
+                      />
+                      <span>
+                        <strong>{paper.year || "未知年份"} - {paper.title}</strong>
+                        <small>{paper.source_url || paper.local_path || "未记录来源"} · {paper.trusted_level}</small>
+                      </span>
+                    </label>
+                  ))}
+                  {!pastPaperDraft.papers.length && <p className="hint">暂无真题试卷索引，可手动导入或使用联网搜索导入。</p>}
+                </div>
+                <div className="paper-import-grid">
+                  <input value={paperImportDraft.title} onChange={(event) => setPaperImportDraft({ ...paperImportDraft, title: event.target.value })} placeholder="试卷标题，例如：2025 年 6 月英语四级真题" />
+                  <input value={paperImportDraft.year} onChange={(event) => setPaperImportDraft({ ...paperImportDraft, year: event.target.value })} placeholder="年份" inputMode="numeric" />
+                  <input value={paperImportDraft.source_url} onChange={(event) => setPaperImportDraft({ ...paperImportDraft, source_url: event.target.value })} placeholder="来源网站或网页 URL" />
+                  <input value={paperImportDraft.local_path} onChange={(event) => setPaperImportDraft({ ...paperImportDraft, local_path: event.target.value })} placeholder="本地试卷文件路径，可为空" />
+                  <input value={paperImportDraft.question_types} onChange={(event) => setPaperImportDraft({ ...paperImportDraft, question_types: event.target.value })} placeholder="试卷题型，用逗号分隔" />
+                  <textarea value={paperImportDraft.summary} onChange={(event) => setPaperImportDraft({ ...paperImportDraft, summary: event.target.value })} placeholder="风格摘要、题量、分值、注意事项；不要粘贴大段受版权限制的完整真题原文" />
+                  <button className="inline-action" onClick={() => void importPastPaper()}><Plus size={16} /> 手动导入试卷</button>
+                </div>
+                <div className="question-type-grid">
+                  {pastPaperDraft.question_types.map((type) => (
+                    <label className="check-row" key={type.id}>
+                      <input
+                        type="checkbox"
+                        checked={pastPaperDraft.enabled_question_type_ids.includes(type.id)}
+                        onChange={() => void toggleQuestionType(type.id)}
+                      />
+                      <span>
+                        <strong>{type.label}</strong>
+                        <small>{type.description}</small>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <p className="hint">生成题组时只会使用已勾选题型，并把当前选中的真题试卷索引写入模型上下文和题目来源引用。</p>
+                {pastPaperMessage && <p className="hint strong-hint">{pastPaperMessage}</p>}
               </SettingSection>
             )}
             {activeSettingsTab === "tokens" && (

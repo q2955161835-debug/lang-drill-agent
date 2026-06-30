@@ -10,7 +10,7 @@ from .context import ContextService
 from .models import AuthoredQuestionSet, EvaluationResult, Question, TaskType
 from .prompt_engine import PromptAssembler, PromptRegistry
 from .providers import ModelProvider
-from .services import ProfileService, QuestionService, SessionService
+from .services import PastPaperService, ProfileService, QuestionService, SessionService
 from .utils import dumps, loads, new_id
 from .validator import QuestionValidator
 
@@ -199,6 +199,7 @@ class QuestionAuthorAgent:
         start_sequence = question_service.next_sequence(session_id)
         content_pool = self._content_pool(profile.exam_id, requested_content, target_count * 3)
         count = self._target_count(profile.daily_minutes, len(content_pool), target_count)
+        past_paper_context = PastPaperService(self.conn).generation_context(profile.exam_id)
         pack = self.assembler.assemble(
             task_type="question_authoring",
             exam_id=profile.exam_id,
@@ -211,13 +212,17 @@ class QuestionAuthorAgent:
                 "start_sequence": start_sequence,
                 "target_count": count,
                 "content_pool": content_pool,
+                "past_paper_context": past_paper_context,
                 "question_flow": "先生成完整题组并持久化，再逐题取出展示。",
                 "quality_rules": [
                     "优先覆盖用户输入、截图导入、到期复习和低掌握度知识点。",
                     "题型必须贴近真实考试：题干使用英文完整句、短段落、完形空格或阅读语境问题。",
+                    "必须真实参考 past_paper_context.selected_papers 中当前选中的历年真题试卷索引、来源和风格摘要。",
+                    "只能生成 past_paper_context.enabled_question_types 中已勾选的题型；如果用户关闭某类题型，本轮题组不要生成该题型。",
                     "选择题选项优先使用英文单词、短语、句子或同义改写，禁止只出“选择中文释义 / 最合适理解”的词卡题。",
                     "每题必须考语境理解、搭配、语法或阅读推断，不能只靠中英文同形或裸释义猜答案。",
                     "每题必须有准确答案、讲解和 knowledge_tags。",
+                    "每题 source_refs 至少包含一个被参考的真题试卷 id、year、title、source_url 和 boundary。",
                     "选择题选项顺序要分散，不要全是 A。",
                 ],
                 "output_contract": "AuthoredQuestionSet JSON Schema",
@@ -226,6 +231,7 @@ class QuestionAuthorAgent:
                 f"请一次生成 {count} 道正式刷题题目，题目先入库后再展示。"
                 "如果内容池来自截图词表，请自动把这些词改写成考试式语境选择题，"
                 "不要要求用户再次确认或再次发送“请出题”。"
+                "出题时以当前已选择的历年真题试卷和已勾选题型为硬约束。"
                 f"用户本轮输入：{requested_content or '继续今日学习'}"
             ),
             output_schema=AuthoredQuestionSet.model_json_schema(),
@@ -529,6 +535,20 @@ class QuestionAuthorAgent:
         letter = chr(ord("A") + correct_index)
         sentence = self._fallback_context_sentence(term.lower(), meaning)
         source_type = "user_import" if source_scope == "screenshot_import" else "generated"
+        paper_refs = PastPaperService(self.conn).generation_context(exam_id).get("selected_papers", [])
+        source_refs = [{"type": source_type, "boundary": "practice_only", "term": term}]
+        if paper_refs:
+            ref = paper_refs[0]
+            source_refs.append(
+                {
+                    "type": "past_paper_style",
+                    "id": ref.get("id", ""),
+                    "year": ref.get("year"),
+                    "title": ref.get("title", ""),
+                    "source_url": ref.get("source_url", ""),
+                    "boundary": "style_reference_only",
+                }
+            )
         return Question(
             id=new_id("q"),
             session_id=session_id,
@@ -546,7 +566,7 @@ class QuestionAuthorAgent:
             ),
             knowledge_tags=[f"vocabulary:{term}"],
             difficulty=0.35 + min((sequence % 5) * 0.08, 0.32),
-            source_refs=[{"type": source_type, "boundary": "practice_only", "term": term}],
+            source_refs=source_refs,
         )
 
     def _fallback_context_sentence(self, term: str, meaning: str) -> str:
@@ -661,6 +681,20 @@ class QuestionAuthorAgent:
                 terms,
                 source_scope="screenshot_import",
             )
+        paper_refs = PastPaperService(self.conn).generation_context(exam_id).get("selected_papers", [])
+        source_refs = [{"type": "generated", "boundary": "practice_only"}]
+        if paper_refs:
+            ref = paper_refs[0]
+            source_refs.append(
+                {
+                    "type": "past_paper_style",
+                    "id": ref.get("id", ""),
+                    "year": ref.get("year"),
+                    "title": ref.get("title", ""),
+                    "source_url": ref.get("source_url", ""),
+                    "boundary": "style_reference_only",
+                }
+            )
         return Question(
             id=new_id("q"),
             session_id=session_id,
@@ -672,7 +706,7 @@ class QuestionAuthorAgent:
             explanation='"Affect" is usually a verb meaning "to influence". In this sentence, the policy may influence attendance, so "affect" is correct.',
             knowledge_tags=["vocabulary:affect-vs-effect", "grammar:verb_usage"],
             difficulty=0.35,
-            source_refs=[{"type": "generated", "boundary": "practice_only"}],
+            source_refs=source_refs,
         )
 
     def _first_imported_word(self, exam_id: str) -> dict[str, str] | None:

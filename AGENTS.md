@@ -16,6 +16,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - 主聊天栏粘贴 3 个以上截图词条时必须复用截图导入后台流程，自动创建截图练习会话、导入词表并生成题组；前端等待状态需区分“截图解析中”和“题目生成中”。
 - 答题提交后必须让 Evaluator Tutor（判题讲解 Agent）结合当前会话上下文、用户背景和程序判定生成个性化讲解；模型不可用时才回退基础判题，且不得丢失作答记录。
 - 聊天输入区需要展示当前上下文容量占用，默认上限 1,000,000 token（令牌），支持保存自定义上限和主动压缩上下文；LLMLingua（提示词压缩库）作为可选增强，默认使用本地抽取式摘要兜底。
+- 历年真题以 `exam_assets` 中的试卷索引、来源、题型和风格摘要为准，默认选择近 3 年真题参考索引；出题 Agent（智能体）必须参考当前选中的真题试卷和已勾选题型，但不得复刻或长段引用完整真题原文。
 
 ## GitHub（代码托管平台）
 
@@ -37,6 +38,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - `backend/langdrill_agent/api.py`：FastAPI（Web API 框架）入口，负责 bootstrap（初始化加载）、chat（聊天学习）、branch（分支）、profile（用户档案）、model-config（模型配置）、exam/syllabus（考试与考纲）、phone-mirror（手机映像）和 screenshot（截图导入）接口。
 - `backend/langdrill_agent/cli.py`：命令行入口，提供 init（初始化）、serve（启动服务）、status（状态）、chat（终端聊天）、data-paths（数据路径）和 backup-user-data（备份用户数据）。
 - `backend/langdrill_agent/services.py`：学习状态机、题组推进、作答写入、掌握度更新、会话生命周期和业务编排。
+- `backend/langdrill_agent/services.py` 中的 `PastPaperService`：历年真题试卷索引、默认近三年选择、题型开关、手动导入和联网搜索导入索引。
 - `backend/langdrill_agent/learning_stats.py`：长期学习统计服务，按当前考试聚合题目完成、词汇掌握和整体正确率。
 - `backend/langdrill_agent/context.py`：上下文容量、会话上下文快照、主动压缩、使用统计和 token（令牌）统计口径。
 - `backend/langdrill_agent/agents.py`：Orchestrator（调度器）、Question Author（出题 Agent）和 Evaluator Tutor（判题讲解 Agent）的实现。
@@ -63,11 +65,12 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 2. API（接口）进入服务层，服务层读取用户档案、当前考试、会话、题组和知识项。
 3. Orchestrator（调度器）判断任务类型，不把用户输入拼入 system prompt（系统提示词）。
 4. Question Author（出题 Agent）一次生成完整题组，Validator（校验器）通过后写入数据库；截图词表自动练习只使用本次截图词表作为优先内容池，避免旧会话词汇污染选项。
-5. 前端只展示当前待答题；用户作答后写入 attempts（作答记录），更新 questions（题目状态）和 mastery（掌握度）。
-6. 简单题由程序判分，复杂题进入 Evaluator Tutor（判题讲解 Agent）。
-7. 答题讲解统一由 Evaluator Tutor（判题讲解 Agent）基于程序判定、当前题、用户背景和会话上下文生成；若模型不可用，回退基础讲解但仍保存作答。
-8. 系统自动返回下一道待答题；显式“下一题 / 继续 / 下一个”只读取当前题组库存，不重新初始化学习面板。
-9. Bootstrap（初始化加载）、chat（聊天）、profile（用户档案）、session delete（会话删除）接口返回 `learning_stats`；chat/session/context 接口返回 `token_usage`，用于长期面板、设置页和上下文容量圆圈实时刷新。
+5. 组卷阶段读取当前考试的考纲版本、已选择历年真题试卷和已勾选题型；提示词只携带真题索引、来源、题型和风格摘要，禁止把完整真题作为默认发布内容。
+6. 前端只展示当前待答题；用户作答后写入 attempts（作答记录），更新 questions（题目状态）和 mastery（掌握度）。
+7. 简单题由程序判分，复杂题进入 Evaluator Tutor（判题讲解 Agent）。
+8. 答题讲解统一由 Evaluator Tutor（判题讲解 Agent）基于程序判定、当前题、用户背景和会话上下文生成；若模型不可用，回退基础讲解但仍保存作答。
+9. 系统自动返回下一道待答题；显式“下一题 / 继续 / 下一个”只读取当前题组库存，不重新初始化学习面板。
+10. Bootstrap（初始化加载）、chat（聊天）、profile（用户档案）、session delete（会话删除）接口返回 `learning_stats`；chat/session/context 接口返回 `token_usage`，用于长期面板、设置页和上下文容量圆圈实时刷新。
 
 ## 启动与停止
 

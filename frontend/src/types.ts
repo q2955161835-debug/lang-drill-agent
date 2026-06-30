@@ -184,6 +184,38 @@ export type SyllabusStatus = {
   sources: SyllabusSource[];
 };
 
+export type PastPaper = {
+  id: string;
+  exam_id: string;
+  asset_type: string;
+  title: string;
+  year: number | null;
+  source_url: string;
+  local_path: string;
+  trusted_level: string;
+  copyright_boundary: string;
+  metadata_json?: string;
+  created_at?: string;
+};
+
+export type QuestionTypeOption = {
+  id: string;
+  label: string;
+  description: string;
+};
+
+export type PastPaperStatus = {
+  exam_id: string;
+  description: string;
+  source_website: string;
+  papers: PastPaper[];
+  selected_paper_ids: string[];
+  current_papers: PastPaper[];
+  question_types: QuestionTypeOption[];
+  enabled_question_type_ids: string[];
+  message?: string;
+};
+
 export type ScreenshotWord = {
   term: string;
   meaning: string;

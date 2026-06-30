@@ -24,9 +24,13 @@ from .models import (
     ContextSettingsRequest,
     InitRequest,
     ModelConfigRequest,
+    PastPaperImportRequest,
+    PastPaperSearchImportRequest,
+    PastPaperSelectRequest,
     PhoneMirrorStartRequest,
     ProfileUpdateRequest,
     PromptPack,
+    QuestionTypeSelectRequest,
     ScreenshotImportRequest,
     SyllabusCheckRequest,
     SyllabusSelectRequest,
@@ -37,6 +41,7 @@ from .phone_mirror import PhoneMirrorService
 from .screenshot_import import ScreenshotImportService
 from .services import (
     ModelConfigService,
+    PastPaperService,
     ProfileService,
     QuestionService,
     SessionService,
@@ -329,6 +334,7 @@ def bootstrap() -> dict:
             "model_config": current_model_config,
             "exam_options": SyllabusService(conn).exam_options(),
             "syllabus_status": SyllabusService(conn).status(profile.exam_id),
+            "past_paper_status": PastPaperService(conn).status(profile.exam_id),
             "learning_stats": LearningStatsService(conn).overview(),
         }
 
@@ -772,6 +778,7 @@ def update_profile(request: ProfileUpdateRequest) -> dict:
             "profile": updated.model_dump(),
             "sessions": SessionService(conn).list_sessions_by_date(),
             "syllabus_status": SyllabusService(conn).status(updated.exam_id),
+            "past_paper_status": PastPaperService(conn).status(updated.exam_id),
             "learning_stats": LearningStatsService(conn).overview(),
         }
 
@@ -807,6 +814,50 @@ def syllabus_select(request: SyllabusSelectRequest) -> dict:
     init_db()
     with transaction() as conn:
         return SyllabusService(conn).select_source(request.exam_id, request.source_id)
+
+
+@app.get("/api/past-papers/status")
+def past_paper_status(exam_id: str | None = None) -> dict:
+    init_db()
+    with transaction() as conn:
+        profile = ProfileService(conn).get()
+        return PastPaperService(conn).status(exam_id or profile.exam_id)
+
+
+@app.post("/api/past-papers/select")
+def past_paper_select(request: PastPaperSelectRequest) -> dict:
+    init_db()
+    with transaction() as conn:
+        return PastPaperService(conn).select_papers(request.exam_id, request.paper_ids)
+
+
+@app.post("/api/past-papers/import")
+def past_paper_import(request: PastPaperImportRequest) -> dict:
+    init_db()
+    with transaction() as conn:
+        return PastPaperService(conn).manual_import(
+            exam_id=request.exam_id,
+            title=request.title,
+            year=request.year,
+            source_url=request.source_url,
+            local_path=request.local_path,
+            summary=request.summary,
+            question_types=request.question_types,
+        )
+
+
+@app.post("/api/past-papers/search-import")
+def past_paper_search_import(request: PastPaperSearchImportRequest) -> dict:
+    init_db()
+    with transaction() as conn:
+        return PastPaperService(conn).search_import(request.exam_id, request.source_website)
+
+
+@app.post("/api/past-papers/question-types")
+def past_paper_question_types(request: QuestionTypeSelectRequest) -> dict:
+    init_db()
+    with transaction() as conn:
+        return PastPaperService(conn).save_question_types(request.exam_id, request.enabled_type_ids)
 
 
 @app.get("/api/phone-mirror/status")
