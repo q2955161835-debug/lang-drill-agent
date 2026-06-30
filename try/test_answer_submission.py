@@ -30,6 +30,15 @@ def test_selected_option_routes_as_answer_even_with_extra_prompt() -> None:
     assert task is TaskType.answer_question
 
 
+def test_hint_request_routes_as_explanation_when_question_is_active() -> None:
+    task = TaskRouter().route(
+        "请给我一点提示，不要直接告诉正确答案。",
+        has_active_question=True,
+    )
+
+    assert task is TaskType.explanation
+
+
 def test_chat_answers_question_by_id_without_model_reroute(
     tmp_path: Path,
     monkeypatch,

@@ -157,6 +157,8 @@ class ScreenshotImportRequest(BaseModel):
     text: str
     session_id: str | None = None
     import_to_session: bool = False
+    auto_start_drill: bool = False
+    force_new_session: bool = False
     source_image_path: str = ""
 
 

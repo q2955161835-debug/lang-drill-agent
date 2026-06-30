@@ -111,6 +111,8 @@ export type Question = {
   explanation?: string;
   knowledge_tags: string[];
   status: string;
+  set_total?: number;
+  set_done?: number;
 };
 
 export type Message = {
@@ -154,4 +156,29 @@ export type SyllabusStatus = {
   current_title: string;
   official_url: string;
   sources: SyllabusSource[];
+};
+
+export type ScreenshotWord = {
+  term: string;
+  meaning: string;
+};
+
+export type ScreenshotImportResult = {
+  prompt: string;
+  options: string[];
+  confidence: string;
+  raw_text: string;
+  words?: ScreenshotWord[];
+  imported?: boolean;
+  imported_count?: number;
+  auto_started?: boolean;
+  generation_error?: string;
+  session_id?: string;
+  daily_panel?: DailyPanel;
+  active_question?: Question | null;
+  message?: Message;
+  messages?: Message[];
+  token_usage?: TokenUsage;
+  learning_stats?: LearningStats;
+  sessions?: SessionItem[];
 };

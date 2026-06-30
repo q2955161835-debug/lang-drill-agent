@@ -417,6 +417,9 @@ class QuestionService:
         payload["answer"] = loads(payload.pop("answer_json"), {})
         payload["knowledge_tags"] = loads(payload.pop("knowledge_tags_json"), [])
         payload["source_refs"] = loads(payload.pop("source_refs_json"), [])
+        progress = self.question_progress(str(payload["session_id"]))
+        payload["set_total"] = progress["total"]
+        payload["set_done"] = progress["done"]
         return payload
 
 
@@ -919,9 +922,9 @@ class ModelConfigService:
         ).fetchone()
         config = loads(row["value_json"], {}) if row else {}
         env_values = {**self._read_env(), **self._read_process_env()}
-        provider_id = config.get("provider_id") or env_values.get("LANGDRILL_DEFAULT_PROVIDER") or "mimo"
+        provider_id = env_values.get("LANGDRILL_DEFAULT_PROVIDER") or config.get("provider_id") or "mimo"
         provider = self.provider_by_id(provider_id)
-        model = config.get("model") or env_values.get("LANGDRILL_DEFAULT_MODEL") or provider.get("model", "")
+        model = env_values.get("LANGDRILL_DEFAULT_MODEL") or config.get("model") or provider.get("model", "")
         options = self.thinking_level_options(provider_id, model)
         model_config = self._model_config(provider_id, model)
         reasoning = model_config.get("reasoning", {}) if model_config else {}
@@ -949,8 +952,8 @@ class ModelConfigService:
         api_value = self._thinking_api_value(thinking_level, options)
         return {
             "provider_id": provider_id,
-            "base_url": config.get("base_url")
-            or env_values.get("LANGDRILL_PROVIDER_BASE_URL")
+            "base_url": env_values.get("LANGDRILL_PROVIDER_BASE_URL")
+            or config.get("base_url")
             or provider.get("base_url", ""),
             "model": model,
             "thinking_level": thinking_level,
@@ -1124,10 +1127,19 @@ class ModelConfigService:
     def _apply_provider_overrides(self, provider: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
         ov = overrides.get(provider["id"], {})
         if ov:
-            provider["base_url"] = ov.get("base_url", provider.get("base_url", ""))
+            provider["base_url"] = self._normalize_provider_base_url(
+                provider["id"],
+                str(ov.get("base_url", provider.get("base_url", ""))),
+                str(ov.get("api_format", provider.get("api_format", "openai-chat-completions"))),
+                str(provider.get("base_url", "")),
+            )
             provider["api_format"] = ov.get("api_format", provider.get("api_format", "openai-chat-completions"))
             provider["enabled"] = bool(ov.get("enabled", provider.get("enabled", True)))
             model_options = [self._normalize_model_option(item) for item in provider.get("model_options", [])]
+            default_reasoning = {
+                self._model_id(item): dict(item.get("reasoning", {}))
+                for item in model_options
+            }
             existing = {self._model_id(item) for item in model_options}
             for model in ov.get("added_models", []):
                 normalized = self._normalize_model_option(model)
@@ -1138,11 +1150,34 @@ class ModelConfigService:
             for model_item in model_options:
                 model_id = self._model_id(model_item)
                 if model_id in reasoning_overrides:
-                    model_item["reasoning"] = reasoning_overrides[model_id]
+                    model_item["reasoning"] = self._normalize_reasoning_override(
+                        reasoning_overrides[model_id],
+                        default_reasoning.get(model_id, {}),
+                    )
             provider["model_options"] = model_options
         else:
             provider["model_options"] = [self._normalize_model_option(item) for item in provider.get("model_options", [])]
         return provider
+
+    def _normalize_provider_base_url(self, provider_id: str, base_url: str, api_format: str, default_base_url: str) -> str:
+        clean_base = (base_url or "").strip().rstrip("/")
+        if provider_id == "mimo" and api_format == "anthropic-messages" and clean_base == "https://api.xiaomimimo.com/v1":
+            return default_base_url
+        return clean_base
+
+    def _normalize_reasoning_override(self, override: dict[str, Any], default_reasoning: dict[str, Any]) -> dict[str, Any]:
+        normalized = dict(override or {})
+        normalized["levels"] = self._normalize_thinking_options(normalized.get("levels", []))
+        default_levels = self._normalize_thinking_options(default_reasoning.get("levels", []))
+        if default_levels and [
+            (item.get("id"), item.get("api_value", ""))
+            for item in normalized.get("levels", [])
+        ] == [
+            (item.get("id"), item.get("api_value", ""))
+            for item in default_levels
+        ]:
+            return dict(default_reasoning)
+        return normalized
 
     def _normalize_model_option(self, value: Any) -> dict[str, Any]:
         if isinstance(value, str):
@@ -1211,7 +1246,7 @@ class ModelConfigService:
     def _current_provider_id(self, env_values: dict[str, str]) -> str:
         row = self.conn.execute("SELECT value_json FROM app_settings WHERE key='model.default'").fetchone()
         config = loads(row["value_json"], {}) if row else {}
-        return str(config.get("provider_id") or env_values.get("LANGDRILL_DEFAULT_PROVIDER") or "mimo")
+        return str(env_values.get("LANGDRILL_DEFAULT_PROVIDER") or config.get("provider_id") or "mimo")
 
     def _api_key_env_key(self, provider_id: str) -> str:
         clean = "".join(ch if ch.isalnum() else "_" for ch in provider_id.upper()).strip("_")

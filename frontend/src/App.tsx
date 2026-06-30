@@ -33,6 +33,7 @@ import type {
   Profile,
   ProviderOption,
   Question,
+  ScreenshotImportResult,
   SessionItem,
   SyllabusStatus,
   ThemeMode,
@@ -716,6 +717,24 @@ export default function App() {
     }
   }, [branchId]);
 
+  const handleScreenshotImportComplete = useCallback((result: ScreenshotImportResult) => {
+    if (result.session_id) {
+      setActiveSessionId(result.session_id);
+      setPendingNewSession(false);
+    }
+    if (result.messages?.length) {
+      setMessages(result.messages);
+    } else if (result.message) {
+      setMessages((current) => [...current, result.message as Message]);
+    }
+    if (result.daily_panel) setDailyPanel(result.daily_panel);
+    if (result.active_question !== undefined) setActiveQuestion(result.active_question || null);
+    if (result.token_usage) setTokenUsage(result.token_usage);
+    if (result.learning_stats) setLearningStats(result.learning_stats);
+    if (result.sessions) setSessions(result.sessions);
+    if (result.auto_started) setRightOpen(false);
+  }, []);
+
   const deleteSession = useCallback(async (sessionId: string) => {
     if (!window.confirm("确认删除这个会话？相关消息、题目、作答和分支记录会一并删除。")) return;
     const data = await apiDelete<{ deleted: boolean; sessions: SessionItem[]; learning_stats?: LearningStats }>(`/api/sessions/${sessionId}`);
@@ -855,7 +874,6 @@ export default function App() {
           {activeQuestion?.status === "ready" && (
             <QuestionDock
               question={activeQuestion}
-              panel={dailyPanel}
               sending={sending}
               onSubmit={(option, extraPrompt) => void sendQuestionAnswer(option, extraPrompt)}
             />
@@ -968,11 +986,8 @@ export default function App() {
         sessionId={activeSessionId}
         onToggle={() => setRightOpen((value) => !value)}
         onSendBranchMessage={(content) => void sendBranchMessage(content)}
-        onSendToChat={(content) => {
-          setInput(content);
-          setRightOpen(false);
-        }}
         onDailyPanelChange={setDailyPanel}
+        onScreenshotImportComplete={handleScreenshotImportComplete}
       />
 
       {settingsOpen && (
@@ -1116,18 +1131,16 @@ function Stat({ icon, label, value, detail }: { icon: ReactNode; label: string; 
 
 function QuestionDock({
   question,
-  panel,
   sending,
   onSubmit
 }: {
   question: Question;
-  panel: DailyPanel;
   sending: boolean;
   onSubmit: (option: string, extraPrompt: string) => void;
 }) {
   const [selectedOption, setSelectedOption] = useState("");
   const [extraPrompt, setExtraPrompt] = useState("");
-  const total = Math.max(panel.questions_total || 0, question.sequence || 1);
+  const total = Math.max(question.set_total || 0, question.sequence || 1);
   return (
     <section className="question-dock">
       <div className="question-head">

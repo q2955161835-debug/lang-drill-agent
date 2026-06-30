@@ -32,6 +32,8 @@ def _use_mock_provider(db_path: Path) -> None:
 def test_chat_generates_formal_question_set_and_auto_advances(tmp_path: Path, monkeypatch) -> None:
     db_path = tmp_path / "formal_drill.db"
     monkeypatch.setenv("LANGDRILL_DB_PATH", str(db_path))
+    monkeypatch.setenv("LANGDRILL_DEFAULT_PROVIDER", "mock")
+    monkeypatch.setenv("LANGDRILL_DEFAULT_MODEL", "mock-tutor-v1")
     init_db(db_path)
     _use_mock_provider(db_path)
 

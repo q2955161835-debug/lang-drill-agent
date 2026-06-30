@@ -213,7 +213,9 @@ class QuestionAuthorAgent:
                 "question_flow": "先生成完整题组并持久化，再逐题取出展示。",
                 "quality_rules": [
                     "优先覆盖用户输入、截图导入、到期复习和低掌握度知识点。",
-                    "题型贴近考试风格，避免只靠中英文同形或裸释义猜答案。",
+                    "题型必须贴近真实考试：题干使用英文完整句、短段落、完形空格或阅读语境问题。",
+                    "选择题选项优先使用英文单词、短语、句子或同义改写，禁止只出“选择中文释义 / 最合适理解”的词卡题。",
+                    "每题必须考语境理解、搭配、语法或阅读推断，不能只靠中英文同形或裸释义猜答案。",
                     "每题必须有准确答案、讲解和 knowledge_tags。",
                     "选择题选项顺序要分散，不要全是 A。",
                 ],
@@ -221,6 +223,8 @@ class QuestionAuthorAgent:
             },
             user_content=(
                 f"请一次生成 {count} 道正式刷题题目，题目先入库后再展示。"
+                "如果内容池来自截图词表，请自动把这些词改写成考试式语境选择题，"
+                "不要要求用户再次确认或再次发送“请出题”。"
                 f"用户本轮输入：{requested_content or '继续今日学习'}"
             ),
             output_schema=AuthoredQuestionSet.model_json_schema(),
@@ -266,6 +270,9 @@ class QuestionAuthorAgent:
         return max(4, min(24, max(minute_based, pressure_based)))
 
     def _content_pool(self, exam_id: str, requested_content: str, limit: int) -> list[dict[str, object]]:
+        explicit_pool = self._explicit_content_pool(requested_content)
+        if explicit_pool and "截图导入词表" in requested_content:
+            return explicit_pool[:limit]
         rows = self.conn.execute(
             """
             SELECT id, kind, term, reading, meaning, notes, source_scope, mastery_score, due_at
@@ -279,7 +286,10 @@ class QuestionAuthorAgent:
             """,
             (exam_id, limit),
         ).fetchall()
-        pool = [dict(row) for row in rows]
+        seen_terms = {str(item.get("term") or "").lower() for item in explicit_pool}
+        pool = [*explicit_pool]
+        pool.extend(dict(row) for row in rows if str(row["term"] or "").lower() not in seen_terms)
+        pool = pool[:limit]
         text = requested_content.strip()
         if text and not pool:
             pool.append(
@@ -291,6 +301,35 @@ class QuestionAuthorAgent:
                     "meaning": text[:160],
                     "notes": "来自用户本轮输入",
                     "source_scope": "chat_input",
+                    "mastery_score": 0.2,
+                    "due_at": "",
+                }
+            )
+        return pool
+
+    def _explicit_content_pool(self, requested_content: str) -> list[dict[str, object]]:
+        pool: list[dict[str, object]] = []
+        seen: set[str] = set()
+        for line in requested_content.splitlines():
+            if ":" not in line:
+                continue
+            term, meaning = line.split(":", 1)
+            clean_term = term.strip().lower()
+            clean_meaning = meaning.strip()
+            if not re.fullmatch(r"[a-z][a-z'-]{1,40}", clean_term):
+                continue
+            if clean_term in seen or not clean_meaning:
+                continue
+            seen.add(clean_term)
+            pool.append(
+                {
+                    "id": f"explicit:{clean_term}",
+                    "kind": "word",
+                    "term": clean_term,
+                    "reading": "",
+                    "meaning": clean_meaning,
+                    "notes": "来自本轮显式词表",
+                    "source_scope": "screenshot_import" if "截图导入词表" in requested_content else "chat_input",
                     "mastery_score": 0.2,
                     "due_at": "",
                 }
@@ -388,11 +427,35 @@ class QuestionAuthorAgent:
         letters: list[str] = []
         for question in questions:
             self.validator.validate(question)
+            self._validate_exam_style(question)
             letter = str(question.answer.get("letter", "")).upper()
             if letter:
                 letters.append(letter)
         if len(letters) >= 4 and len(set(letters)) == 1:
             raise ValueError("整套题答案选项过度集中")
+
+    def _validate_exam_style(self, question: Question) -> None:
+        if question.type not in {"multiple_choice", "cloze"}:
+            return
+        prompt = question.prompt.strip()
+        prompt_lower = prompt.lower()
+        card_patterns = [
+            "最合适的理解",
+            "最贴近的中文释义",
+            "选择中文释义",
+            "根据导入的单词列表",
+        ]
+        if any(pattern in prompt for pattern in card_patterns):
+            raise ValueError("题目像词卡释义题，不符合考试式语境题")
+        has_exam_context = (
+            "____" in prompt
+            or "blank" in prompt_lower
+            or "sentence" in prompt_lower
+            or "passage" in prompt_lower
+            or "which" in prompt_lower
+        )
+        if not has_exam_context:
+            raise ValueError("题干缺少明确语境或空缺")
 
     def _fallback_question_set(
         self,
@@ -422,7 +485,17 @@ class QuestionAuthorAgent:
             sequence = start_sequence + offset
             term = str(item.get("term") or f"item-{sequence}").strip()
             meaning = str(item.get("meaning") or "该知识点的核心含义").strip()
-            questions.append(self._fallback_question_for_term(session_id, exam_id, sequence, term, meaning, terms))
+            questions.append(
+                self._fallback_question_for_term(
+                    session_id,
+                    exam_id,
+                    sequence,
+                    term,
+                    meaning,
+                    terms,
+                    source_scope=str(item.get("source_scope") or ""),
+                )
+            )
         return questions
 
     def _fallback_question_for_term(
@@ -433,14 +506,16 @@ class QuestionAuthorAgent:
         term: str,
         meaning: str,
         terms: list[dict[str, object]],
+        *,
+        source_scope: str = "",
     ) -> Question:
         distractors = [
-            str(item.get("meaning") or "").strip()
+            str(item.get("term") or "").strip().lower()
             for item in terms
             if str(item.get("term") or "").strip() != term and str(item.get("meaning") or "").strip()
         ]
-        generic = ["表示让步或转折", "强调时间顺序", "表示数量增加", "描述原因或条件"]
-        options = [meaning, *distractors, *generic]
+        generic = ["context", "evidence", "method", "result"]
+        options = [term.lower(), *distractors, *generic]
         deduped = []
         for option in options:
             if option and option not in deduped:
@@ -451,22 +526,83 @@ class QuestionAuthorAgent:
         correct = selected.pop(0)
         selected.insert(correct_index, correct)
         letter = chr(ord("A") + correct_index)
+        sentence = self._fallback_context_sentence(term.lower(), meaning)
+        source_type = "user_import" if source_scope == "screenshot_import" else "generated"
         return Question(
             id=new_id("q"),
             session_id=session_id,
             sequence=sequence,
-            type="multiple_choice",
+            type="cloze",
             prompt=(
                 f"第 {sequence} 题\n"
-                f"结合 {exam_id} 备考语境，选择 “{term}” 最合适的理解。"
+                f"Choose the best word to complete the sentence.\n\n{sentence}"
             ),
             options=selected,
             answer={"correct": correct, "letter": letter},
-            explanation=f"“{term}” 在本轮知识库中的核心含义是：{meaning}。做题时要结合语境，不只看词形相似度。",
+            explanation=(
+                f"`{term}` matches the sentence context. Its imported meaning is: {meaning}. "
+                "The other options do not fit the semantic clue in the sentence."
+            ),
             knowledge_tags=[f"vocabulary:{term}"],
             difficulty=0.35 + min((sequence % 5) * 0.08, 0.32),
-            source_refs=[{"type": "generated", "boundary": "practice_only", "term": term}],
+            source_refs=[{"type": source_type, "boundary": "practice_only", "term": term}],
         )
+
+    def _fallback_context_sentence(self, term: str, meaning: str) -> str:
+        templates = {
+            "collision": "The police report said the ______ on the icy road blocked traffic for two hours.",
+            "snowstorm": "Because of the heavy ______, several flights were canceled last night.",
+            "collection": "The museum's new ______ includes paintings from the nineteenth century.",
+            "dry": "The clothes were still wet, so she left them outside to ______ in the sun.",
+            "apply": "Students must ______ for the scholarship before the end of this month.",
+            "bull": "The farmer kept the ______ in a separate field for safety.",
+            "germ": "Washing your hands often can reduce the spread of ______s.",
+            "fork": "He picked up a ______ and began to eat the salad.",
+            "mysterious": "The scientist could not explain the ______ signal from the old machine.",
+            "pot": "She put the soup into a large ______ and warmed it slowly.",
+            "book": "Tourists are advised to ______ hotel rooms before the holiday begins.",
+            "chair": "Please take a ______ near the window before the lecture starts.",
+            "meal": "Breakfast is the first ______ of the day for many people.",
+            "steal": "It is illegal to ______ another person's bicycle.",
+            "save": "Using less electricity can help families ______ money.",
+            "emerge": "New evidence began to ______ during the investigation.",
+            "dish": "This restaurant is famous for a spicy chicken ______.",
+            "aunt": "My ______ sent me a birthday card from another city.",
+            "dull": "The lecture was so ______ that several students lost attention.",
+            "state": "The witness was asked to ______ exactly what he had seen.",
+            "champion": "After winning the final match, she became the national ______.",
+            "aware": "Drivers should be ______ of children crossing the street.",
+            "root": "The strong wind pulled the tree up by the ______.",
+            "extreme": "The desert is known for its ______ heat during the day.",
+            "skin": "Too much sunlight may damage your ______.",
+            "hence": "The road was closed; ______, we had to take another route.",
+            "vigorous": "The coach asked the team to do ______ exercise every morning.",
+            "waterfall": "The path led us to a beautiful ______ deep in the forest.",
+            "fierce": "The two companies are in ______ competition for the same market.",
+            "contrary": "His actions were ______ to the advice he had received.",
+            "discard": "Please ______ any broken glass into the special bin.",
+            "evident": "It was ______ from her smile that she was pleased with the result.",
+            "fall": "Temperatures usually ______ quickly after sunset in the mountains.",
+            "class": "The teacher asked the whole ______ to hand in their papers.",
+            "altogether": "There were thirty students ______ in the language club.",
+            "forever": "Some memories seem to stay with us ______.",
+            "cultivate": "Good teachers try to ______ students' interest in reading.",
+            "material": "The factory needs more raw ______ to continue production.",
+            "research": "The team carried out ______ into the causes of air pollution.",
+            "course": "She signed up for an English writing ______ this semester.",
+            "blood": "Doctors tested his ______ before the operation.",
+            "executive": "The company hired a new ______ to manage daily operations.",
+            "adequate": "The small room did not provide ______ space for all the students.",
+            "process": "Learning a language is a long ______ that requires practice.",
+            "bow": "The performer gave a polite ______ after the audience applauded.",
+            "laser": "Doctors used a ______ to perform the delicate eye operation.",
+            "robe": "The judge entered the room wearing a long black ______.",
+            "loyalty": "The old worker was respected for his ______ to the company.",
+        }
+        if term in templates:
+            return templates[term]
+        hint = meaning.split("；", 1)[0].split(";", 1)[0].strip() or "the meaning in context"
+        return f"In this short passage, the word that best matches the idea of \"{hint}\" is ______."
 
     def _try_parse_model_output(
         self, content: str, session_id: str, sequence: int
@@ -513,26 +649,16 @@ class QuestionAuthorAgent:
         if imported_word:
             term = imported_word["term"]
             meaning = imported_word["meaning"] or "该单词的截图导入释义"
-            distractors = self._meaning_distractors(exam_id, term)
-            options = [meaning, *distractors][:4]
-            while len(options) < 4:
-                options.append(["不相关的抽象概念", "表示时间顺序", "一种语法连接词"][len(options) - 1])
+            terms = [imported_word, *self._term_distractors(exam_id, term)]
             logger.info("using imported vocabulary fallback question", extra={"term": term, "exam_id": exam_id})
-            return Question(
-                id=new_id("q"),
-                session_id=session_id,
-                sequence=sequence,
-                type="multiple_choice",
-                prompt=(
-                    f"第 {sequence} 题 / 共 5 题\n"
-                    f"根据导入的单词列表，选择 “{term}” 最贴近的中文释义。"
-                ),
-                options=options,
-                answer={"correct": meaning, "letter": "A"},
-                explanation=f"`{term}` 的截图导入释义是：{meaning}",
-                knowledge_tags=[f"vocabulary:{term}"],
-                difficulty=0.35,
-                source_refs=[{"type": "user_import", "boundary": "practice_only", "term": term}],
+            return self._fallback_question_for_term(
+                session_id,
+                exam_id,
+                sequence,
+                term,
+                meaning,
+                terms,
+                source_scope="screenshot_import",
             )
         return Question(
             id=new_id("q"),
@@ -561,10 +687,10 @@ class QuestionAuthorAgent:
         ).fetchone()
         return dict(row) if row else None
 
-    def _meaning_distractors(self, exam_id: str, correct_term: str) -> list[str]:
+    def _term_distractors(self, exam_id: str, correct_term: str) -> list[dict[str, str]]:
         rows = self.conn.execute(
             """
-            SELECT meaning
+            SELECT term, meaning, source_scope
             FROM knowledge_items
             WHERE exam_id=? AND term<>? AND meaning<>''
             ORDER BY updated_at ASC
@@ -572,7 +698,7 @@ class QuestionAuthorAgent:
             """,
             (exam_id, correct_term),
         ).fetchall()
-        return [row["meaning"] for row in rows]
+        return [dict(row) for row in rows]
 
     def _save_question(self, question: Question) -> None:
         QuestionService(self.conn).save_question(question)

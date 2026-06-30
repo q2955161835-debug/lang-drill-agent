@@ -17,7 +17,8 @@ _ANSWER_PATTERN = re.compile(
 _EXPLANATION_KEYWORDS = (
     "为什么", "解释", "讲讲", "什么意思", "换种说法", "换种讲法",
     "怎么理解", "能不能讲", "不太懂", "看不懂", "再讲一遍",
-    "为啥", "原因", "详细",
+    "为啥", "原因", "详细", "提示", "给点提示", "不要告诉答案",
+    "hint", "give me a hint",
 )
 
 _SETTINGS_KEYWORDS = (

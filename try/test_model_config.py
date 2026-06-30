@@ -151,6 +151,52 @@ def test_saving_api_key_strips_paste_label(tmp_path, monkeypatch):
     assert "apikey：" not in env_text
 
 
+def test_env_model_config_overrides_stale_database_defaults(tmp_path, monkeypatch):
+    monkeypatch.setattr(services_module, "PROJECT_ROOT", tmp_path)
+    monkeypatch.delenv("LANGDRILL_DEFAULT_PROVIDER", raising=False)
+    monkeypatch.delenv("LANGDRILL_DEFAULT_MODEL", raising=False)
+    monkeypatch.delenv("LANGDRILL_PROVIDER_BASE_URL", raising=False)
+    monkeypatch.delenv("LANGDRILL_PROVIDER_API_KEY", raising=False)
+
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "LANGDRILL_DEFAULT_PROVIDER=mimo\n"
+        "LANGDRILL_DEFAULT_MODEL=mimo-v2.5\n"
+        "LANGDRILL_PROVIDER_BASE_URL=https://api.xiaomimimo.com/anthropic\n"
+        "LANGDRILL_PROVIDER_API_KEY_MIMO=mimo-key\n",
+        encoding="utf-8",
+    )
+    conn = _settings_conn()
+    conn.execute(
+        "INSERT INTO app_settings (key, value_json) VALUES ('model.default', ?)",
+        (
+            '{"provider_id":"mimo","base_url":"https://api.xiaomimimo.com/v1",'
+            '"model":"mimo-v2.5","thinking_level":"enabled","api_format":"anthropic-messages"}',
+        ),
+    )
+    conn.execute(
+        "INSERT INTO app_settings (key, value_json) VALUES ('model.provider_overrides', ?)",
+        (
+            '{"mimo":{"base_url":"https://api.xiaomimimo.com/v1","api_format":"anthropic-messages",'
+            '"model_reasoning_overrides":{"mimo-v2.5":{"default_level":"enabled",'
+            '"parameter":"anthropic_thinking_switch","levels":['
+            '{"id":"off","label":"밑균","api_value":""},'
+            '{"id":"enabled","label":"역폘","api_value":"enabled"}]}}}}',
+        ),
+    )
+
+    service = ModelConfigService(conn)
+    config = service.current()
+    providers = {item["id"]: item for item in service.providers()}
+
+    assert config["base_url"] == "https://api.xiaomimimo.com/anthropic"
+    assert providers["mimo"]["base_url"] == "https://api.xiaomimimo.com/anthropic"
+    assert config["thinking_level_options"] == [
+        {"id": "off", "label": "关闭", "api_value": ""},
+        {"id": "enabled", "label": "开启", "api_value": "enabled"},
+    ]
+
+
 def test_thinking_options_follow_selected_model_native_levels(tmp_path, monkeypatch):
     monkeypatch.delenv("LANGDRILL_DEFAULT_PROVIDER", raising=False)
     monkeypatch.delenv("LANGDRILL_DEFAULT_MODEL", raising=False)

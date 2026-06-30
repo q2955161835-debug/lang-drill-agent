@@ -41,7 +41,7 @@ from .services import (
     SyllabusService,
 )
 from .task_router import TaskRouter
-from .utils import new_id
+from .utils import dumps, new_id
 
 
 app = FastAPI(title="Lang Drill Agent API")
@@ -128,6 +128,70 @@ def _model_request_error_message(exc: RuntimeError) -> str:
     return (
         f"⚠️ 当前模型请求失败：{exc}\n\n"
         "本次输入已保存在当前会话中；请检查 API Key、Base URL（基础网址）和网络后继续发送。"
+    )
+
+
+def _screenshot_session_title(parsed: dict) -> str:
+    words = parsed.get("words") or []
+    if words:
+        first = str(words[0].get("term", "")).strip()
+        return f"截图词表练习：{first}" if first else "截图词表练习"
+    return "截图导入练习"
+
+
+def _screenshot_drill_content(parsed: dict, exam_name: str) -> str:
+    words = parsed.get("words") or []
+    lines = [
+        f"{str(item.get('term', '')).strip()}: {str(item.get('meaning', '')).strip()}"
+        for item in words
+        if str(item.get("term", "")).strip()
+    ]
+    if not lines:
+        return str(parsed.get("raw_text") or parsed.get("prompt") or "截图导入内容")
+    return (
+        f"截图导入词表，已自动开始 {exam_name} 考试式练习。"
+        "请基于以下词汇生成语境选择题、完形空格题或阅读式词汇题，"
+        "不要生成中文释义匹配题：\n\n"
+        + "\n".join(lines)
+    )
+
+
+def _screenshot_target_count(parsed: dict) -> int:
+    word_count = len(parsed.get("words") or [])
+    if not word_count:
+        return 6
+    return max(6, min(12, word_count))
+
+
+def _record_model_call(
+    conn,
+    *,
+    agent_name: str,
+    task_type: str,
+    provider: ModelProvider,
+    result,
+    prompt_modules: list[str],
+    validation_status: str = "not_required",
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO model_calls
+        (id, agent_name, task_type, provider_id, model, prompt_modules_json,
+         input_tokens, output_tokens, latency_ms, validation_status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            new_id("call"),
+            agent_name,
+            task_type,
+            provider.provider_id,
+            result.model,
+            dumps(prompt_modules),
+            result.input_tokens,
+            result.output_tokens,
+            result.latency_ms,
+            validation_status,
+        ),
     )
 
 
@@ -308,6 +372,14 @@ def chat(request: ChatRequest) -> ChatResponse:
             )
             try:
                 model_result = provider.complete(pack)
+                _record_model_call(
+                    conn,
+                    agent_name="evaluator_tutor",
+                    task_type="explanation",
+                    provider=provider,
+                    result=model_result,
+                    prompt_modules=[m["id"] for m in pack.system_modules],
+                )
                 assistant_content = model_result.content
             except RuntimeError as exc:
                 logger.warning("model request failed during explanation", exc_info=True)
@@ -444,17 +516,24 @@ def branch_message(branch_id: str, request: BranchMessageRequest) -> dict:
         )
         try:
             provider = _current_model_provider(conn)
-            result = provider.complete(
-                PromptPack(
-                    system_modules=[
-                        {
-                            "id": "branch.conversation",
-                            "content": "你是语言学习分支对话助手。只围绕选中文本解释、改写、举例或整理复习卡片，默认不写回主会话。",
-                        }
-                    ],
-                    context_pack={"selected_text": branch["selected_text"], "task_type": "branch_chat"},
-                    user_content=clean_message,
-                )
+            pack = PromptPack(
+                system_modules=[
+                    {
+                        "id": "branch.conversation",
+                        "content": "你是语言学习分支对话助手。只围绕选中文本解释、改写、举例或整理复习卡片，默认不写回主会话。",
+                    }
+                ],
+                context_pack={"selected_text": branch["selected_text"], "task_type": "branch_chat"},
+                user_content=clean_message,
+            )
+            result = provider.complete(pack)
+            _record_model_call(
+                conn,
+                agent_name="branch_assistant",
+                task_type="branch_chat",
+                provider=provider,
+                result=result,
+                prompt_modules=[m["id"] for m in pack.system_modules],
             )
             response = result.content.strip() or "已收到，请继续补充你想追问的点。"
         except Exception as exc:
@@ -578,20 +657,26 @@ def phone_mirror_start(request: PhoneMirrorStartRequest) -> dict:
 def screenshot_parse(request: ScreenshotImportRequest) -> dict:
     service = ScreenshotImportService()
     parsed = service.parse_text(request.text, request.source_image_path)
-    if not request.import_to_session or not request.session_id:
+    if not request.import_to_session:
+        return parsed
+    if not request.session_id and not request.auto_start_drill:
         return parsed
     init_db()
     with transaction() as conn:
         profile = ProfileService(conn).get()
+        session_service = SessionService(conn)
+        session_id = request.session_id
+        if request.force_new_session or request.auto_start_drill or not session_id:
+            session_id = session_service.ensure_session(None, _screenshot_session_title(parsed), force_new=True)
         imported_count = service.import_words(
             conn,
-            session_id=request.session_id,
+            session_id=session_id,
             parsed=parsed,
             exam_id=profile.exam_id,
             source_image_path=request.source_image_path,
         )
-        msg_id = SessionService(conn).add_message(
-            request.session_id,
+        user_msg_id = session_service.add_message(
+            session_id,
             "user",
             f"截图导入文本：\n{parsed['raw_text']}",
             {
@@ -601,10 +686,75 @@ def screenshot_parse(request: ScreenshotImportRequest) -> dict:
                 "source_image_path": request.source_image_path,
             },
         )
-        return {
+        response = {
             **parsed,
             "imported": True,
             "imported_count": imported_count,
-            "message_id": msg_id,
-            "daily_panel": SessionService(conn).daily_panel(request.session_id),
+            "session_id": session_id,
+            "message_id": user_msg_id,
+            "messages": [{"id": user_msg_id, "role": "user", "content": f"截图导入文本：\n{parsed['raw_text']}"}],
+            "daily_panel": session_service.daily_panel(session_id),
+            "learning_stats": LearningStatsService(conn).overview(),
+            "token_usage": token_totals(conn),
+            "sessions": session_service.list_sessions_by_date(),
         }
+        if request.auto_start_drill and imported_count:
+            try:
+                provider = _current_model_provider(conn)
+                author_result = QuestionAuthorAgent(conn, provider).ensure_question_set(
+                    session_id,
+                    _screenshot_drill_content(parsed, profile.exam_name),
+                    target_count=_screenshot_target_count(parsed),
+                )
+                active_question = QuestionService(conn).active_question(session_id)
+                progress = QuestionService(conn).question_progress(session_id)
+                assistant_content = _question_progress_message(
+                    progress,
+                    active_question,
+                    created=int(author_result.get("created", 0)),
+                    opening_message=str(author_result.get("opening_message") or ""),
+                    prefix=f"已导入 {imported_count} 个截图词汇，并自动生成考试式题组。",
+                )
+                assistant_msg_id = session_service.add_message(
+                    session_id,
+                    "assistant",
+                    assistant_content,
+                    {"active_question": active_question, "source": "screenshot_auto_drill"},
+                )
+                response.update(
+                    {
+                        "auto_started": True,
+                        "active_question": active_question,
+                        "message": {"id": assistant_msg_id, "role": "assistant", "content": assistant_content},
+                        "messages": [
+                            *response["messages"],
+                            {"id": assistant_msg_id, "role": "assistant", "content": assistant_content},
+                        ],
+                        "daily_panel": session_service.daily_panel(session_id),
+                        "learning_stats": LearningStatsService(conn).overview(),
+                        "token_usage": token_totals(conn),
+                        "sessions": session_service.list_sessions_by_date(),
+                    }
+                )
+            except RuntimeError as exc:
+                logger.warning("model request failed during screenshot auto drill", exc_info=True)
+                assistant_content = _model_request_error_message(exc)
+                assistant_msg_id = session_service.add_message(
+                    session_id,
+                    "assistant",
+                    assistant_content,
+                    {"source": "screenshot_auto_drill_error"},
+                )
+                response.update(
+                    {
+                        "auto_started": False,
+                        "generation_error": str(exc),
+                        "message": {"id": assistant_msg_id, "role": "assistant", "content": assistant_content},
+                        "messages": [
+                            *response["messages"],
+                            {"id": assistant_msg_id, "role": "assistant", "content": assistant_content},
+                        ],
+                        "sessions": session_service.list_sessions_by_date(),
+                    }
+                )
+        return response
