@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
   CaretLeft,
   CaretRight,
@@ -125,12 +125,7 @@ function BranchPanel({
   onSendBranchMessage: (content: string) => void;
 }) {
   const [draft, setDraft] = useState("");
-  const branchEndRef = useRef<HTMLDivElement | null>(null);
   const canSend = Boolean(branchId && draft.trim() && !branchSending);
-
-  useEffect(() => {
-    branchEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [branchMessages, branchSending]);
 
   const sendDraft = () => {
     if (!canSend) return;
@@ -161,7 +156,6 @@ function BranchPanel({
             <span className="thinking-dots" aria-hidden="true"><i /> <i /> <i /></span>
           </div>
         )}
-        <div ref={branchEndRef} />
       </div>
       <textarea
         value={draft}
