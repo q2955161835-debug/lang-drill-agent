@@ -74,7 +74,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 
 启动规则：
 - `start.bat` 只负责调用 `scripts/dev/start-dev.ps1`。
-- `scripts/dev/start-dev.ps1` 负责创建 `.venv`、安装依赖、写入开发期默认 MiMo（小米米魔）配置、初始化数据库、清理端口、后台启动服务、写入日志和等待 HTTP（超文本传输协议）健康检查。
+- `scripts/dev/start-dev.ps1` 负责创建 `.venv`、安装依赖、写入开发期默认 MiMo（小米米魔）配置、保留并规范化已有 API Key（接口密钥）、初始化数据库、清理端口、后台启动服务、写入日志和等待 HTTP（超文本传输协议）健康检查。
 - 浏览器只能在 `http://127.0.0.1:8000/docs` 与 `http://127.0.0.1:5173` 均可访问后打开。
 - 后端日志：`logs/langdrill-backend.out.log` 与 `logs/langdrill-backend.err.log`。
 - 前端日志：`logs/langdrill-frontend.out.log` 与 `logs/langdrill-frontend.err.log`。
@@ -150,8 +150,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\dev\start-dev.ps
 - `.env` 是真实环境变量账本，必须留在 `.gitignore` 中，禁止提交。
 - `.env.example` 是假账本，只存变量名、占位值和必要说明。
 - 新增、删除或改名环境变量时，同步更新 `.env.example`、代码读取逻辑、启动文档和部署说明。
-- `start-dev.ps1` 只写入开发期默认 `LANGDRILL_DEFAULT_PROVIDER`、`LANGDRILL_DEFAULT_MODEL`、`LANGDRILL_PROVIDER_BASE_URL`，必须保留已有 `LANGDRILL_PROVIDER_API_KEY` 与 `LANGDRILL_PROVIDER_API_KEY_<PROVIDER_ID>` 形式的供应商专属密钥。
+- `start-dev.ps1` 只写入开发期默认 `LANGDRILL_DEFAULT_PROVIDER`、`LANGDRILL_DEFAULT_MODEL`、`LANGDRILL_PROVIDER_BASE_URL`，必须保留已有 `LANGDRILL_PROVIDER_API_KEY` 与 `LANGDRILL_PROVIDER_API_KEY_<PROVIDER_ID>` 形式的供应商专属密钥，并在保留时清理常见 `apikey:` / `Bearer:` 粘贴前缀。
 - 默认真实供应商密钥变量：`LANGDRILL_PROVIDER_API_KEY_OPENAI`、`LANGDRILL_PROVIDER_API_KEY_CLAUDE`、`LANGDRILL_PROVIDER_API_KEY_DEEPSEEK`、`LANGDRILL_PROVIDER_API_KEY_MIMO`；自定义供应商使用同规则生成的动态变量名。
+- API Key（接口密钥）应保存纯密钥值；后端会清理常见粘贴前缀 `apikey:` / `Bearer:`，但发现换行或非 ASCII（非英文半角）字符时必须返回可读错误，不能让 `httpx` 请求头编码异常直接暴露给前端。
 - 如怀疑敏感信息已经提交到 GitHub（代码托管平台），必须提醒用户撤销旧密钥、创建新密钥并清理 Git 历史。
 
 ## 验收标准与报告

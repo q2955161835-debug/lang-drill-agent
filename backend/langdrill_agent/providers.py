@@ -8,7 +8,7 @@ from typing import Any
 import httpx
 
 from .models import PromptPack
-from .utils import dumps, estimate_tokens
+from .utils import dumps, estimate_tokens, normalize_api_key, validate_http_header_value
 
 
 @dataclass(frozen=True)
@@ -45,7 +45,7 @@ class ModelProvider:
         self.provider_id = provider_id
         self.model = model
         self.base_url = base_url
-        self.api_key = api_key
+        self.api_key = normalize_api_key(api_key)
         self.thinking_level = thinking_level
         self.api_format = api_format or "openai-chat-completions"
         self.reasoning_parameter = reasoning_parameter or ""
@@ -114,12 +114,13 @@ class ModelProvider:
     def _openai_compatible(self, pack: PromptPack) -> ModelResult:
         started = time.perf_counter()
         base_url = (self.base_url or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")).rstrip("/")
-        api_key = self.api_key or os.getenv("LANGDRILL_PROVIDER_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")
+        api_key = normalize_api_key(self.api_key or os.getenv("LANGDRILL_PROVIDER_API_KEY", "") or os.getenv("OPENAI_API_KEY", ""))
         if self.provider_id == "local":
             base_url = (self.base_url or os.getenv("LOCAL_LLM_BASE_URL", base_url)).rstrip("/")
-            api_key = self.api_key or os.getenv("LOCAL_LLM_API_KEY", api_key)
+            api_key = normalize_api_key(self.api_key or os.getenv("LOCAL_LLM_API_KEY", api_key))
         if not api_key:
             raise RuntimeError("缺少 API key，请写入 .env。")
+        api_key = validate_http_header_value(api_key, "API Key")
 
         system = "\n\n".join(module["content"] for module in pack.system_modules)
         developer_context: dict[str, Any] = {"context_pack": pack.context_pack}
@@ -162,9 +163,10 @@ class ModelProvider:
     def _anthropic_messages(self, pack: PromptPack) -> ModelResult:
         started = time.perf_counter()
         base_url = (self.base_url or os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com")).rstrip("/")
-        api_key = self.api_key or os.getenv("LANGDRILL_PROVIDER_API_KEY", "") or os.getenv("ANTHROPIC_API_KEY", "")
+        api_key = normalize_api_key(self.api_key or os.getenv("LANGDRILL_PROVIDER_API_KEY", "") or os.getenv("ANTHROPIC_API_KEY", ""))
         if not api_key:
             raise RuntimeError("缺少 API key，请写入 .env。")
+        api_key = validate_http_header_value(api_key, "API Key")
 
         system = "\n\n".join(module["content"] for module in pack.system_modules)
         developer_context = dumps({"context_pack": pack.context_pack})

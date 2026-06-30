@@ -113,7 +113,7 @@ Windows 一键启动：
 .\start.bat
 ```
 
-`start.bat` 是轻量入口，实际启动逻辑在 `scripts/dev/start-dev.ps1`。脚本会自动初始化默认英语/CET-4 档案，清理 `5173` / `8000` 端口，在后台启动后端 `http://127.0.0.1:8000` 和前端 `http://127.0.0.1:5173`，等待两个 HTTP（HyperText Transfer Protocol，超文本传输协议）健康检查通过后再打开浏览器。
+`start.bat` 是轻量入口，实际启动逻辑在 `scripts/dev/start-dev.ps1`。脚本会自动初始化默认英语/CET-4 档案，保留并规范化已有 API Key（接口密钥），清理 `5173` / `8000` 端口，在后台启动后端 `http://127.0.0.1:8000` 和前端 `http://127.0.0.1:5173`，等待两个 HTTP（HyperText Transfer Protocol，超文本传输协议）健康检查通过后再打开浏览器。
 
 运行日志写入：
 
@@ -145,7 +145,7 @@ npm run dev
 
 ## 模型供应商
 
-`.env.example` 只保存占位变量。真实 key（密钥）写入 `.env`，不要提交。
+`.env.example` 只保存占位变量。真实 key（密钥）写入 `.env`，不要提交。API Key（接口密钥）建议只填写纯密钥；后端会兼容清理误粘贴的 `apikey:` / `Bearer:` 前缀，若包含换行或中文冒号等非 ASCII（非英文半角）字符会返回可读错误。
 
 支持模式：
 

@@ -108,6 +108,49 @@ def test_provider_visibility_requires_configured_api_key(tmp_path, monkeypatch):
     assert by_id["deepseek"]["visible_in_picker"] is True
 
 
+def test_api_key_paste_label_is_cleaned_from_env(tmp_path, monkeypatch):
+    monkeypatch.setattr(services_module, "PROJECT_ROOT", tmp_path)
+    monkeypatch.delenv("LANGDRILL_PROVIDER_API_KEY", raising=False)
+    monkeypatch.delenv("LANGDRILL_PROVIDER_API_KEY_MIMO", raising=False)
+
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "LANGDRILL_DEFAULT_PROVIDER=mimo\n"
+        "LANGDRILL_DEFAULT_MODEL=mimo-v2.5\n"
+        "LANGDRILL_PROVIDER_BASE_URL=https://api.xiaomimimo.com/anthropic\n"
+        "LANGDRILL_PROVIDER_API_KEY=Bearer：generic-key\n"
+        "LANGDRILL_PROVIDER_API_KEY_MIMO=apikey：mimo-key\n",
+        encoding="utf-8",
+    )
+
+    service = ModelConfigService(_settings_conn())
+    config = service.current_with_secret()
+    providers = {item["id"]: item for item in service.providers()}
+
+    assert config["api_key"] == "mimo-key"
+    assert providers["mimo"]["has_api_key"] is True
+
+
+def test_saving_api_key_strips_paste_label(tmp_path, monkeypatch):
+    monkeypatch.setattr(services_module, "PROJECT_ROOT", tmp_path)
+    monkeypatch.delenv("LANGDRILL_PROVIDER_API_KEY", raising=False)
+    monkeypatch.delenv("LANGDRILL_PROVIDER_API_KEY_MIMO", raising=False)
+
+    service = ModelConfigService(_settings_conn())
+    service.save(
+        "mimo",
+        "https://api.xiaomimimo.com/anthropic",
+        "mimo-v2.5",
+        "apikey：mimo-key",
+        thinking_level="enabled",
+    )
+
+    env_text = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert "LANGDRILL_PROVIDER_API_KEY=mimo-key" in env_text
+    assert "LANGDRILL_PROVIDER_API_KEY_MIMO=mimo-key" in env_text
+    assert "apikey：" not in env_text
+
+
 def test_thinking_options_follow_selected_model_native_levels(tmp_path, monkeypatch):
     monkeypatch.delenv("LANGDRILL_DEFAULT_PROVIDER", raising=False)
     monkeypatch.delenv("LANGDRILL_DEFAULT_MODEL", raising=False)

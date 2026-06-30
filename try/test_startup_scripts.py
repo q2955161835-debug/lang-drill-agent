@@ -31,3 +31,14 @@ def test_powershell_launcher_writes_env_without_utf8_bom() -> None:
     assert "UTF8Encoding]::new($false)" in launcher
     assert "[System.IO.File]::WriteAllLines" in launcher
     assert "Set-Content -Path $EnvPath -Encoding UTF8" not in launcher
+
+
+def test_powershell_launcher_normalizes_existing_api_key_labels() -> None:
+    launcher = (ROOT / "scripts" / "dev" / "start-dev.ps1").read_text(encoding="utf-8")
+
+    assert "function Normalize-ApiKeyValue" in launcher
+    assert "bearer\\s*[:\\uFF1A]" in launcher
+    assert "apikey)\\s*[:\\uFF1A]" in launcher
+    assert "[:：]" not in launcher
+    assert '$line -notmatch "^\\s*#"' in launcher
+    assert "Normalize-ApiKeyValue -Value" in launcher

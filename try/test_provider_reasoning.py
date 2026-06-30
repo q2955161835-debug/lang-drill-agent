@@ -109,7 +109,7 @@ def test_anthropic_messages_reasoning_uses_adaptive_thinking(monkeypatch):
         "claude",
         "claude-sonnet-4.7",
         "https://api.anthropic.com",
-        "test-key",
+        "apikey：test-key",
         thinking_level="high",
         api_format="anthropic-messages",
         reasoning_parameter="anthropic_adaptive_thinking",
@@ -122,6 +122,26 @@ def test_anthropic_messages_reasoning_uses_adaptive_thinking(monkeypatch):
     assert captured["json"]["thinking"] == {"type": "adaptive"}
     assert captured["json"]["output_config"] == {"effort": "high"}
     assert captured["json"]["messages"][0]["role"] == "user"
+
+
+def test_non_ascii_api_key_is_rejected_before_http(monkeypatch):
+    def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
+        raise AssertionError("httpx.post should not run for invalid header values")
+
+    monkeypatch.setattr("langdrill_agent.providers.httpx.post", fake_post)
+
+    provider = ModelProvider(
+        "mimo",
+        "mimo-v2.5",
+        "https://api.xiaomimimo.com/anthropic",
+        "mimo密钥",
+        thinking_level="enabled",
+        api_format="anthropic-messages",
+        reasoning_parameter="anthropic_thinking_switch",
+    )
+
+    with pytest.raises(RuntimeError, match="非 ASCII"):
+        provider.complete(_pack())
 
 
 def test_unknown_non_native_reasoning_parameter_is_rejected():

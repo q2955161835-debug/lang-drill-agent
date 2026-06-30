@@ -70,6 +70,22 @@ function Stop-LangDrillPortListeners {
     }
 }
 
+function Normalize-ApiKeyValue {
+    param([string]$Value)
+
+    $cleaned = $Value.Trim().Trim('"', "'").Trim()
+    for ($i = 0; $i -lt 2; $i++) {
+        $nextValue = $cleaned -replace '(?i)^(?:authorization\s*[:\uFF1A]?\s*)?bearer\s*[:\uFF1A]?\s*', ''
+        $nextValue = $nextValue -replace '(?i)^(?:api[_ -]?key|apikey)\s*[:\uFF1A]\s*', ''
+        $nextValue = $nextValue.Trim()
+        if ($nextValue -eq $cleaned) {
+            break
+        }
+        $cleaned = $nextValue
+    }
+    return $cleaned
+}
+
 function Update-DevEnvFile {
     param([string]$EnvPath)
 
@@ -93,7 +109,13 @@ function Update-DevEnvFile {
             }
         }
         if (-not $isManaged) {
-            $line
+            if ($line -notmatch "^\s*#" -and $line -like "*API_KEY*=*") {
+                $parts = $line -split "=", 2
+                "$($parts[0])=$(Normalize-ApiKeyValue -Value $parts[1])"
+            }
+            else {
+                $line
+            }
         }
     }
 

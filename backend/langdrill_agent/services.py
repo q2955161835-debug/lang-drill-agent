@@ -8,7 +8,7 @@ from typing import Any
 
 from .config import PROJECT_ROOT
 from .models import Question, UserProfile
-from .utils import dumps, loads, new_id, today_str
+from .utils import dumps, loads, new_id, normalize_api_key, today_str
 
 
 class ProfileService:
@@ -1062,9 +1062,10 @@ class ModelConfigService:
             (dumps(overrides),),
         )
         api_key_updates = {}
-        if api_key:
-            api_key_updates[self._api_key_env_key(provider_id)] = api_key.strip()
-            api_key_updates["LANGDRILL_PROVIDER_API_KEY"] = api_key.strip()
+        clean_api_key = normalize_api_key(api_key)
+        if clean_api_key:
+            api_key_updates[self._api_key_env_key(provider_id)] = clean_api_key
+            api_key_updates["LANGDRILL_PROVIDER_API_KEY"] = clean_api_key
         self._write_env(
             {
                 "LANGDRILL_DEFAULT_PROVIDER": provider_id,
@@ -1217,11 +1218,11 @@ class ModelConfigService:
         return f"LANGDRILL_PROVIDER_API_KEY_{clean or 'CUSTOM'}"
 
     def _provider_api_key(self, provider_id: str, env_values: dict[str, str], current_provider_id: str | None = None) -> str:
-        specific = env_values.get(self._api_key_env_key(provider_id), "")
+        specific = normalize_api_key(env_values.get(self._api_key_env_key(provider_id), ""))
         if specific:
             return specific
         if current_provider_id == provider_id:
-            return env_values.get("LANGDRILL_PROVIDER_API_KEY", "")
+            return normalize_api_key(env_values.get("LANGDRILL_PROVIDER_API_KEY", ""))
         return ""
 
     def _read_env(self) -> dict[str, str]:
@@ -1233,7 +1234,11 @@ class ModelConfigService:
             if not line or line.lstrip().startswith("#") or "=" not in line:
                 continue
             key, value = line.split("=", 1)
-            values[key.strip()] = value.strip()
+            clean_key = key.strip()
+            clean_value = value.strip()
+            if "API_KEY" in clean_key.upper():
+                clean_value = normalize_api_key(clean_value)
+            values[clean_key] = clean_value
         return values
 
     def _read_process_env(self) -> dict[str, str]:
@@ -1251,10 +1256,10 @@ class ModelConfigService:
         for key in keys:
             value = os.environ.get(key)
             if value and value.strip():
-                values[key] = value
+                values[key] = normalize_api_key(value) if "API_KEY" in key.upper() else value.strip()
         for key, value in os.environ.items():
             if key.startswith("LANGDRILL_PROVIDER_API_KEY_") and value and value.strip():
-                values[key] = value
+                values[key] = normalize_api_key(value)
         return values
 
     def _write_env(self, updates: dict[str, str], *, clear_empty: bool = False) -> None:
