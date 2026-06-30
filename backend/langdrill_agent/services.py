@@ -680,7 +680,7 @@ class SyllabusService:
 class ModelConfigService:
     MOCK_PROVIDER = {
         "id": "mock",
-        "label": "Mock Provider（本地模拟）",
+        "label": "Mock Provider",
         "kind": "mock",
         "api_format": "mock",
         "api_key_required": False,
@@ -703,7 +703,7 @@ class ModelConfigService:
     PROVIDERS = [
         {
             "id": "openai",
-            "label": "OpenAI GPT（OpenAI GPT）",
+            "label": "OpenAI GPT",
             "kind": "openai-compatible",
             "api_format": "openai-chat-completions",
             "api_key_required": True,
@@ -749,7 +749,7 @@ class ModelConfigService:
         },
         {
             "id": "claude",
-            "label": "Claude（Claude）",
+            "label": "Claude",
             "kind": "anthropic",
             "api_format": "anthropic-messages",
             "api_key_required": True,
@@ -791,7 +791,7 @@ class ModelConfigService:
         },
         {
             "id": "deepseek",
-            "label": "DeepSeek（深度求索）",
+            "label": "DeepSeek",
             "kind": "openai-compatible",
             "api_format": "openai-chat-completions",
             "api_key_required": True,
@@ -831,7 +831,7 @@ class ModelConfigService:
         },
         {
             "id": "mimo",
-            "label": "Xiaomi MiMo（小米 MiMo）",
+            "label": "Xiaomi MiMo",
             "kind": "anthropic",
             "api_format": "anthropic-messages",
             "api_key_required": True,
@@ -1096,10 +1096,11 @@ class ModelConfigService:
         row = self.conn.execute("SELECT value_json FROM app_settings WHERE key='model.custom_providers'").fetchone()
         customs = loads(row["value_json"], []) if row else []
         new_id = f"custom_{len(customs) + 1}_{int(datetime.now().timestamp())}"
+        clean_name = name.strip() or "Custom Provider"
         clean_model = default_model.strip()
         customs.append({
             "id": new_id,
-            "label": f"{name}（自定义）",
+            "label": clean_name,
             "kind": "openai-compatible",
             "api_format": "openai-chat-completions",
             "api_key_required": True,

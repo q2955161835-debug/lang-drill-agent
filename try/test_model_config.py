@@ -79,9 +79,23 @@ def test_default_model_providers_are_configurable_without_custom_template(tmp_pa
     provider_ids = [item["id"] for item in providers]
 
     assert provider_ids[:4] == ["openai", "claude", "deepseek", "mimo"]
+    assert [item["label"] for item in providers[:4]] == ["OpenAI GPT", "Claude", "DeepSeek", "Xiaomi MiMo"]
+    assert providers[-1]["label"] == "Mock Provider"
+    assert all("（" not in item["label"] and "）" not in item["label"] for item in providers)
     assert "custom" not in provider_ids
     assert all("api_format" in item for item in providers)
     assert all("enabled" in item for item in providers)
+
+
+def test_custom_provider_label_uses_raw_name_without_suffix(tmp_path, monkeypatch):
+    monkeypatch.setattr(services_module, "PROJECT_ROOT", tmp_path)
+    service = ModelConfigService(_settings_conn())
+
+    service.add_custom_provider("MyProvider", "https://example.test/v1", "my-model")
+
+    custom_provider = next(item for item in service.providers() if item["id"].startswith("custom_"))
+    assert custom_provider["label"] == "MyProvider"
+    assert "（" not in custom_provider["label"]
 
 
 def test_provider_visibility_requires_configured_api_key(tmp_path, monkeypatch):

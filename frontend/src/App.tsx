@@ -161,11 +161,11 @@ const MOCK_PROFILE: Profile = {
 };
 
 const FALLBACK_PROVIDERS: ProviderOption[] = [
-  { id: "openai", label: "OpenAI GPT（OpenAI GPT）", kind: "openai-compatible", api_format: "openai-chat-completions", api_key_required: true, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "https://api.openai.com/v1", model: "gpt-5.5", model_options: ["gpt-5.5", "gpt-5.4"] },
-  { id: "claude", label: "Claude（Claude）", kind: "anthropic", api_format: "anthropic-messages", api_key_required: true, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "https://api.anthropic.com", model: "claude-sonnet-4.7", model_options: ["claude-sonnet-4.7", "claude-opus-4.7"] },
-  { id: "deepseek", label: "DeepSeek（深度求索）", kind: "openai-compatible", api_format: "openai-chat-completions", api_key_required: true, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "https://api.deepseek.com", model: "deepseek-v4-pro", model_options: ["deepseek-v4-pro", "deepseek-v4-flash"] },
-  { id: "mimo", label: "Xiaomi MiMo（小米 MiMo）", kind: "anthropic", api_format: "anthropic-messages", api_key_required: true, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "https://api.xiaomimimo.com/anthropic", model: "mimo-v2.5-pro", model_options: ["mimo-v2.5", "mimo-v2.5-pro"] },
-  { id: "mock", label: "Mock Provider（本地模拟）", kind: "mock", api_format: "mock", api_key_required: false, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "", model: "mock-tutor-v1", model_options: ["mock-tutor-v1"] }
+  { id: "openai", label: "OpenAI GPT", kind: "openai-compatible", api_format: "openai-chat-completions", api_key_required: true, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "https://api.openai.com/v1", model: "gpt-5.5", model_options: ["gpt-5.5", "gpt-5.4"] },
+  { id: "claude", label: "Claude", kind: "anthropic", api_format: "anthropic-messages", api_key_required: true, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "https://api.anthropic.com", model: "claude-sonnet-4.7", model_options: ["claude-sonnet-4.7", "claude-opus-4.7"] },
+  { id: "deepseek", label: "DeepSeek", kind: "openai-compatible", api_format: "openai-chat-completions", api_key_required: true, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "https://api.deepseek.com", model: "deepseek-v4-pro", model_options: ["deepseek-v4-pro", "deepseek-v4-flash"] },
+  { id: "mimo", label: "Xiaomi MiMo", kind: "anthropic", api_format: "anthropic-messages", api_key_required: true, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "https://api.xiaomimimo.com/anthropic", model: "mimo-v2.5-pro", model_options: ["mimo-v2.5", "mimo-v2.5-pro"] },
+  { id: "mock", label: "Mock Provider", kind: "mock", api_format: "mock", api_key_required: false, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "", model: "mock-tutor-v1", model_options: ["mock-tutor-v1"] }
 ];
 
 const DEFAULT_MODEL_CONFIG: ModelConfig = {
