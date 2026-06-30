@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from langdrill_agent.agents import EvaluatorTutorAgent
 from langdrill_agent.api import app
 from langdrill_agent.db import init_db, transaction
 from langdrill_agent.models import ChatRequest, TaskType
@@ -107,3 +108,13 @@ def test_chat_answers_question_by_id_without_model_reroute(
         ).fetchall()
 
     assert [row["task_type"] for row in calls] == ["answer_evaluation"]
+
+
+def test_model_feedback_json_is_rendered_as_readable_text() -> None:
+    base_feedback = "判断：正确。\n\n正确答案：A answer"
+
+    assert EvaluatorTutorAgent._coerce_model_feedback("{}", base_feedback) == base_feedback
+    assert EvaluatorTutorAgent._coerce_model_feedback(
+        '{"message": "继续保持，下一题注意搭配语境。"}',
+        base_feedback,
+    ) == f"{base_feedback}\n\n模型补充：继续保持，下一题注意搭配语境。"

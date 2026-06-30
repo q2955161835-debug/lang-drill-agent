@@ -76,6 +76,29 @@ def test_parse_real_word_list_text_from_user_screenshot() -> None:
     assert parsed["words"][0]["meaning"].startswith("v. 培养")
 
 
+def test_parse_inline_vocabulary_formats_from_chat_or_ocr() -> None:
+    parsed = ScreenshotImportService().parse_text(
+        "\n".join(
+            [
+                "collision n. 碰撞；冲突",
+                "reservation: 预订；保留",
+                "maintain v. 维持；维护",
+                "approximately：大约",
+            ]
+        )
+    )
+
+    assert parsed["confidence"] == "vocabulary_list"
+    assert [item["term"] for item in parsed["words"]] == [
+        "collision",
+        "reservation",
+        "maintain",
+        "approximately",
+    ]
+    assert parsed["words"][0]["meaning"] == "n. 碰撞；冲突"
+    assert parsed["words"][1]["meaning"] == "预订；保留"
+
+
 def test_screenshot_import_persists_words_and_updates_daily_panel(tmp_path: Path, monkeypatch) -> None:
     db_path = tmp_path / "import.db"
     monkeypatch.setenv("LANGDRILL_DB_PATH", str(db_path))

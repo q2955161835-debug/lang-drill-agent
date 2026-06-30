@@ -14,6 +14,12 @@ logger = logging.getLogger(__name__)
 class ScreenshotImportService:
     OPTION_RE = re.compile(r"(?:^|\n)\s*([A-D])\s*[\.．、)]\s*(.+?)(?=\n\s*[A-D]\s*[\.．、)]|$)", re.S | re.I)
     TERM_RE = re.compile(r"^[A-Za-z][A-Za-z'-]{1,40}$")
+    INLINE_POS_RE = re.compile(
+        r"^([A-Za-z][A-Za-z'-]{1,40})\s+"
+        r"((?:n|v|vi|vt|adj|adv|prep|conj|pron|num|art|aux)\..+)$",
+        re.I,
+    )
+    INLINE_SEPARATOR_RE = re.compile(r"^([A-Za-z][A-Za-z'-]{1,40})\s*[:：]\s*(.+)$")
     PART_OF_SPEECH_RE = re.compile(r"^(?:n|v|vi|vt|adj|adv|prep|conj|pron|num|art|aux)\.", re.I)
 
     def parse_text(self, text: str, source_image_path: str = "") -> dict[str, Any]:
@@ -143,6 +149,11 @@ class ScreenshotImportService:
             current_meaning = []
 
         for line in lines:
+            inline_word = self._parse_inline_word(line)
+            if inline_word:
+                flush()
+                words.append(inline_word)
+                continue
             if self._looks_like_term(line):
                 flush()
                 current_term = line.lower()
@@ -157,3 +168,14 @@ class ScreenshotImportService:
 
     def _looks_like_meaning(self, line: str) -> bool:
         return bool(self.PART_OF_SPEECH_RE.match(line)) or any("\u4e00" <= char <= "\u9fff" for char in line)
+
+    def _parse_inline_word(self, line: str) -> dict[str, str] | None:
+        for pattern in (self.INLINE_POS_RE, self.INLINE_SEPARATOR_RE):
+            match = pattern.match(line)
+            if not match:
+                continue
+            term = match.group(1).strip().lower()
+            meaning = match.group(2).strip()
+            if term and meaning and self._looks_like_meaning(meaning):
+                return {"term": term, "meaning": meaning}
+        return None

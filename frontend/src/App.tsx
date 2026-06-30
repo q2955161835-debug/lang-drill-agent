@@ -281,11 +281,20 @@ function isOptionAnswer(content: string) {
   return /^(?:选择?\s*)?[A-D]$/i.test(content.trim()) || /^答案是\s*[A-D]$/i.test(content.trim());
 }
 
+const VOCAB_TERM_RE = /^[A-Za-z][A-Za-z'-]{1,40}$/;
+const VOCAB_MEANING_RE = /[\u4e00-\u9fff]|^(?:n|v|vi|vt|adj|adv|prep|conj|pron|num|art|aux)\./i;
+const VOCAB_INLINE_POS_RE = /^[A-Za-z][A-Za-z'-]{1,40}\s+(?:n|v|vi|vt|adj|adv|prep|conj|pron|num|art|aux)\..+/i;
+const VOCAB_INLINE_SEPARATOR_RE = /^[A-Za-z][A-Za-z'-]{1,40}\s*[:：]\s*.+/;
+
 function looksLikeScreenshotVocabulary(content: string) {
   const lines = content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   let terms = 0;
   for (let index = 0; index < lines.length; index += 1) {
-    if (/^[A-Za-z][A-Za-z'-]{1,40}$/.test(lines[index]) && lines[index + 1] && /[\u4e00-\u9fff]|^(?:n|v|vi|vt|adj|adv|prep|conj|pron|num|art|aux)\./i.test(lines[index + 1])) {
+    if (VOCAB_INLINE_POS_RE.test(lines[index]) || (VOCAB_INLINE_SEPARATOR_RE.test(lines[index]) && VOCAB_MEANING_RE.test(lines[index]))) {
+      terms += 1;
+      continue;
+    }
+    if (VOCAB_TERM_RE.test(lines[index]) && lines[index + 1] && VOCAB_MEANING_RE.test(lines[index + 1])) {
       terms += 1;
     }
   }
@@ -800,7 +809,11 @@ export default function App() {
     if (result.auto_started) setRightOpen(false);
   }, []);
 
-  const hasTodayImportedContent = (dailyPanel.knowledge_total || 0) > 0 || dailyPanel.questions_total > 0;
+  const hasTodayImportedContent =
+    (dailyPanel.knowledge_total || 0) > 0
+    || dailyPanel.questions_total > 0
+    || learningStats.words_total > 0
+    || learningStats.questions_total > 0;
 
   const quickStartToday = useCallback(() => {
     if (!hasTodayImportedContent) {
@@ -1211,7 +1224,11 @@ function LongTermPanel({
   const accuracyText = learningStats.attempts_total ? `${Math.round(learningStats.accuracy * 100)}%` : "未开始";
   const questionPercent = questionTotal ? Math.round((learningStats.questions_done / questionTotal) * 100) : 0;
   const wordPercent = wordsTotal ? Math.round((learningStats.words_mastered / wordsTotal) * 100) : 0;
-  const hasTodayContent = (dailyPanel.knowledge_total || 0) > 0 || dailyPanel.questions_total > 0;
+  const hasTodayContent =
+    (dailyPanel.knowledge_total || 0) > 0
+    || dailyPanel.questions_total > 0
+    || learningStats.words_total > 0
+    || learningStats.questions_total > 0;
   return (
     <section className={`long-panel ${compact ? "compact" : ""}`}>
       <div className="long-grid">

@@ -914,11 +914,25 @@ class EvaluatorTutorAgent:
                 "not_required",
             ),
         )
-        model_feedback = result.content.strip()
+        return self._coerce_model_feedback(result.content, base_feedback)
+
+    @staticmethod
+    def _coerce_model_feedback(content: str, base_feedback: str) -> str:
+        model_feedback = content.strip()
         if not model_feedback:
             return base_feedback
-        if model_feedback.startswith("{") and "\"message\"" in model_feedback:
-            return f"{base_feedback}\n\n模型补充：{model_feedback}"
+        if model_feedback.startswith("{"):
+            parsed = loads(model_feedback, None)
+            if isinstance(parsed, dict):
+                message = str(
+                    parsed.get("message")
+                    or parsed.get("feedback")
+                    or parsed.get("explanation")
+                    or ""
+                ).strip()
+                if message:
+                    return f"{base_feedback}\n\n模型补充：{message}"
+                return base_feedback
         return model_feedback
 
 

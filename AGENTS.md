@@ -12,8 +12,8 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - 思考等级必须跟随当前模型的原生 reasoning（推理）配置；禁止把思考等级降级为提示词控制。没有原生档位或未自定义添加档位的模型，不在聊天栏暴露思考等级选择。
 - 长期学习总面板必须展示真实学习统计：题目完成/总数、单词掌握/总数、整体正确率、考试倒计时和 token（令牌）累计；新聊天在正式发送前只作为本地草稿，不写入数据库会话列表。
 - 启动链路必须适配中文路径、后台运行、日志落盘和 HTTP（HyperText Transfer Protocol，超文本传输协议）健康检查。
-- 截图词表导入后必须自动创建独立练习会话并生成完整考试式题组；题型应使用英文语境句、完形空格、阅读问题或同义改写，禁止退化为“选择中文释义 / 最合适理解”的词卡题。
-- 主聊天栏粘贴多行截图词表时必须复用截图导入后台流程，自动创建截图练习会话、导入词表并生成题组；前端等待状态需区分“截图解析中”和“题目生成中”。
+- 截图词表导入后必须自动创建独立练习会话并生成完整考试式题组；词表解析需支持“单词独占一行 + 下一行释义”、`word n. 释义` 和 `word: 释义` 等常见 OCR（文字识别）/主聊天粘贴格式；题型应使用英文语境句、完形空格、阅读问题或同义改写，禁止退化为“选择中文释义 / 最合适理解”的词卡题。
+- 主聊天栏粘贴 3 个以上截图词条时必须复用截图导入后台流程，自动创建截图练习会话、导入词表并生成题组；前端等待状态需区分“截图解析中”和“题目生成中”。
 - 答题提交后必须让 Evaluator Tutor（判题讲解 Agent）结合当前会话上下文、用户背景和程序判定生成个性化讲解；模型不可用时才回退基础判题，且不得丢失作答记录。
 - 聊天输入区需要展示当前上下文容量占用，默认上限 1,000,000 token（令牌），支持保存自定义上限和主动压缩上下文；LLMLingua（提示词压缩库）作为可选增强，默认使用本地抽取式摘要兜底。
 
@@ -43,7 +43,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - `backend/langdrill_agent/agents.py`：Orchestrator（调度器）、Question Author（出题 Agent）和 Evaluator Tutor（判题讲解 Agent）的实现。
 - `backend/langdrill_agent/task_router.py`：用户意图识别与任务路由。
 - `backend/langdrill_agent/providers.py`：模型供应商配置、API Key（接口密钥）读取和模型调用适配。
-- `backend/langdrill_agent/screenshot_import.py`：截图 OCR（文字识别）文本到知识项的解析与导入。
+- `backend/langdrill_agent/screenshot_import.py`：截图 OCR（文字识别）文本到知识项的解析与导入，支持词条换行、词性内联和冒号分隔格式。
 - `backend/langdrill_agent/phone_mirror.py`：adb（安卓调试桥）/scrcpy（手机映像工具）环境检测和启动准备。
 - `backend/langdrill_agent/migrations/`：SQLite（轻量数据库）schema（数据库结构）初始化脚本。
 - `frontend/`：React（前端框架）+ TypeScript（类型化 JavaScript）+ Vite（前端构建工具）网页前端。
