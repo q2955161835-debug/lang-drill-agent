@@ -157,7 +157,11 @@ def test_provider_visibility_requires_configured_api_key(tmp_path, monkeypatch):
 
 def test_api_key_paste_label_is_cleaned_from_env(tmp_path, monkeypatch):
     monkeypatch.setattr(services_module, "PROJECT_ROOT", tmp_path)
+    monkeypatch.delenv("LANGDRILL_DEFAULT_PROVIDER", raising=False)
+    monkeypatch.delenv("LANGDRILL_DEFAULT_MODEL", raising=False)
+    monkeypatch.delenv("LANGDRILL_PROVIDER_BASE_URL", raising=False)
     monkeypatch.delenv("LANGDRILL_PROVIDER_API_KEY", raising=False)
+    monkeypatch.delenv("LANGDRILL_PROVIDER_API_KEY_DEEPSEEK", raising=False)
     monkeypatch.delenv("LANGDRILL_PROVIDER_API_KEY_MIMO", raising=False)
 
     env_path = tmp_path / ".env"

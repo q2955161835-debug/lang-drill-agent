@@ -124,13 +124,16 @@ class ModelProvider:
 
         system = "\n\n".join(module["content"] for module in pack.system_modules)
         developer_context: dict[str, Any] = {"context_pack": pack.context_pack}
+        user_content = pack.user_content
+        messages = [{"role": "system", "content": system}]
+        if self.provider_id == "openai":
+            messages.append({"role": "developer", "content": dumps(developer_context)})
+        else:
+            user_content = f"{dumps(developer_context)}\n\n{pack.user_content}"
+        messages.append({"role": "user", "content": user_content})
         payload: dict[str, Any] = {
             "model": self.model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "developer", "content": dumps(developer_context)},
-                {"role": "user", "content": pack.user_content},
-            ],
+            "messages": messages,
         }
         self._apply_openai_reasoning(payload)
         if pack.output_schema:

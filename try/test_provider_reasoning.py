@@ -87,6 +87,8 @@ def test_deepseek_v4_reasoning_uses_thinking_payload(monkeypatch):
 
     assert captured["json"]["thinking"] == {"type": "enabled"}
     assert captured["json"]["reasoning_effort"] == "max"
+    assert [message["role"] for message in captured["json"]["messages"]] == ["system", "user"]
+    assert "context_pack" in captured["json"]["messages"][1]["content"]
 
 
 def test_anthropic_messages_reasoning_uses_adaptive_thinking(monkeypatch):
