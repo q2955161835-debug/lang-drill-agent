@@ -649,7 +649,15 @@ h1, h2, h3, h4, .brand, .kicker { font-weight: 750; letter-spacing: -0.03em; }
 .context-compress { width: 100%; }
 
 .right-toggle { position: absolute; left: -20px; top: 24px; z-index: 12; background: var(--surface); border-radius: 999px; width: 40px; height: 40px; }
-.workbench-panel { padding: 24px; display: grid; gap: 18px; }
+.workbench-panel {
+  height: 100%;
+  min-height: 0;
+  padding: 24px;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 18px;
+  overflow: hidden;
+}
 .workbench-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 0 2px; }
 .workbench-head h2 { margin: 4px 0 0; font-size: 1.35rem; }
 .workbench-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -673,7 +681,23 @@ h1, h2, h3, h4, .brand, .kicker { font-weight: 750; letter-spacing: -0.03em; }
   background: var(--surface-glass);
   box-shadow: var(--shadow-cartoon);
 }
+.workbench-panel > .workbench-form {
+  min-height: 0;
+  overflow: auto;
+}
+.branch-panel.workbench-form {
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  overflow: hidden;
+}
 .branch-panel .panel-title { font-size: 1rem; border-color: var(--line); }
+.branch-thread {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+}
+.branch-thread .empty-copy { margin: 0; }
 .branch-message {
   padding: 14px;
   border: var(--border-thin);
@@ -682,8 +706,16 @@ h1, h2, h3, h4, .brand, .kicker { font-weight: 750; letter-spacing: -0.03em; }
   line-height: 1.65;
   background: var(--surface);
   font-weight: 500;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .branch-message.user { background: var(--tag-bg); color: var(--accent); }
+.branch-thinking {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted-strong);
+}
 .coming-panel h3 { margin: 6px 0 8px; }
 .coming-panel p { margin: 0; color: var(--muted); line-height: 1.7; }
 .workbench-form { display: grid; gap: 12px; }

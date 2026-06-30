@@ -540,6 +540,7 @@ export default function App() {
   const [selectedText, setSelectedText] = useState("");
   const [branchId, setBranchId] = useState<string | null>(null);
   const [branchMessages, setBranchMessages] = useState<Message[]>([]);
+  const [branchSending, setBranchSending] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -817,7 +818,13 @@ export default function App() {
 
   const createBranchFromText = useCallback(async (text: string) => {
     const cleanText = text.trim();
-    if (!activeSessionId || !cleanText) return;
+    if (!activeSessionId || !cleanText || branchSending) return;
+    const userMessage: Message = { id: `branch-create-${Date.now()}`, role: "user", content: cleanText };
+    setBranchId(null);
+    setRightOpen(true);
+    setWorkbenchTab("branch");
+    setBranchMessages([userMessage]);
+    setBranchSending(true);
     try {
       const data = await apiPost<{ branch_id: string; message: string }>("/api/branch", {
         session_id: activeSessionId,
@@ -825,18 +832,19 @@ export default function App() {
         message: "解释这段内容，并指出是否应写回复习卡片。"
       });
       setBranchId(data.branch_id);
-      setRightOpen(true);
-      setBranchMessages([
-        { id: `${data.branch_id}-u`, role: "user", content: cleanText },
+      setBranchMessages((current) => [
+        ...current,
         { id: `${data.branch_id}-a`, role: "assistant", content: data.message }
       ]);
     } catch (err) {
-      setRightOpen(true);
-      setBranchMessages([
+      setBranchMessages((current) => [
+        ...current,
         { id: `branch-error-${Date.now()}`, role: "assistant", content: `分支创建失败：${err instanceof Error ? err.message : "未知错误"}` }
       ]);
+    } finally {
+      setBranchSending(false);
     }
-  }, [activeSessionId]);
+  }, [activeSessionId, branchSending]);
 
   const startBranch = useCallback(async () => {
     await createBranchFromText(selectedTextRef.current || selectedText);
@@ -844,16 +852,19 @@ export default function App() {
 
   const sendBranchMessage = useCallback(async (content: string) => {
     const cleanContent = content.trim();
-    if (!branchId || !cleanContent) return;
+    if (!branchId || !cleanContent || branchSending) return;
     const userMessage: Message = { id: `branch-local-${Date.now()}`, role: "user", content: cleanContent };
     setBranchMessages((current) => [...current, userMessage]);
+    setBranchSending(true);
     try {
       const data = await apiPost<{ branch_id: string; message: string }>(`/api/branch/${branchId}/messages`, { message: cleanContent });
       setBranchMessages((current) => [...current, { id: `${data.branch_id}-a-${Date.now()}`, role: "assistant", content: data.message }]);
     } catch (err) {
       setBranchMessages((current) => [...current, { id: `branch-error-${Date.now()}`, role: "assistant", content: `分支回复失败：${err instanceof Error ? err.message : "未知错误"}` }]);
+    } finally {
+      setBranchSending(false);
     }
-  }, [branchId]);
+  }, [branchId, branchSending]);
 
   const handleScreenshotImportComplete = useCallback((result: ScreenshotImportResult) => {
     if (result.session_id) {
@@ -1169,6 +1180,7 @@ export default function App() {
         open={rightOpen}
         branchId={branchId}
         branchMessages={branchMessages}
+        branchSending={branchSending}
         sessionId={activeSessionId}
         activeTab={workbenchTab}
         onTabChange={setWorkbenchTab}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CaretLeft,
   CaretRight,
@@ -17,6 +17,7 @@ type RightWorkbenchProps = {
   open: boolean;
   branchId: string | null;
   branchMessages: Message[];
+  branchSending: boolean;
   sessionId: string | null;
   onToggle: () => void;
   activeTab: WorkbenchTab;
@@ -47,6 +48,7 @@ export function RightWorkbench({
   open,
   branchId,
   branchMessages,
+  branchSending,
   sessionId,
   onToggle,
   activeTab,
@@ -92,6 +94,7 @@ export function RightWorkbench({
             <BranchPanel
               branchId={branchId}
               branchMessages={branchMessages}
+              branchSending={branchSending}
               onSendBranchMessage={onSendBranchMessage}
             />
           )}
@@ -113,13 +116,28 @@ export function RightWorkbench({
 function BranchPanel({
   branchId,
   branchMessages,
+  branchSending,
   onSendBranchMessage
 }: {
   branchId: string | null;
   branchMessages: Message[];
+  branchSending: boolean;
   onSendBranchMessage: (content: string) => void;
 }) {
   const [draft, setDraft] = useState("");
+  const branchEndRef = useRef<HTMLDivElement | null>(null);
+  const canSend = Boolean(branchId && draft.trim() && !branchSending);
+
+  useEffect(() => {
+    branchEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [branchMessages, branchSending]);
+
+  const sendDraft = () => {
+    if (!canSend) return;
+    onSendBranchMessage(draft);
+    setDraft("");
+  };
+
   return (
     <section className="branch-panel workbench-form">
       <div className="panel-title">
@@ -127,22 +145,38 @@ function BranchPanel({
         <span>分支对话</span>
       </div>
       <p className="hint">{branchId ? `当前分支：${branchId}` : "选中主聊天文本后，可以在这里展开解释，不污染主线学习记录。"}</p>
-      {branchMessages.length === 0 ? (
-        <p className="empty-copy">这里会显示分支对话记录。</p>
-      ) : (
-        branchMessages.map((message) => (
-          <div className={`branch-message ${message.role}`} key={message.id}>
-            {message.content}
+      <div className="branch-thread" aria-live="polite">
+        {branchMessages.length === 0 ? (
+          <p className="empty-copy">这里会显示分支对话记录。</p>
+        ) : (
+          branchMessages.map((message) => (
+            <div className={`branch-message ${message.role}`} key={message.id}>
+              {message.content}
+            </div>
+          ))
+        )}
+        {branchSending && (
+          <div className="branch-message assistant branch-thinking" aria-label="分支正在思考">
+            <span>分支正在思考</span>
+            <span className="thinking-dots" aria-hidden="true"><i /> <i /> <i /></span>
           </div>
-        ))
-      )}
+        )}
+        <div ref={branchEndRef} />
+      </div>
       <textarea
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            sendDraft();
+          }
+        }}
         placeholder="继续追问，或者让分支整理成复习卡片。"
+        disabled={branchSending}
       />
       <div className="workbench-actions">
-        <button className="workbench-primary" onClick={() => { onSendBranchMessage(draft); setDraft(""); }} disabled={!draft.trim() || !branchId}>发送分支消息</button>
+        <button className="workbench-primary" onClick={sendDraft} disabled={!canSend}>{branchSending ? "发送中..." : "发送分支消息"}</button>
       </div>
     </section>
   );
