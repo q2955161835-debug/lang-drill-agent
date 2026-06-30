@@ -793,6 +793,17 @@ h1, h2, h3, h4, .brand, .kicker { font-weight: 750; letter-spacing: -0.03em; }
   background: var(--surface-strong);
   padding: 12px;
 }
+.paper-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+.paper-check {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  min-width: 0;
+}
 .check-row input {
   width: 16px;
   height: 16px;
@@ -813,6 +824,11 @@ h1, h2, h3, h4, .brand, .kicker { font-weight: 750; letter-spacing: -0.03em; }
   font-weight: 650;
   line-height: 1.45;
   overflow-wrap: anywhere;
+}
+.compact-action {
+  min-height: 34px;
+  padding: 8px 10px;
+  white-space: nowrap;
 }
 .strong-hint { color: var(--accent); font-weight: 750; }
 .token-dashboard { display: grid; gap: 12px; }

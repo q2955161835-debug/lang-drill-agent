@@ -195,12 +195,28 @@ const DEFAULT_EXAM_OPTIONS: ExamOption[] = [
     description: "大学英语四级，默认考试。"
   },
   {
+    id: "cet6",
+    name: "英语六级",
+    target_language: "英语",
+    official_url: "https://cet.neea.edu.cn/xhtml1/folder/16113/1588-1.htm",
+    default_year: 2016,
+    description: "大学英语六级，按六级题型和难度组织。"
+  },
+  {
     id: "cjt4",
     name: "日语四级",
     target_language: "日语",
     official_url: "https://cet.neea.edu.cn/xhtml1/folder/16113/1588-1.htm",
     default_year: 2024,
     description: "大学日语四级，新版考纲 2024 年启用。"
+  },
+  {
+    id: "cjt6",
+    name: "日语六级",
+    target_language: "日语",
+    official_url: "https://cet.neea.edu.cn/xhtml1/folder/16113/1588-1.htm",
+    default_year: 2024,
+    description: "大学日语六级，按更高难度日语题型和表达能力组织。"
   },
   {
     id: "ielts",
@@ -1451,7 +1467,8 @@ function SettingsDialog({
     source_url: "",
     local_path: "",
     summary: "",
-    question_types: ""
+    question_types: "",
+    raw_text: ""
   });
   const [customExam, setCustomExam] = useState({
     name: "",
@@ -1603,14 +1620,30 @@ function SettingsDialog({
         source_url: paperImportDraft.source_url,
         local_path: paperImportDraft.local_path,
         summary: paperImportDraft.summary,
-        question_types: paperImportDraft.question_types.split(/[，,\n]/).map((item) => item.trim()).filter(Boolean)
+        question_types: paperImportDraft.question_types.split(/[，,\n]/).map((item) => item.trim()).filter(Boolean),
+        raw_text: paperImportDraft.raw_text,
+        parse_now: true
       });
       setPastPaperDraft(status);
       onPastPaperStatusChange(status);
-      setPaperImportDraft({ title: "", year: "", source_url: "", local_path: "", summary: "", question_types: "" });
-      setPastPaperMessage("已导入试卷索引并加入当前参考列表。");
+      setPaperImportDraft({ title: "", year: "", source_url: "", local_path: "", summary: "", question_types: "", raw_text: "" });
+      setPastPaperMessage("已保存试卷文件/文本、完成解析并加入当前参考列表。");
     } catch (err) {
       setPastPaperMessage(err instanceof Error ? err.message : "手动导入失败");
+    }
+  };
+  const parsePastPaper = async (paperId: string) => {
+    setPastPaperMessage("正在重新解析试卷...");
+    try {
+      const status = await apiPost<PastPaperStatus>("/api/past-papers/parse", {
+        exam_id: draft.exam_id,
+        paper_id: paperId
+      });
+      setPastPaperDraft(status);
+      onPastPaperStatusChange(status);
+      setPastPaperMessage("已重新解析试卷。");
+    } catch (err) {
+      setPastPaperMessage(err instanceof Error ? err.message : "重新解析失败");
     }
   };
   const searchImportPastPapers = async () => {
@@ -1887,17 +1920,22 @@ function SettingsDialog({
                 </div>
                 <div className="paper-list">
                   {pastPaperDraft.papers.map((paper) => (
-                    <label className="check-row" key={paper.id}>
-                      <input
-                        type="checkbox"
-                        checked={pastPaperDraft.selected_paper_ids.includes(paper.id)}
-                        onChange={() => void togglePastPaper(paper.id)}
-                      />
-                      <span>
-                        <strong>{paper.year || "未知年份"} - {paper.title}</strong>
-                        <small>{paper.source_url || paper.local_path || "未记录来源"} · {paper.trusted_level}</small>
-                      </span>
-                    </label>
+                    <div className="check-row paper-row" key={paper.id}>
+                      <label className="paper-check">
+                        <input
+                          type="checkbox"
+                          checked={pastPaperDraft.selected_paper_ids.includes(paper.id)}
+                          onChange={() => void togglePastPaper(paper.id)}
+                        />
+                        <span>
+                          <strong>{paper.year || "未知年份"} - {paper.title}</strong>
+                          <small>{paper.source_url || paper.local_path || "未记录来源"} · {paper.trusted_level}</small>
+                          <small>原始：{paper.metadata?.raw_path || paper.local_path || "未保存"} · 解析：{paper.metadata?.parsed_path || "未生成"} · 状态：{paper.metadata?.parse_status || "未知"}</small>
+                          {paper.metadata?.parse_error && <small>解析问题：{paper.metadata.parse_error}</small>}
+                        </span>
+                      </label>
+                      <button className="inline-action compact-action" onClick={() => void parsePastPaper(paper.id)}>重新解析</button>
+                    </div>
                   ))}
                   {!pastPaperDraft.papers.length && <p className="hint">暂无真题试卷索引，可手动导入或使用联网搜索导入。</p>}
                 </div>
@@ -1907,6 +1945,7 @@ function SettingsDialog({
                   <input value={paperImportDraft.source_url} onChange={(event) => setPaperImportDraft({ ...paperImportDraft, source_url: event.target.value })} placeholder="来源网站或网页 URL" />
                   <input value={paperImportDraft.local_path} onChange={(event) => setPaperImportDraft({ ...paperImportDraft, local_path: event.target.value })} placeholder="本地试卷文件路径，可为空" />
                   <input value={paperImportDraft.question_types} onChange={(event) => setPaperImportDraft({ ...paperImportDraft, question_types: event.target.value })} placeholder="试卷题型，用逗号分隔" />
+                  <textarea value={paperImportDraft.raw_text} onChange={(event) => setPaperImportDraft({ ...paperImportDraft, raw_text: event.target.value })} placeholder="可直接粘贴试卷文本或已提取的 Markdown；填写后会保存到 papers/<考试>/raw 并解析" />
                   <textarea value={paperImportDraft.summary} onChange={(event) => setPaperImportDraft({ ...paperImportDraft, summary: event.target.value })} placeholder="风格摘要、题量、分值、注意事项；不要粘贴大段受版权限制的完整真题原文" />
                   <button className="inline-action" onClick={() => void importPastPaper()}><Plus size={16} /> 手动导入试卷</button>
                 </div>

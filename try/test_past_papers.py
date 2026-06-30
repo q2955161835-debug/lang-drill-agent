@@ -5,6 +5,7 @@ from pathlib import Path
 from langdrill_agent.agents import QuestionAuthorAgent
 from langdrill_agent.db import init_db, transaction
 from langdrill_agent.models import UserProfile
+from langdrill_agent.paper_assets import parse_paper_text
 from langdrill_agent.providers import ModelResult
 from langdrill_agent.services import PastPaperService, ProfileService, QuestionService, SessionService
 from langdrill_agent.utils import dumps
@@ -105,7 +106,8 @@ class CapturingProvider:
         return ModelResult(content=content, input_tokens=10, output_tokens=10, latency_ms=1, model=self.model)
 
 
-def test_past_papers_default_selects_recent_three(tmp_path: Path) -> None:
+def test_past_papers_default_selects_recent_three_and_creates_files(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("LANGDRILL_PAPER_ROOT", str(tmp_path / "paper-assets"))
     db_path = tmp_path / "papers.db"
     init_db(db_path)
 
@@ -115,9 +117,14 @@ def test_past_papers_default_selects_recent_three(tmp_path: Path) -> None:
     assert status["selected_paper_ids"] == ["paper_cet4_2025", "paper_cet4_2024", "paper_cet4_2023"]
     assert [paper["year"] for paper in status["current_papers"]] == [2025, 2024, 2023]
     assert {item["id"] for item in status["question_types"]} >= {"listening", "reading", "translation", "writing"}
+    first = status["current_papers"][0]["metadata"]
+    assert Path(first["raw_path"]).exists()
+    assert Path(first["parsed_path"]).exists()
+    assert first["parse_status"] == "source_manifest_only"
 
 
-def test_manual_import_adds_paper_and_question_type(tmp_path: Path) -> None:
+def test_manual_import_adds_paper_and_question_type(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("LANGDRILL_PAPER_ROOT", str(tmp_path / "paper-assets"))
     db_path = tmp_path / "manual-paper.db"
     init_db(db_path)
 
@@ -131,6 +138,13 @@ def test_manual_import_adds_paper_and_question_type(tmp_path: Path) -> None:
             local_path="D:/papers/custom-2025.pdf",
             summary="包含口译和情景写作。",
             question_types=["口译", "情景写作"],
+            raw_text=(
+                "# 自定义考试 2025 样卷\n\n"
+                "## 口译\n"
+                "1. Translate this short announcement into Chinese.\n\n"
+                "## 情景写作\n"
+                "2. Write an email to explain the schedule change."
+            ),
         )
         type_ids = {item["id"] for item in status["question_types"]}
         service.save_question_types("custom", ["口译", "情景写作"])
@@ -139,9 +153,42 @@ def test_manual_import_adds_paper_and_question_type(tmp_path: Path) -> None:
     assert status["current_papers"][0]["title"] == "自定义考试 2025 样卷"
     assert {"口译", "情景写作"} <= type_ids
     assert updated["enabled_question_type_ids"] == ["口译", "情景写作"]
+    metadata = status["current_papers"][0]["metadata"]
+    assert Path(metadata["raw_path"]).exists()
+    assert Path(metadata["parsed_path"]).exists()
+    assert metadata["parse_status"] == "parsed"
+    assert metadata["parsed"]["stats"]["sections"] >= 2
+    assert metadata["parsed"]["usable_excerpts"]
 
 
-def test_question_author_receives_selected_papers_and_question_types(tmp_path: Path) -> None:
+def test_parse_paper_text_extracts_needed_parts() -> None:
+    parsed = parse_paper_text(
+        """
+# CET-4 2025 Sample
+
+Part I Writing
+1. Write an essay about online learning.
+
+Part II Reading Comprehension
+2. Which statement best summarizes the passage?
+3. Choose the best word to fill in the blank: The plan is ______.
+""",
+        exam_id="cet4",
+        title="CET-4 2025 Sample",
+        year=2025,
+        source_url="https://example.test",
+        raw_path="papers/cet4/raw/sample.md",
+        parser="test",
+    )
+
+    assert {"writing", "reading", "cloze"} <= set(parsed["question_types"])
+    assert parsed["stats"]["sections"] == 3
+    assert parsed["sections"][1]["heading"] == "Part I Writing"
+    assert parsed["usable_excerpts"][0]["text"].startswith("1. Write")
+
+
+def test_question_author_receives_selected_papers_and_question_types(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("LANGDRILL_PAPER_ROOT", str(tmp_path / "paper-assets"))
     db_path = tmp_path / "author-paper.db"
     init_db(db_path)
 
@@ -158,6 +205,7 @@ def test_question_author_receives_selected_papers_and_question_types(tmp_path: P
         context = provider.last_pack.context_pack["past_paper_context"]
 
     assert context["selected_papers"][0]["id"] == "paper_cet4_2024"
+    assert context["selected_papers"][0]["sections"]
     assert [item["id"] for item in context["enabled_question_types"]] == ["reading"]
     assert active is not None
     assert active["source_refs"][0]["id"] == "paper_cet4_2024"

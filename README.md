@@ -2,7 +2,7 @@
 
 Lang Drill Agent（语言学习训练 Agent）是一个面向长期语言学习、刷题训练、错题复盘和考试备考的多 Agent（智能体）系统。它把 `语言学习-lang-drill-skill` 制作为可运行项目，同时支持 CLI（Command Line Interface，命令行接口）和 Web（网页）前端。
 
-当前公开定位重点面向英语四级/六级（CET-4/CET-6，大学英语四级/六级）与日语四级/六级（CJT4/CJT6，大学日语四级/六级）备考：围绕考纲词汇、语法范围、阅读/听力/翻译/写作题型、真题风格索引、错题回流和间隔复习，把“每天刷什么、怎么判题、错题何时回来”沉淀为可追踪的学习流程。
+当前公开定位重点面向英语四级/六级（CET-4/CET-6，大学英语四级/六级）与日语四级/六级（CJT4/CJT6，大学日语四级/六级）备考：围绕考纲词汇、语法范围、阅读/听力/翻译/写作题型、真题试卷资产、错题回流和间隔复习，把“每天刷什么、怎么判题、错题何时回来”沉淀为可追踪的学习流程。
 
 系统采用“前端展示层 + 后端状态机 + 动态提示词组装 + 多 Agent（智能体）协作”的架构。数据库是唯一正式学习状态来源，聊天上下文只作为交互记录，不作为权威学习记忆。
 
@@ -21,8 +21,8 @@ Lang Drill Agent（语言学习训练 Agent）不是单一巨型 prompt（提示
 - 日常学习面板：按当天会话日期显示学习计划、题量、准确率、复习内容和摘要。
 - 长期学习总面板：展示当前考试的题目完成/总数、单词掌握/总数、整体正确率、考试倒计时和累计 token（令牌）。
 - 聊天式学习入口：像常见 AI（人工智能）聊天工具一样输入今日学习内容、答案或追问；新聊天在正式发送前只保留为本地草稿，不污染历史会话。
-- 结构化出题：Question Author（出题 Agent）按今日学习内容、复习内容、考纲规则和真题风格生成题目。
-- 历年真题参考：默认选择当前考试近 3 年真题试卷索引；用户可在考纲设置中勾选参考试卷、添加来源网站、手动导入试卷索引或创建联网搜索导入索引，并控制组卷阶段允许生成的题型。
+- 结构化出题：Question Author（出题 Agent）按今日学习内容、复习内容、考纲规则和真题试卷解析结果生成题目。
+- 历年真题参考：默认选择当前考试近 3 年真题试卷；用户可在考纲设置中勾选参考试卷、添加来源网站、手动导入本地试卷文件或粘贴已提取文本，系统会保存到 `papers/<考试>/raw` 并生成 `papers/<考试>/parsed` 解析 JSON（JSON 数据交换格式），同时控制组卷阶段允许生成的题型。
 - 判题讲解：Evaluator Tutor（判题讲解 Agent）负责复杂题型判分、错误诊断、讲解、错题归因和当日总结。
 - 分支对话：拖选文本或右键消息后开启右侧分支小窗，共享必要主上下文，默认不写回主会话，可继续发送分支消息。
 - 手机映像与截图导入：右侧工作台预留 scrcpy（开源手机映像工具）/adb（安卓调试桥）手机操控链路，并支持把手机背词截图的 OCR（文字识别）文本导入为知识项后自动创建考试式练习题组。
@@ -41,7 +41,7 @@ Lang Drill Agent（语言学习训练 Agent）不是单一巨型 prompt（提示
 
 ### Agent 2：Question Author（出题 Agent）
 
-负责根据今日学习内容、复习内容、考纲规则、真题风格索引、题量预算和 knowledge_tags（知识标签）生成结构化题目。输出必须符合 JSON Schema（JSON 结构规范），并由 Validator（校验器）校验后才能持久化。
+负责根据今日学习内容、复习内容、考纲规则、真题试卷解析结果、题量预算和 knowledge_tags（知识标签）生成结构化题目。输出必须符合 JSON Schema（JSON 结构规范），并由 Validator（校验器）校验后才能持久化。
 
 ### Agent 3：Evaluator Tutor（判题讲解 Agent）
 
@@ -86,7 +86,7 @@ Web（网页）前端包含三个主区域：
 - 模型提供商、Base URL（基础网址）、API Key（接口密钥）、模型名称和自定义模型入口。
 - 使用统计，展示累计 token（令牌）、会话数、消息数、活跃天数、连续天数、最常用模型、近 30 天活动热力、模型用量分布和上下文容量上限。
 - 当前考试、目标语言、考试时间、学习目标和学习背景。
-- 考纲与历年真题：展示当前考纲、当前参考的历年真题试卷、来源网站、手动导入入口、联网搜索导入入口和从考纲/试卷提炼出的题型勾选项。
+- 考纲与历年真题：展示当前考纲、当前参考的历年真题试卷、来源网站、原始试卷路径、解析 JSON（JSON 数据交换格式）路径、手动导入/重新解析入口、联网搜索导入入口和从考纲/试卷提炼出的题型勾选项。
 - 个性化设置、全局提示词、Agent（智能体）性格选择和自定义人格提示词。
 - 学习算法、联网检查、分支写回策略、字体大小、主题颜色和跟随系统主题。
 - 重新打开初始化设置入口。
@@ -172,12 +172,27 @@ npm run dev
 - `LANGDRILL_PROVIDER_API_KEY`：当前 API Key（接口密钥）兼容变量。
 - `LANGDRILL_PROVIDER_API_KEY_OPENAI`、`LANGDRILL_PROVIDER_API_KEY_CLAUDE`、`LANGDRILL_PROVIDER_API_KEY_DEEPSEEK`、`LANGDRILL_PROVIDER_API_KEY_MIMO`：默认真实供应商专属 API Key（接口密钥）。
 - `LANGDRILL_ENABLE_LLMLINGUA`：设为 `1` 后，主动压缩上下文会尝试使用可选依赖 LLMLingua；未启用时使用本地抽取式摘要。
+- `LANGDRILL_PAPER_ROOT`：历年真题原始文件和解析 JSON（JSON 数据交换格式）的根目录；默认 `./papers`。
 
 可选安装上下文压缩增强：
 
 ```powershell
 pip install -e .[context-compression]
 ```
+
+可选安装真题文件解析增强：
+
+```powershell
+pip install -e .[paper-parsing]
+```
+
+内置解析器优先处理 Markdown（Markdown 文本格式）/TXT（纯文本格式）；安装增强依赖后可解析 PDF（Portable Document Format，便携式文档格式）和 DOCX（Word 文档格式）。若本机安装 MinerU CLI（MinerU 命令行工具），PDF 文本抽取失败时会尝试 `mineru-open-api flash-extract`：
+
+```powershell
+npm install -g mineru-open-api
+```
+
+解析结果只保留组卷需要的章节、题型、短摘录、摘要、来源和路径。
 
 聊天栏快捷模型选择只显示已启用且已配置 API Key（接口密钥）的真实供应商；没有添加的自定义供应商不会暴露。模型名称在网页里同时提供供应商常见模型选项和自定义填写项。thinking level（思考等级）跟随当前模型配置，写入模型 API（接口）的原生 reasoning（推理）参数；没有原生档位且未自定义添加档位的模型不显示思考等级选择。
 
@@ -191,7 +206,8 @@ pip install -e .[context-compression]
 - 清空重测前可运行 `py -m langdrill_agent.cli backup-user-data`，把点目录数据备份到项目内 `data_backups/`；该目录不提交。
 - 后端日志默认写入 `~/.langdrill-agent/logs/langdrill-agent.log`，用于定位 API（接口）、模型、截图导入和数据库问题。
 - 真题和考纲必须保留来源、年份、可信等级和版权边界。
-- 来源不明或版权不清的完整真题不作为默认发布资产，只做索引、题型、来源和风格参考；组卷提示词只携带可核验摘要和 `source_refs`（来源引用）。
+- `papers/` 按考试类型分开保存真题资产：`raw/` 放原始试卷文件或粘贴文本，`parsed/` 放解析 JSON（JSON 数据交换格式）。目录骨架提交到仓库，实际导入的完整试卷和解析产物默认由 `.gitignore` 排除。
+- 来源不明或版权不清的完整真题不作为默认发布资产；用户本地导入后可用于组卷参考，但提交前必须确认来源授权。组卷提示词只携带可核验摘要、章节结构、短摘录和 `source_refs`（来源引用）。
 
 ## 项目目录
 
@@ -199,6 +215,7 @@ pip install -e .[context-compression]
 backend/langdrill_agent/        共享后端内核、API（接口）、CLI（命令行接口）、服务层和 Agent（智能体）
 backend/langdrill_agent/migrations/ SQLite（轻量数据库）schema（结构定义）
 frontend/                       React（前端框架）+ Vite（前端构建工具）网页前端
+papers/                         按考试类型分开的真题 raw（原始文件）和 parsed（解析结果）目录骨架
 scripts/dev/                    开发期启动与维护脚本
 src-tauri/                      Tauri（桌面壳）Windows 桌面封装骨架
 doc/                            架构说明、项目地图、进展记录和 README（说明文档）资源

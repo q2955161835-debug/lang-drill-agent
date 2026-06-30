@@ -25,6 +25,7 @@ from .models import (
     InitRequest,
     ModelConfigRequest,
     PastPaperImportRequest,
+    PastPaperParseRequest,
     PastPaperSearchImportRequest,
     PastPaperSelectRequest,
     PhoneMirrorStartRequest,
@@ -843,7 +844,16 @@ def past_paper_import(request: PastPaperImportRequest) -> dict:
             local_path=request.local_path,
             summary=request.summary,
             question_types=request.question_types,
+            raw_text=request.raw_text,
+            parse_now=request.parse_now,
         )
+
+
+@app.post("/api/past-papers/parse")
+def past_paper_parse(request: PastPaperParseRequest) -> dict:
+    init_db()
+    with transaction() as conn:
+        return PastPaperService(conn).parse_existing(request.exam_id, request.paper_id)
 
 
 @app.post("/api/past-papers/search-import")

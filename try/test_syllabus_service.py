@@ -14,7 +14,7 @@ def test_exam_options_include_builtin_and_custom_choice(tmp_path: Path) -> None:
         options = SyllabusService(conn).exam_options()
 
     ids = [item["id"] for item in options]
-    assert ids[:5] == ["cet4", "cjt4", "ielts", "toefl", "gaokao-english"]
+    assert ids[:7] == ["cet4", "cet6", "cjt4", "cjt6", "ielts", "toefl", "gaokao-english"]
     assert "custom" in ids
 
 

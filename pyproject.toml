@@ -21,6 +21,10 @@ dev = [
 context-compression = [
   "llmlingua>=0.2.2"
 ]
+paper-parsing = [
+  "pypdf>=4.3.0",
+  "python-docx>=1.1.2"
+]
 
 [project.scripts]
 langdrill = "langdrill_agent.cli:app"

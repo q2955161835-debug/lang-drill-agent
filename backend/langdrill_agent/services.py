@@ -2,13 +2,24 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import sqlite3
 from copy import deepcopy
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from .config import PROJECT_ROOT
 from .models import Question, UserProfile
+from .paper_assets import (
+    ensure_exam_paper_dirs,
+    extract_text_from_file,
+    paper_slug,
+    parse_paper_text,
+    relative_display_path,
+    source_manifest_text,
+    write_parsed_json,
+)
 from .utils import dumps, loads, new_id, normalize_api_key, today_str
 
 
@@ -434,6 +445,13 @@ class SourceService:
             "trusted_level": "official_or_exam_org",
         },
         {
+            "exam_id": "cjt6",
+            "title": "全国大学日语四、六级考试大纲（2024年启用）",
+            "year": 2024,
+            "url": "https://cet.neea.edu.cn/xhtml1/folder/16113/1588-1.htm",
+            "trusted_level": "official_or_exam_org",
+        },
+        {
             "exam_id": "cet4",
             "title": "全国大学英语四、六级考试大纲（2016年修订版）",
             "year": 2016,
@@ -514,12 +532,28 @@ class SyllabusService:
             "description": "大学英语四级，默认考试。",
         },
         {
+            "id": "cet6",
+            "name": "英语六级",
+            "target_language": "英语",
+            "official_url": "https://cet.neea.edu.cn/xhtml1/folder/16113/1588-1.htm",
+            "default_year": 2016,
+            "description": "大学英语六级，按六级题型和难度组织。",
+        },
+        {
             "id": "cjt4",
             "name": "日语四级",
             "target_language": "日语",
             "official_url": "https://cet.neea.edu.cn/xhtml1/folder/16113/1588-1.htm",
             "default_year": 2024,
             "description": "大学日语四级，新版考纲 2024 年启用。",
+        },
+        {
+            "id": "cjt6",
+            "name": "日语六级",
+            "target_language": "日语",
+            "official_url": "https://cet.neea.edu.cn/xhtml1/folder/16113/1588-1.htm",
+            "default_year": 2024,
+            "description": "大学日语六级，按更高难度日语题型和表达能力组织。",
         },
         {
             "id": "ielts",
@@ -717,6 +751,18 @@ class PastPaperService:
                 {"id": "listening", "label": "听力理解", "description": "对话和短篇听力。"},
             ],
         },
+        "cjt6": {
+            "source_website": "https://cet.neea.edu.cn/",
+            "title_prefix": "大学日语六级",
+            "description": "CJT-6（大学日语六级）按高阶文字词汇、语法、阅读、翻译和听力组织。",
+            "question_types": [
+                {"id": "vocabulary", "label": "文字词汇", "description": "高阶汉字、词义辨析和惯用表达。"},
+                {"id": "grammar", "label": "语法结构", "description": "复合句、敬语、助词和高级句型。"},
+                {"id": "reading", "label": "阅读理解", "description": "长文理解、主旨推断和信息整合。"},
+                {"id": "translation", "label": "翻译表达", "description": "中日互译、语体转换和自然表达。"},
+                {"id": "listening", "label": "听力理解", "description": "较长对话、讲述和信息判断。"},
+            ],
+        },
         "ielts": {
             "source_website": "https://ielts.org/take-a-test/preparation",
             "title_prefix": "雅思学术类",
@@ -801,7 +847,8 @@ class PastPaperService:
         question_types = [item for item in status["question_types"] if item["id"] in enabled]
         papers = []
         for paper in status["current_papers"]:
-            metadata = loads(paper.get("metadata_json", "{}"), {})
+            metadata = paper.get("metadata") or loads(paper.get("metadata_json", "{}"), {})
+            parsed = metadata.get("parsed", {})
             papers.append(
                 {
                     "id": paper["id"],
@@ -813,6 +860,11 @@ class PastPaperService:
                     "copyright_boundary": paper["copyright_boundary"],
                     "summary": metadata.get("summary", ""),
                     "question_types": metadata.get("question_types", []),
+                    "raw_path": metadata.get("raw_path", paper.get("local_path", "")),
+                    "parsed_path": metadata.get("parsed_path", ""),
+                    "parse_status": metadata.get("parse_status", ""),
+                    "sections": parsed.get("sections", [])[:8] if isinstance(parsed, dict) else [],
+                    "usable_excerpts": parsed.get("usable_excerpts", [])[:12] if isinstance(parsed, dict) else [],
                 }
             )
         return {
@@ -830,15 +882,53 @@ class PastPaperService:
     def seed_default_papers(self, exam_id: str) -> None:
         source_info = self._source_info(exam_id)
         question_type_ids = [item["id"] for item in self._question_type_options(exam_id)]
+        dirs = ensure_exam_paper_dirs(exam_id)
         for year in self.DEFAULT_RECENT_YEARS:
             paper_id = f"paper_{exam_id}_{year}"
             title = f"{source_info['title_prefix']} {year} 年真题参考索引"
             summary = f"默认近三年真题索引，用于参考 {source_info['title_prefix']} 的题型结构、难度和常见主题。"
+            slug = paper_slug(exam_id, title, year, paper_id)
+            raw_path = dirs["raw"] / f"{slug}.md"
+            parsed_path = dirs["parsed"] / f"{slug}.json"
+            manifest = source_manifest_text(
+                exam_id=exam_id,
+                title=title,
+                year=year,
+                source_url=source_info["source_website"],
+                summary=summary,
+                question_types=question_type_ids,
+            )
+            if not raw_path.exists():
+                raw_path.write_text(manifest, encoding="utf-8")
+            if not parsed_path.exists():
+                parsed_payload = parse_paper_text(
+                    manifest,
+                    exam_id=exam_id,
+                    title=title,
+                    year=year,
+                    source_url=source_info["source_website"],
+                    raw_path=relative_display_path(raw_path),
+                    parser="source_manifest",
+                    fallback_summary=summary,
+                    fallback_question_types=question_type_ids,
+                    parse_status="source_manifest_only",
+                )
+                write_parsed_json(parsed_path, parsed_payload)
+            metadata = {
+                "summary": summary,
+                "question_types": question_type_ids,
+                "import_mode": "default_recent_source_manifest",
+                "raw_path": relative_display_path(raw_path),
+                "parsed_path": relative_display_path(parsed_path),
+                "parse_status": "source_manifest_only",
+                "parsed": loads(parsed_path.read_text(encoding="utf-8"), {}),
+            }
             self.conn.execute(
                 """
                 INSERT OR IGNORE INTO exam_assets
-                (id, exam_id, asset_type, title, year, source_url, trusted_level, copyright_boundary, metadata_json)
-                VALUES (?, ?, 'past_paper', ?, ?, ?, ?, ?, ?)
+                (id, exam_id, asset_type, title, year, source_url, local_path,
+                 trusted_level, copyright_boundary, metadata_json)
+                VALUES (?, ?, 'past_paper', ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     paper_id,
@@ -846,10 +936,23 @@ class PastPaperService:
                     title,
                     year,
                     source_info["source_website"],
+                    relative_display_path(raw_path),
                     "needs_verification",
                     "style_reference_only",
-                    dumps({"summary": summary, "question_types": question_type_ids, "import_mode": "default_recent_index"}),
+                    dumps(metadata),
                 ),
+            )
+            self.conn.execute(
+                """
+                UPDATE exam_assets
+                SET local_path=CASE WHEN local_path='' THEN ? ELSE local_path END,
+                    metadata_json=CASE
+                        WHEN metadata_json='' OR metadata_json='{}' THEN ?
+                        ELSE metadata_json
+                    END
+                WHERE id=?
+                """,
+                (relative_display_path(raw_path), dumps(metadata), paper_id),
             )
 
     def select_papers(self, exam_id: str, paper_ids: list[str]) -> dict[str, Any]:
@@ -889,12 +992,26 @@ class PastPaperService:
         local_path: str,
         summary: str,
         question_types: list[str],
+        raw_text: str = "",
+        parse_now: bool = True,
     ) -> dict[str, Any]:
         clean_title = title.strip()
         if not clean_title:
             raise ValueError("试卷标题不能为空。")
         clean_types = [item.strip() for item in question_types if item.strip()]
         paper_id = new_id("paper")
+        asset = self._store_and_parse_paper_asset(
+            paper_id=paper_id,
+            exam_id=exam_id,
+            title=clean_title,
+            year=year,
+            source_url=source_url.strip(),
+            local_path=local_path.strip(),
+            summary=summary.strip(),
+            question_types=clean_types,
+            raw_text=raw_text,
+            parse_now=parse_now,
+        )
         self.conn.execute(
             """
             INSERT INTO exam_assets
@@ -908,13 +1025,47 @@ class PastPaperService:
                 clean_title,
                 year,
                 source_url.strip(),
-                local_path.strip(),
-                dumps({"summary": summary.strip(), "question_types": clean_types, "import_mode": "manual"}),
+                asset["raw_path"],
+                dumps(asset),
             ),
         )
         status = self.status(exam_id)
         next_selected = [paper_id, *[item for item in status["selected_paper_ids"] if item != paper_id]][:6]
         return self.select_papers(exam_id, next_selected)
+
+    def parse_existing(self, exam_id: str, paper_id: str) -> dict[str, Any]:
+        row = self.conn.execute(
+            """
+            SELECT id, exam_id, title, year, source_url, local_path, metadata_json
+            FROM exam_assets
+            WHERE exam_id=? AND id=? AND asset_type='past_paper'
+            """,
+            (exam_id, paper_id),
+        ).fetchone()
+        if not row:
+            raise ValueError("真题试卷不存在，无法解析。")
+        metadata = loads(row["metadata_json"], {})
+        asset = self._store_and_parse_paper_asset(
+            paper_id=str(row["id"]),
+            exam_id=str(row["exam_id"]),
+            title=str(row["title"]),
+            year=row["year"],
+            source_url=str(row["source_url"] or ""),
+            local_path=str(row["local_path"] or metadata.get("raw_path", "")),
+            summary=str(metadata.get("summary", "")),
+            question_types=[str(item) for item in metadata.get("question_types", [])],
+            raw_text="",
+            parse_now=True,
+        )
+        self.conn.execute(
+            """
+            UPDATE exam_assets
+            SET local_path=?, metadata_json=?
+            WHERE id=?
+            """,
+            (asset["raw_path"], dumps(asset), paper_id),
+        )
+        return self.status(exam_id)
 
     def search_import(self, exam_id: str, source_website: str = "") -> dict[str, Any]:
         source_info = self._source_info(exam_id)
@@ -940,6 +1091,108 @@ class PastPaperService:
             ),
         }
 
+    def _store_and_parse_paper_asset(
+        self,
+        *,
+        paper_id: str,
+        exam_id: str,
+        title: str,
+        year: int | None,
+        source_url: str,
+        local_path: str,
+        summary: str,
+        question_types: list[str],
+        raw_text: str,
+        parse_now: bool,
+    ) -> dict[str, Any]:
+        dirs = ensure_exam_paper_dirs(exam_id)
+        slug = paper_slug(exam_id, title, year, paper_id)
+        source_path = self._resolve_paper_source_path(local_path) if local_path else None
+        parse_status = "parsed"
+        parse_error = ""
+        parser = "text"
+
+        if raw_text.strip():
+            raw_path = dirs["raw"] / f"{slug}.md"
+            raw_path.write_text(raw_text.strip() + "\n", encoding="utf-8")
+            extracted_text = raw_text
+            parser = "pasted_text"
+        elif source_path and source_path.exists():
+            raw_path = dirs["raw"] / f"{slug}{source_path.suffix.lower() or '.txt'}"
+            if source_path.resolve() != raw_path.resolve():
+                shutil.copy2(source_path, raw_path)
+            if parse_now:
+                try:
+                    extracted_text, parser = extract_text_from_file(raw_path, language=self._language_for_exam(exam_id))
+                except RuntimeError as exc:
+                    extracted_text = source_manifest_text(
+                        exam_id=exam_id,
+                        title=title,
+                        year=year,
+                        source_url=source_url,
+                        summary=summary,
+                        question_types=question_types,
+                    )
+                    parser = "source_manifest_after_parse_error"
+                    parse_status = "parse_failed"
+                    parse_error = str(exc)
+            else:
+                extracted_text = source_manifest_text(
+                    exam_id=exam_id,
+                    title=title,
+                    year=year,
+                    source_url=source_url,
+                    summary=summary,
+                    question_types=question_types,
+                )
+                parser = "source_manifest_without_parse"
+                parse_status = "not_parsed"
+        else:
+            raw_path = dirs["raw"] / f"{slug}.md"
+            extracted_text = source_manifest_text(
+                exam_id=exam_id,
+                title=title,
+                year=year,
+                source_url=source_url,
+                summary=summary,
+                question_types=question_types,
+            )
+            raw_path.write_text(extracted_text, encoding="utf-8")
+            parser = "source_manifest"
+            parse_status = "source_manifest_only"
+
+        parsed_path = dirs["parsed"] / f"{slug}.json"
+        parsed_payload = parse_paper_text(
+            extracted_text,
+            exam_id=exam_id,
+            title=title,
+            year=year,
+            source_url=source_url,
+            raw_path=relative_display_path(raw_path),
+            parser=parser,
+            fallback_summary=summary,
+            fallback_question_types=question_types,
+            parse_status=parse_status,
+            parse_error=parse_error,
+        )
+        write_parsed_json(parsed_path, parsed_payload)
+        parsed_types = [str(item) for item in parsed_payload.get("question_types", []) if str(item).strip()]
+        merged_types = []
+        for item in [*question_types, *parsed_types]:
+            if item and item not in merged_types:
+                merged_types.append(item)
+        return {
+            "summary": parsed_payload.get("summary", summary),
+            "question_types": merged_types,
+            "import_mode": "manual",
+            "raw_path": relative_display_path(raw_path),
+            "parsed_path": relative_display_path(parsed_path),
+            "parse_status": parse_status,
+            "parse_error": parse_error,
+            "parser": parser,
+            "parsed": parsed_payload,
+        }
+
     def _papers(self, exam_id: str) -> list[dict[str, Any]]:
         rows = self.conn.execute(
             """
@@ -951,7 +1204,12 @@ class PastPaperService:
             """,
             (exam_id,),
         ).fetchall()
-        return [dict(row) for row in rows]
+        papers = []
+        for row in rows:
+            paper = dict(row)
+            paper["metadata"] = loads(paper.get("metadata_json", "{}"), {})
+            papers.append(paper)
+        return papers
 
     def _selected_paper_ids(self, exam_id: str) -> list[str]:
         row = self.conn.execute(
@@ -976,6 +1234,19 @@ class PastPaperService:
             info["title_prefix"] = option.get("name") or exam_id
             info["source_website"] = option.get("official_url") or ""
         return info
+
+    def _language_for_exam(self, exam_id: str) -> str:
+        if exam_id.startswith("cjt"):
+            return "japan"
+        if exam_id in {"ielts", "toefl"}:
+            return "en"
+        return "ch"
+
+    def _resolve_paper_source_path(self, local_path: str) -> Path:
+        source_path = Path(local_path).expanduser()
+        if source_path.is_absolute():
+            return source_path
+        return PROJECT_ROOT / source_path
 
     def _question_type_options(self, exam_id: str) -> list[dict[str, str]]:
         info = self._source_info(exam_id)

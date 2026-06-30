@@ -194,11 +194,18 @@ class PastPaperImportRequest(BaseModel):
     local_path: str = ""
     summary: str = ""
     question_types: list[str] = Field(default_factory=list)
+    raw_text: str = ""
+    parse_now: bool = True
 
 
 class PastPaperSearchImportRequest(BaseModel):
     exam_id: str
     source_website: str = ""
+
+
+class PastPaperParseRequest(BaseModel):
+    exam_id: str
+    paper_id: str
 
 
 class QuestionTypeSelectRequest(BaseModel):

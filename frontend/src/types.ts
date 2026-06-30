@@ -195,6 +195,15 @@ export type PastPaper = {
   trusted_level: string;
   copyright_boundary: string;
   metadata_json?: string;
+  metadata?: {
+    summary?: string;
+    question_types?: string[];
+    raw_path?: string;
+    parsed_path?: string;
+    parse_status?: string;
+    parse_error?: string;
+    parser?: string;
+  };
   created_at?: string;
 };
 
