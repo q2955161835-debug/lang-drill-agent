@@ -3,6 +3,7 @@ export type Profile = {
   target_language: string;
   exam_id: string;
   exam_name: string;
+  deadline?: string | null;
   learning_goal: string;
   learning_background: string;
   persona: string;
@@ -15,9 +16,33 @@ export type ProviderOption = {
   id: string;
   label: string;
   kind: string;
+  api_format?: string;
+  api_key_required?: boolean;
+  enabled?: boolean;
+  has_api_key?: boolean;
+  visible_in_picker?: boolean;
   base_url: string;
   model: string;
-  model_options: string[];
+  model_options: ModelOption[];
+};
+
+export type ThinkingLevel = string;
+
+export type ThinkingLevelOption = {
+  id: ThinkingLevel;
+  label: string;
+  api_value: string;
+};
+
+export type ModelOption = string | {
+  id: string;
+  label?: string;
+  context_tokens?: number;
+  reasoning?: {
+    default_level?: string;
+    parameter?: string;
+    levels?: ThinkingLevelOption[];
+  };
 };
 
 export type ModelConfig = {
@@ -25,7 +50,13 @@ export type ModelConfig = {
   base_url: string;
   model: string;
   api_key?: string;
+  thinking_level?: ThinkingLevel;
+  thinking_level_options?: ThinkingLevelOption[];
+  thinking_api_value?: string;
+  reasoning_parameter?: string;
+  api_format?: string;
   has_api_key?: boolean;
+  visible_in_picker?: boolean;
 };
 
 export type SessionItem = {
@@ -34,6 +65,7 @@ export type SessionItem = {
   folder_date: string;
   exam_id?: string;
   status: string;
+  draft?: boolean;
 };
 
 export type DailyPanel = {
@@ -55,6 +87,18 @@ export type DailyPanel = {
   exam_name?: string;
   accuracy: number;
   summary: string;
+};
+
+export type LearningStats = {
+  exam_id: string;
+  exam_name: string;
+  questions_done: number;
+  questions_total: number;
+  words_mastered: number;
+  words_total: number;
+  accuracy: number;
+  attempts_total: number;
+  attempts_correct: number;
 };
 
 export type Question = {

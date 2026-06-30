@@ -1,7 +1,5 @@
 # Lang Drill Agent（语言学习训练 Agent）
 
-![Lang Drill Agent（语言学习训练 Agent）海报](doc/assets/lang-drill-agent-poster.png)
-
 Lang Drill Agent（语言学习训练 Agent）是一个面向长期语言学习、刷题训练、错题复盘和考试备考的多 Agent（智能体）系统。它把 `语言学习-lang-drill-skill` 制作为可运行项目，同时支持 CLI（Command Line Interface，命令行接口）和 Web（网页）前端。
 
 当前公开定位重点面向英语四级/六级（CET-4/CET-6，大学英语四级/六级）与日语四级/六级（CJT4/CJT6，大学日语四级/六级）备考：围绕考纲词汇、语法范围、阅读/听力/翻译/写作题型、真题风格索引、错题回流和间隔复习，把“每天刷什么、怎么判题、错题何时回来”沉淀为可追踪的学习流程。
@@ -21,11 +19,11 @@ Lang Drill Agent（语言学习训练 Agent）不是单一巨型 prompt（提示
 ## 核心能力
 
 - 日常学习面板：按当天会话日期显示学习计划、题量、准确率、复习内容和摘要。
-- 长期学习总面板：空白上下文时展示全部长期学习记录摘要，并显示“`<用户名>`，今天打算从哪里开始？”。
-- 聊天式学习入口：像常见 AI（人工智能）聊天工具一样输入今日学习内容、答案或追问。
+- 长期学习总面板：展示当前考试的题目完成/总数、单词掌握/总数、整体正确率、考试倒计时和累计 token（令牌）。
+- 聊天式学习入口：像常见 AI（人工智能）聊天工具一样输入今日学习内容、答案或追问；新聊天在正式发送前只保留为本地草稿，不污染历史会话。
 - 结构化出题：Question Author（出题 Agent）按今日学习内容、复习内容、考纲规则和真题风格生成题目。
 - 判题讲解：Evaluator Tutor（判题讲解 Agent）负责复杂题型判分、错误诊断、讲解、错题归因和当日总结。
-- 分支对话：拖选文本后开启右侧分支小窗，共享必要主上下文，默认不写回主会话，可选择合并为注释、错题解释、复习卡片或学习背景更新。
+- 分支对话：拖选文本或右键消息后开启右侧分支小窗，共享必要主上下文，默认不写回主会话，可继续发送分支消息。
 - 手机映像与截图导入：右侧工作台预留 scrcpy（开源手机映像工具）/adb（安卓调试桥）手机操控链路，并支持把手机背词截图的 OCR（文字识别）文本导入为知识项。
 - 题目吸附显示：当前正在回答的题目在聊天滚动时保持可见，避免题目被滑走。
 - 模型供应商配置：支持 Mock（本地模拟）、OpenAI-compatible（OpenAI 兼容）、国内常见供应商、本地模型和自定义 Base URL（基础网址）/API Key（接口密钥）/模型名称。
@@ -60,11 +58,11 @@ Lang Drill Agent（语言学习训练 Agent）不是单一巨型 prompt（提示
 1. 用户打开 Web（网页）前端，空白上下文展示长期学习总面板。
 2. 用户在聊天栏发送今日学习内容、答案或学习请求。
 3. Orchestrator（调度器）创建或读取当日会话，初始化当日学习面板。
-4. 系统脚本选择今日新学内容和复习内容。
-5. Question Author（出题 Agent）生成结构化题目，Validator（校验器）通过后入库。
-6. 前端展示第一题，后端继续准备后续题目。
+4. 后端选择今日新学内容、到期复习、低掌握度知识点和错题回流内容。
+5. Question Author（出题 Agent）一次生成完整正式题组，Validator（校验器）通过后整套入库。
+6. 前端只展示当前待答题；题目卡片跟随最新回复显示，等待模型时显示 thinking（思考）加载。
 7. 用户作答后，简单题由程序判定，复杂题交给 Evaluator Tutor（判题讲解 Agent）。
-8. 系统回写作答结果、错题归因、掌握度和 token（令牌）记录。
+8. 系统回写作答结果、错题归因、掌握度和 token（令牌）记录，并自动返回下一道待答题。
 9. 题目完成后生成当日总结，并给出学习反馈和下一步复习建议。
 
 ## Web（网页）前端
@@ -79,8 +77,8 @@ Web（网页）前端包含三个主区域：
 设置面板包含：
 
 - 模型提供商、Base URL（基础网址）、API Key（接口密钥）、模型名称和自定义模型入口。
-- Token（令牌）使用统计。
-- 当前学习目标和学习背景。
+- Token（令牌）使用统计，按累计、输入、输出和当前上下文估算展示。
+- 当前考试、目标语言、考试时间、学习目标和学习背景。
 - 个性化设置、全局提示词、Agent（智能体）性格选择和自定义人格提示词。
 - 学习算法、联网检查、分支写回策略、字体大小、主题颜色和跟随系统主题。
 - 重新打开初始化设置入口。
@@ -115,7 +113,12 @@ Windows 一键启动：
 .\start.bat
 ```
 
-脚本会自动初始化默认英语/CET-4 档案，分别启动后端 `http://127.0.0.1:8000` 和前端 `http://127.0.0.1:5173`，并打开浏览器。
+`start.bat` 是轻量入口，实际启动逻辑在 `scripts/dev/start-dev.ps1`。脚本会自动初始化默认英语/CET-4 档案，清理 `5173` / `8000` 端口，在后台启动后端 `http://127.0.0.1:8000` 和前端 `http://127.0.0.1:5173`，等待两个 HTTP（HyperText Transfer Protocol，超文本传输协议）健康检查通过后再打开浏览器。
+
+运行日志写入：
+
+- 后端：`logs/langdrill-backend.out.log` / `logs/langdrill-backend.err.log`
+- 前端：`logs/langdrill-frontend.out.log` / `logs/langdrill-frontend.err.log`
 
 停止服务：
 
@@ -146,20 +149,22 @@ npm run dev
 
 支持模式：
 
-- `mock`：本地模拟，无需 key（密钥）。
-- `openai`：OpenAI-compatible（OpenAI 兼容）接口。
-- `local`：本地 OpenAI-compatible（OpenAI 兼容）模型服务。
-- DeepSeek（深度求索）、Qwen（通义千问）、Zhipu AI（智谱）、Moonshot（月之暗面）、Xiaomi MiMo（小米 MiMo）等可按 OpenAI-compatible（OpenAI 兼容）方式配置。
-- `custom`：自定义 OpenAI-compatible（OpenAI 兼容）供应商。
+- `mock`：本地模拟，无需 key（密钥），只用于自动测试和离线调试；普通 Web（网页）启动会回到真实默认供应商。
+- `openai`：OpenAI/GPT，默认 OpenAI-compatible Chat Completions（OpenAI 兼容聊天补全）格式。
+- `claude`：Claude，默认 Anthropic Messages（Anthropic 消息接口）格式。
+- `deepseek`：DeepSeek（深度求索），默认 OpenAI-compatible Chat Completions（OpenAI 兼容聊天补全）格式。
+- `mimo`：Xiaomi MiMo（小米 MiMo），默认 Anthropic Messages（Anthropic 消息接口）格式。
+- 自定义供应商只有在设置页点击“添加供应商”并保存后才出现。
 
-网页设置中的模型配置会写入本地 `.env`：
+网页设置和聊天栏快捷配置都会写入后端模型配置；供应商、模型名称和 Base URL（基础网址）同步写入本地 `.env`：
 
 - `LANGDRILL_DEFAULT_PROVIDER`：当前供应商。
 - `LANGDRILL_DEFAULT_MODEL`：当前模型名称。
 - `LANGDRILL_PROVIDER_BASE_URL`：当前 Base URL（基础网址）。
-- `LANGDRILL_PROVIDER_API_KEY`：当前 API Key（接口密钥）。
+- `LANGDRILL_PROVIDER_API_KEY`：当前 API Key（接口密钥）兼容变量。
+- `LANGDRILL_PROVIDER_API_KEY_OPENAI`、`LANGDRILL_PROVIDER_API_KEY_CLAUDE`、`LANGDRILL_PROVIDER_API_KEY_DEEPSEEK`、`LANGDRILL_PROVIDER_API_KEY_MIMO`：默认真实供应商专属 API Key（接口密钥）。
 
-模型名称在网页里同时提供供应商常见模型选项和自定义填写项。自定义模型不为空时优先使用自定义值，方便供应商新增模型后立即使用。
+聊天栏快捷模型选择只显示已启用且已配置 API Key（接口密钥）的真实供应商；没有添加的自定义供应商不会暴露。模型名称在网页里同时提供供应商常见模型选项和自定义填写项。thinking level（思考等级）跟随当前模型配置，写入模型 API（接口）的原生 reasoning（推理）参数；没有原生档位且未自定义添加档位的模型不显示思考等级选择。
 
 ## 数据与安全边界
 
@@ -179,10 +184,12 @@ npm run dev
 backend/langdrill_agent/        共享后端内核、API（接口）、CLI（命令行接口）、服务层和 Agent（智能体）
 backend/langdrill_agent/migrations/ SQLite（轻量数据库）schema（结构定义）
 frontend/                       React（前端框架）+ Vite（前端构建工具）网页前端
-archive/optimized-out/          已下线旧功能模块归档
+scripts/dev/                    开发期启动与维护脚本
+src-tauri/                      Tauri（桌面壳）Windows 桌面封装骨架
 doc/                            架构说明、项目地图、进展记录和 README（说明文档）资源
-doc/assets/                     README（说明文档）海报等展示资源
 try/                            测试和调试文件，可清理
+archive/optimized-out/          已下线旧功能模块归档
+logs/                           本地运行日志，不提交
 ```
 
 ## 验证
@@ -190,7 +197,9 @@ try/                            测试和调试文件，可清理
 ```powershell
 py -m ruff check backend try
 py -m pytest try
+py -m pytest try/test_startup_scripts.py -q
 py try\full_chain_smoke.py
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\dev\start-dev.ps1 -NoBrowser -SkipInstall
 cd frontend
 npm run build
 ```

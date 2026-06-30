@@ -12,8 +12,10 @@ from .agents import EvaluatorTutorAgent, OrchestratorAgent, QuestionAuthorAgent,
 from .config import load_settings
 from .db import init_db, transaction
 from .logging_config import configure_logging
+from .learning_stats import LearningStatsService
 from .models import (
     AddCustomProviderRequest,
+    BranchMessageRequest,
     BranchRequest,
     ChatRequest,
     ChatResponse,
@@ -21,6 +23,7 @@ from .models import (
     ModelConfigRequest,
     PhoneMirrorStartRequest,
     ProfileUpdateRequest,
+    PromptPack,
     ScreenshotImportRequest,
     SyllabusCheckRequest,
     SyllabusSelectRequest,
@@ -83,6 +86,51 @@ def startup() -> None:
     init_db()
 
 
+def _current_model_provider(conn) -> ModelProvider:
+    settings = load_settings()
+    model_config = ModelConfigService(conn).current_with_secret()
+    return ModelProvider(
+        model_config.get("provider_id") or settings.default_provider,
+        model_config.get("model") or settings.default_model,
+        model_config.get("base_url") or "",
+        model_config.get("api_key") or "",
+        model_config.get("thinking_level") or "auto",
+        api_format=model_config.get("api_format") or "openai-chat-completions",
+        reasoning_parameter=model_config.get("reasoning_parameter") or "",
+        thinking_api_value=model_config.get("thinking_api_value") or "",
+    )
+
+
+def _question_progress_message(
+    progress: dict[str, int],
+    active_question: dict | None,
+    *,
+    created: int = 0,
+    opening_message: str = "",
+    prefix: str = "",
+) -> str:
+    total = progress.get("total", 0)
+    done = progress.get("done", 0)
+    if active_question:
+        sequence = int(active_question.get("sequence") or done + 1)
+        lead = opening_message.strip() or prefix.strip()
+        if not lead:
+            lead = f"已准备好第 {sequence} 题 / 共 {total or sequence} 题。"
+        if created:
+            lead = f"{lead}\n\n本轮已先生成并入库 {created} 道题。"
+        return f"{lead}\n\n当前进度：第 {sequence} 题 / 共 {total or sequence} 题。"
+    if total and done >= total:
+        return f"本轮题目已完成：{done}/{total}。可以输入新的学习内容生成下一轮题组，或输入“总结”查看今日复盘。"
+    return prefix or "还没有可展示的题目。请输入今日学习内容，我会先生成完整题组再开始。"
+
+
+def _model_request_error_message(exc: RuntimeError) -> str:
+    return (
+        f"⚠️ 当前模型请求失败：{exc}\n\n"
+        "本次输入已保存在当前会话中；请检查 API Key、Base URL（基础网址）和网络后继续发送。"
+    )
+
+
 @app.get("/api/bootstrap")
 def bootstrap() -> dict:
     init_db()
@@ -90,14 +138,16 @@ def bootstrap() -> dict:
         profile = ProfileService(conn).get()
         sessions = SessionService(conn).list_sessions_by_date()
         model_config = ModelConfigService(conn)
+        current_model_config = model_config.current_for_ui()
         return {
             "profile": profile.model_dump(),
             "sessions": sessions,
             "token_usage": token_totals(conn),
             "providers": model_config.providers(),
-            "model_config": model_config.current(),
+            "model_config": current_model_config,
             "exam_options": SyllabusService(conn).exam_options(),
             "syllabus_status": SyllabusService(conn).status(profile.exam_id),
+            "learning_stats": LearningStatsService(conn).overview(),
         }
 
 
@@ -112,6 +162,7 @@ def initialize(request: InitRequest) -> dict:
                 "target_language": request.target_language,
                 "exam_id": request.exam_id,
                 "exam_name": request.exam_name,
+                "deadline": request.deadline,
                 "learning_goal": request.learning_goal,
                 "learning_background": request.learning_background,
             }
@@ -140,6 +191,9 @@ def save_model_config(request: ModelConfigRequest) -> dict:
             request.base_url,
             request.model,
             request.api_key,
+            thinking_level=request.thinking_level,
+            thinking_level_options=request.thinking_level_options,
+            api_format=request.api_format,
         )
         return {"model_config": config, "providers": svc.providers()}
 
@@ -170,7 +224,6 @@ def reset_settings_defaults() -> dict:
 @app.post("/api/chat", response_model=ChatResponse)
 def chat(request: ChatRequest) -> ChatResponse:
     init_db()
-    settings = load_settings()
     with transaction() as conn:
         session_service = SessionService(conn)
         selected_option = (request.selected_option or "").strip().upper()
@@ -180,7 +233,11 @@ def chat(request: ChatRequest) -> ChatResponse:
             visible_content = selected_option
             if extra_prompt:
                 visible_content = f"{selected_option}\n补充提问：{extra_prompt}"
-        session_id = session_service.ensure_session(request.session_id, visible_content or "日常学习")
+        session_id = session_service.ensure_session(
+            request.session_id,
+            visible_content or "日常学习",
+            force_new=request.force_new_session,
+        )
         question_service = QuestionService(conn)
         selected_question = (
             question_service.question_by_id(request.question_id, session_id)
@@ -196,27 +253,38 @@ def chat(request: ChatRequest) -> ChatResponse:
         )
         session_service.add_message(session_id, "user", visible_content or request.content, {"task": task.value})
 
-        model_config = ModelConfigService(conn).current_with_secret()
-        provider = ModelProvider(
-            model_config.get("provider_id") or settings.default_provider,
-            model_config.get("model") or settings.default_model,
-            model_config.get("base_url") or "",
-            model_config.get("api_key") or "",
-        )
+        provider = _current_model_provider(conn)
 
         active_question = active  # 默认保持当前题
 
         if task.value == "answer_question" and active:
-            # ── 答题 ──
+            # ── 答题：判题、回写，再自动推进到下一道库存题 ──
             answer_content = selected_option or request.content
-            result = EvaluatorTutorAgent(conn, provider).evaluate(
-                session_id,
-                active,
-                answer_content,
-                extra_prompt=extra_prompt,
-            )
-            assistant_content = result.feedback
-            active_question = QuestionService(conn).active_question(session_id)
+            try:
+                result = EvaluatorTutorAgent(conn, provider).evaluate(
+                    session_id,
+                    active,
+                    answer_content,
+                    extra_prompt=extra_prompt,
+                )
+                session_service.mark_completed_if_finished(session_id)
+                active_question = QuestionService(conn).active_question(session_id)
+                progress = QuestionService(conn).question_progress(session_id)
+                if active_question:
+                    assistant_content = (
+                        f"{result.feedback}\n\n"
+                        f"下一题已就绪：第 {active_question.get('sequence')} 题 / 共 {progress['total']} 题。"
+                    )
+                else:
+                    assistant_content = (
+                        f"{result.feedback}\n\n"
+                        f"本轮题目已完成：{progress['done']}/{progress['total']}。"
+                        "可以输入新的学习内容开启下一轮，或输入“总结”查看今日复盘。"
+                    )
+            except RuntimeError as exc:
+                logger.warning("model request failed during answer evaluation", exc_info=True)
+                active_question = QuestionService(conn).active_question(session_id)
+                assistant_content = _model_request_error_message(exc)
 
         elif task.value == "explanation" and active:
             # ── 追问 / 讲解：围绕当前题进行解释，不消耗作答次数 ──
@@ -238,8 +306,22 @@ def chat(request: ChatRequest) -> ChatResponse:
                 user_content=explanation_prompt,
                 allow_global_user_prompt=True,
             )
-            model_result = provider.complete(pack)
-            assistant_content = model_result.content
+            try:
+                model_result = provider.complete(pack)
+                assistant_content = model_result.content
+            except RuntimeError as exc:
+                logger.warning("model request failed during explanation", exc_info=True)
+                assistant_content = _model_request_error_message(exc)
+
+        elif task.value == "continue_drill":
+            # ── 推进：只取数据库里的下一道题，不重新初始化今日面板 ──
+            active_question = QuestionService(conn).active_question(session_id)
+            progress = QuestionService(conn).question_progress(session_id)
+            assistant_content = _question_progress_message(
+                progress,
+                active_question,
+                prefix="我会继续当前题组，不重新开始。",
+            )
 
         elif task.value == "settings":
             # ── 设置：引导用户去设置面板 ──
@@ -273,12 +355,31 @@ def chat(request: ChatRequest) -> ChatResponse:
             assistant_content = f"已识别到分支对话请求。请使用选中文本功能或右侧分支面板继续。选中内容：{request.selected_text[:60]}"
 
         else:
-            # ── 默认：日常训练 + 出题 ──
-            OrchestratorAgent(conn, provider).handle_daily_drill(session_id, request.content)
-            question = QuestionAuthorAgent(conn, provider).ensure_first_question(session_id)
-            assistant_content = "已初始化今日学习面板，并准备好第一题。"
-            active_question = question.model_dump()
-            active_question["status"] = "ready"
+            # ── 默认：有库存题先继续；无库存时先生成完整题组入库，再展示第一题 ──
+            progress_before = QuestionService(conn).question_progress(session_id)
+            if active and progress_before["ready"]:
+                active_question = active
+                assistant_content = _question_progress_message(
+                    progress_before,
+                    active_question,
+                    prefix="当前题组仍在进行中。",
+                )
+            else:
+                try:
+                    OrchestratorAgent(conn, provider).handle_daily_drill(session_id, request.content)
+                    author_result = QuestionAuthorAgent(conn, provider).ensure_question_set(session_id, request.content)
+                    active_question = QuestionService(conn).active_question(session_id)
+                    progress = QuestionService(conn).question_progress(session_id)
+                    assistant_content = _question_progress_message(
+                        progress,
+                        active_question,
+                        created=int(author_result.get("created", 0)),
+                        opening_message=str(author_result.get("opening_message") or ""),
+                    )
+                except RuntimeError as exc:
+                    logger.warning("model request failed during question generation", exc_info=True)
+                    active_question = QuestionService(conn).active_question(session_id)
+                    assistant_content = _model_request_error_message(exc)
 
         msg_id = session_service.add_message(
             session_id,
@@ -292,6 +393,7 @@ def chat(request: ChatRequest) -> ChatResponse:
             daily_panel=session_service.daily_panel(session_id),
             active_question=active_question,
             token_usage=token_totals(conn),
+            learning_stats=LearningStatsService(conn).overview(),
         )
 
 
@@ -314,12 +416,51 @@ def branch_chat(request: BranchRequest) -> dict:
             """,
             (new_id("bmsg"), branch_id, request.message),
         )
-        response = f"已基于选中文本创建分支。当前分支默认不写回主会话：{request.selected_text[:60]}"
+        response = f"已开启分支对话。选中内容：{request.selected_text[:80]}"
         conn.execute(
             """
             INSERT INTO branch_messages (id, branch_id, role, content)
             VALUES (?, ?, 'assistant', ?)
             """,
+            (new_id("bmsg"), branch_id, response),
+        )
+        return {"branch_id": branch_id, "message": response}
+
+
+@app.post("/api/branch/{branch_id}/messages")
+def branch_message(branch_id: str, request: BranchMessageRequest) -> dict:
+    init_db()
+    with transaction() as conn:
+        branch = conn.execute(
+            "SELECT id, selected_text FROM branch_conversations WHERE id=? AND status!='deleted'",
+            (branch_id,),
+        ).fetchone()
+        if not branch:
+            return {"error": "branch_not_found"}
+        clean_message = request.message.strip()
+        conn.execute(
+            "INSERT INTO branch_messages (id, branch_id, role, content) VALUES (?, ?, 'user', ?)",
+            (new_id("bmsg"), branch_id, clean_message),
+        )
+        try:
+            provider = _current_model_provider(conn)
+            result = provider.complete(
+                PromptPack(
+                    system_modules=[
+                        {
+                            "id": "branch.conversation",
+                            "content": "你是语言学习分支对话助手。只围绕选中文本解释、改写、举例或整理复习卡片，默认不写回主会话。",
+                        }
+                    ],
+                    context_pack={"selected_text": branch["selected_text"], "task_type": "branch_chat"},
+                    user_content=clean_message,
+                )
+            )
+            response = result.content.strip() or "已收到，请继续补充你想追问的点。"
+        except Exception as exc:
+            response = f"分支已记录，但当前模型无法回复：{exc}"
+        conn.execute(
+            "INSERT INTO branch_messages (id, branch_id, role, content) VALUES (?, ?, 'assistant', ?)",
             (new_id("bmsg"), branch_id, response),
         )
         return {"branch_id": branch_id, "message": response}
@@ -336,12 +477,11 @@ def sessions() -> dict:
 def new_session() -> dict:
     init_db()
     with transaction() as conn:
-        session_service = SessionService(conn)
-        session_id = session_service.ensure_session(None, "新聊天", force_new=True)
         return {
-            "session_id": session_id,
-            "sessions": session_service.list_sessions_by_date(),
-            "daily_panel": session_service.daily_panel(session_id),
+            "session_id": "",
+            "draft": True,
+            "sessions": SessionService(conn).list_sessions_by_date(),
+            "learning_stats": LearningStatsService(conn).overview(),
         }
 
 
@@ -354,7 +494,21 @@ def get_session(session_id: str) -> dict:
         if not detail:
             return {"error": "session_not_found"}
         detail["token_usage"] = token_totals(conn)
+        detail["learning_stats"] = LearningStatsService(conn).overview()
         return detail
+
+
+@app.delete("/api/sessions/{session_id}")
+def delete_session(session_id: str) -> dict:
+    init_db()
+    with transaction() as conn:
+        session_service = SessionService(conn)
+        deleted = session_service.delete_session(session_id)
+        return {
+            "deleted": deleted,
+            "sessions": session_service.list_sessions_by_date(),
+            "learning_stats": LearningStatsService(conn).overview(),
+        }
 
 
 @app.post("/api/profile")
@@ -364,15 +518,16 @@ def update_profile(request: ProfileUpdateRequest) -> dict:
     with transaction() as conn:
         profile_service = ProfileService(conn)
         current = profile_service.get()
-        updates = request.model_dump(exclude_none=True)
+        updates = request.model_dump(exclude_unset=True)
         if not updates:
-            return {"profile": current.model_dump()}
+            return {"profile": current.model_dump(), "learning_stats": LearningStatsService(conn).overview()}
         updated = current.model_copy(update=updates)
         profile_service.update(updated)
         return {
             "profile": updated.model_dump(),
             "sessions": SessionService(conn).list_sessions_by_date(),
             "syllabus_status": SyllabusService(conn).status(updated.exam_id),
+            "learning_stats": LearningStatsService(conn).overview(),
         }
 
 

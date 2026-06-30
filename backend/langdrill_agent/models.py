@@ -15,6 +15,7 @@ class AgentName(str, Enum):
 class TaskType(str, Enum):
     onboarding = "onboarding"
     daily_drill = "daily_drill"
+    continue_drill = "continue_drill"
     answer_question = "answer_question"
     explanation = "explanation"
     branch_chat = "branch_chat"
@@ -42,6 +43,7 @@ class ChatRequest(BaseModel):
     selected_option: str | None = None
     question_id: str | None = None
     extra_prompt: str = ""
+    force_new_session: bool = False
 
 
 class ChatResponse(BaseModel):
@@ -50,6 +52,7 @@ class ChatResponse(BaseModel):
     daily_panel: dict[str, Any]
     active_question: dict[str, Any] | None = None
     token_usage: dict[str, int]
+    learning_stats: dict[str, Any]
 
 
 class Question(BaseModel):
@@ -64,6 +67,22 @@ class Question(BaseModel):
     knowledge_tags: list[str] = Field(default_factory=list)
     difficulty: float = Field(ge=0, le=1, default=0.5)
     source_refs: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class AuthoredQuestion(BaseModel):
+    type: Literal["multiple_choice", "short_answer", "cloze", "translation"] = "multiple_choice"
+    prompt: str = Field(min_length=6)
+    options: list[str] = Field(default_factory=list)
+    answer: dict[str, Any]
+    explanation: str = Field(min_length=6)
+    knowledge_tags: list[str] = Field(default_factory=list)
+    difficulty: float = Field(ge=0, le=1, default=0.5)
+    source_refs: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class AuthoredQuestionSet(BaseModel):
+    opening_message: str = ""
+    questions: list[AuthoredQuestion] = Field(default_factory=list)
 
 
 class EvaluationResult(BaseModel):
@@ -81,14 +100,15 @@ class PromptPack(BaseModel):
 
 
 class InitRequest(BaseModel):
-    provider_id: str = "mock"
-    model: str = "mock-tutor-v1"
-    base_url: str = ""
+    provider_id: str = "mimo"
+    model: str = "mimo-v2.5-pro"
+    base_url: str = "https://api.xiaomimimo.com/anthropic"
     api_key: str = ""
     display_name: str = "boss"
     target_language: str = "英语"
     exam_id: str = "cet4"
     exam_name: str = "大学英语四级"
+    deadline: str | None = None
     learning_goal: str = ""
     learning_background: str = ""
     search_years: int = Field(default=3, ge=1, le=10)
@@ -100,11 +120,19 @@ class BranchRequest(BaseModel):
     message: str
 
 
+class BranchMessageRequest(BaseModel):
+    message: str = Field(min_length=1)
+
+
 class ModelConfigRequest(BaseModel):
-    provider_id: str = "mock"
-    model: str = "mock-tutor-v1"
-    base_url: str = ""
+    provider_id: str = "mimo"
+    model: str = "mimo-v2.5-pro"
+    base_url: str = "https://api.xiaomimimo.com/anthropic"
     api_key: str = ""
+    thinking_level: str = "enabled"
+    thinking_level_options: list[dict[str, str]] = Field(default_factory=list)
+    api_format: str = ""
+
 
 class AddCustomProviderRequest(BaseModel):
     name: str
@@ -117,6 +145,7 @@ class ProfileUpdateRequest(BaseModel):
     target_language: str | None = None
     exam_id: str | None = None
     exam_name: str | None = None
+    deadline: str | None = None
     learning_goal: str | None = None
     learning_background: str | None = None
     persona: str | None = None

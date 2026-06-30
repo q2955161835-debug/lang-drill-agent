@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import {
@@ -20,25 +20,29 @@ import {
   UserCircle,
   X
 } from "@phosphor-icons/react";
-import { apiGet, apiPost } from "./api";
+import { apiDelete, apiGet, apiPost } from "./api";
+import { ContextMenu, type ContextMenuItem } from "./components/ContextMenu";
 import { RightWorkbench } from "./components/RightWorkbench";
 import type {
   DailyPanel,
   ExamOption,
+  LearningStats,
   Message,
   ModelConfig,
+  ModelOption,
   Profile,
   ProviderOption,
   Question,
   SessionItem,
   SyllabusStatus,
   ThemeMode,
+  ThinkingLevel,
   TokenUsage
 } from "./types";
 
 gsap.registerPlugin(useGSAP);
 
-function MessageItem({ message }: { message: Message }) {
+function MessageItem({ message, onContextMenu }: { message: Message; onContextMenu: (event: MouseEvent, message: Message) => void }) {
   const container = useRef<HTMLElement>(null);
   
   useGSAP(() => {
@@ -57,9 +61,21 @@ function MessageItem({ message }: { message: Message }) {
   }, { scope: container, dependencies: [] });
 
   return (
-    <article className={`message ${message.role}`} ref={container}>
+    <article className={`message ${message.role}`} ref={container} onContextMenu={(event) => onContextMenu(event, message)}>
       <div className="avatar">{message.role === "user" ? <UserCircle size={18} /> : <Sparkle size={18} />}</div>
       <div className="bubble">{message.content}</div>
+    </article>
+  );
+}
+
+function ThinkingBubble() {
+  return (
+    <article className="message assistant thinking-message" aria-live="polite" aria-label="模型正在思考">
+      <div className="avatar"><Sparkle size={18} /></div>
+      <div className="bubble thinking-bubble">
+        <span>模型正在思考</span>
+        <span className="thinking-dots" aria-hidden="true"><i /> <i /> <i /></span>
+      </div>
     </article>
   );
 }
@@ -68,11 +84,13 @@ function InteractiveButton({
   children, 
   className = "", 
   onClick, 
+  onPointerDown,
   title 
 }: { 
   children: ReactNode; 
   className?: string; 
-  onClick?: () => void; 
+  onClick?: () => void;
+  onPointerDown?: (event: MouseEvent<HTMLButtonElement>) => void;
   title?: string;
 }) {
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -88,6 +106,7 @@ function InteractiveButton({
       ref={btnRef}
       className={className}
       onClick={onClick}
+      onPointerDown={onPointerDown}
       title={title}
       onMouseEnter={onEnter}
       onMouseLeave={onLeave}
@@ -100,8 +119,15 @@ function InteractiveButton({
 }
 
 
+function localDateString(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 const DEFAULT_PANEL: DailyPanel = {
-  date: new Date().toISOString().slice(0, 10),
+  date: localDateString(),
   title: "长期学习记录",
   status: "idle",
   plan: {
@@ -126,6 +152,7 @@ const MOCK_PROFILE: Profile = {
   target_language: "英语",
   exam_id: "cet4",
   exam_name: "大学英语四级",
+  deadline: null,
   learning_goal: "",
   learning_background: "",
   persona: "professional",
@@ -133,15 +160,23 @@ const MOCK_PROFILE: Profile = {
 };
 
 const FALLBACK_PROVIDERS: ProviderOption[] = [
-  { id: "deepseek", label: "DeepSeek（深度求索）", kind: "openai-compatible", base_url: "https://api.deepseek.com", model: "deepseek-chat", model_options: ["deepseek-chat", "deepseek-reasoner"] },
-  { id: "mimo", label: "Xiaomi MiMo（小米 MiMo）", kind: "openai-compatible", base_url: "https://api.xiaomimimo.com/v1", model: "mimo-v2.5-pro", model_options: ["mimo-v2.5-pro", "mimo-v2-pro"] },
-  { id: "custom", label: "Custom OpenAI-compatible（自定义 OpenAI 兼容）", kind: "openai-compatible", base_url: "", model: "", model_options: [] }
+  { id: "openai", label: "OpenAI GPT（OpenAI GPT）", kind: "openai-compatible", api_format: "openai-chat-completions", api_key_required: true, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "https://api.openai.com/v1", model: "gpt-5.5", model_options: ["gpt-5.5", "gpt-5.4"] },
+  { id: "claude", label: "Claude（Claude）", kind: "anthropic", api_format: "anthropic-messages", api_key_required: true, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "https://api.anthropic.com", model: "claude-sonnet-4.7", model_options: ["claude-sonnet-4.7", "claude-opus-4.7"] },
+  { id: "deepseek", label: "DeepSeek（深度求索）", kind: "openai-compatible", api_format: "openai-chat-completions", api_key_required: true, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "https://api.deepseek.com", model: "deepseek-v4-pro", model_options: ["deepseek-v4-pro", "deepseek-v4-flash"] },
+  { id: "mimo", label: "Xiaomi MiMo（小米 MiMo）", kind: "anthropic", api_format: "anthropic-messages", api_key_required: true, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "https://api.xiaomimimo.com/anthropic", model: "mimo-v2.5-pro", model_options: ["mimo-v2.5", "mimo-v2.5-pro"] },
+  { id: "mock", label: "Mock Provider（本地模拟）", kind: "mock", api_format: "mock", api_key_required: false, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "", model: "mock-tutor-v1", model_options: ["mock-tutor-v1"] }
 ];
 
 const DEFAULT_MODEL_CONFIG: ModelConfig = {
   provider_id: "mimo",
-  base_url: "https://api.xiaomimimo.com/v1",
+  base_url: "https://api.xiaomimimo.com/anthropic",
   model: "mimo-v2.5-pro",
+  thinking_level: "enabled",
+  thinking_level_options: [
+    { id: "off", label: "关闭", api_value: "" },
+    { id: "enabled", label: "开启", api_value: "enabled" }
+  ],
+  api_format: "anthropic-messages",
   has_api_key: false
 };
 
@@ -205,6 +240,20 @@ const DEFAULT_SYLLABUS_STATUS: SyllabusStatus = {
   sources: []
 };
 
+const DEFAULT_LEARNING_STATS: LearningStats = {
+  exam_id: "cet4",
+  exam_name: "大学英语四级",
+  questions_done: 0,
+  questions_total: 0,
+  words_mastered: 0,
+  words_total: 0,
+  accuracy: 0,
+  attempts_total: 0,
+  attempts_correct: 0
+};
+
+const DRAFT_SESSION_ID = "__draft_new_chat__";
+
 function isOptionAnswer(content: string) {
   return /^(?:选择?\s*)?[A-D]$/i.test(content.trim()) || /^答案是\s*[A-D]$/i.test(content.trim());
 }
@@ -213,38 +262,120 @@ function cleanQuestionPrompt(question: Question) {
   return question.prompt.replace(/^第\s*\d+\s*题\s*\/\s*共\s*\d+\s*题\s*\n?/, "").trim();
 }
 
-function selectedProvider(providers: ProviderOption[], providerId: string) {
-  return providers.find((item) => item.id === providerId) || FALLBACK_PROVIDERS[0];
+function toDateTimeLocalValue(value?: string | null) {
+  if (!value) return "";
+  const normalized = value.length >= 16 ? value.slice(0, 16) : value;
+  return normalized;
 }
 
-function uniqueModelOptions(provider: ProviderOption, currentModel: string) {
-  return Array.from(new Set([...(provider.model_options || []), provider.model, currentModel].filter(Boolean)));
+function countdownText(value?: string | null) {
+  if (!value) return "未设置";
+  const deadline = new Date(value);
+  if (Number.isNaN(deadline.getTime())) return "时间格式异常";
+  const diff = deadline.getTime() - Date.now();
+  if (diff <= 0) return "考试时间已到";
+  const minutes = Math.floor(diff / 60000);
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  const restMinutes = minutes % 60;
+  if (days > 0) return `${days} 天 ${hours} 小时`;
+  if (hours > 0) return `${hours} 小时 ${restMinutes} 分钟`;
+  return `${Math.max(restMinutes, 1)} 分钟`;
+}
+
+function selectedProvider(providers: ProviderOption[], providerId: string) {
+  return providers.find((item) => item.id === providerId)
+    || FALLBACK_PROVIDERS.find((item) => item.id === providerId)
+    || providers[0]
+    || FALLBACK_PROVIDERS[0];
+}
+
+function modelOptionLabel(option: ModelOption) {
+  return typeof option === "string" ? option : option.label || option.id;
+}
+
+function normalizedModelOption(option: ModelOption): Exclude<ModelOption, string> {
+  if (typeof option === "string") {
+    return { id: option, label: option };
+  }
+  return option;
+}
+
+function modelOptionsFor(provider: ProviderOption, currentModel: string) {
+  const options = [...(provider.model_options || [])].map(normalizedModelOption);
+  const seen = new Set(options.map((option) => option.id));
+  for (const model of [provider.model, currentModel]) {
+    if (model && !seen.has(model)) {
+      options.push({ id: model, label: model });
+      seen.add(model);
+    }
+  }
+  return options;
+}
+
+function thinkingOptionsForModel(provider: ProviderOption, modelId: string) {
+  const model = modelOptionsFor(provider, modelId).find((option) => option.id === modelId);
+  return model?.reasoning?.levels || [];
+}
+
+function defaultThinkingLevelForModel(provider: ProviderOption, modelId: string) {
+  const model = modelOptionsFor(provider, modelId).find((option) => option.id === modelId);
+  return model?.reasoning?.default_level || model?.reasoning?.levels?.[0]?.id || "";
+}
+
+function pickerProviders(providers: ProviderOption[], currentProviderId = "") {
+  const visible = providers.filter((provider) => provider.visible_in_picker && provider.id !== "mock");
+  const current = providers.find((provider) => provider.id === currentProviderId && provider.id !== "mock");
+  if (current && !visible.some((provider) => provider.id === current.id)) {
+    return [current, ...visible];
+  }
+  if (visible.length) return visible;
+  if (current) return [current];
+  const defaultReal = providers.find((provider) => provider.id === DEFAULT_MODEL_CONFIG.provider_id)
+    || providers.find((provider) => provider.id !== "mock");
+  return defaultReal ? [defaultReal] : providers.filter((provider) => provider.id !== "mock");
 }
 
 function normalizeProviders(providers: ProviderOption[] | undefined) {
   if (!providers?.length) return FALLBACK_PROVIDERS;
-  return providers.map((provider) => ({
+  const normalized: ProviderOption[] = providers.map((provider) => ({
     ...(FALLBACK_PROVIDERS.find((item) => item.id === provider.id) || {}),
     ...provider,
     base_url: provider.base_url || FALLBACK_PROVIDERS.find((item) => item.id === provider.id)?.base_url || "",
     model: provider.model || FALLBACK_PROVIDERS.find((item) => item.id === provider.id)?.model || "",
     model_options: provider.model_options?.length
       ? provider.model_options
-      : FALLBACK_PROVIDERS.find((item) => item.id === provider.id)?.model_options || [provider.model].filter(Boolean)
+      : FALLBACK_PROVIDERS.find((item) => item.id === provider.id)?.model_options || [provider.model].filter(Boolean),
+    enabled: provider.enabled ?? true,
+    has_api_key: provider.has_api_key ?? false,
+    visible_in_picker: provider.id !== "mock" && Boolean(provider.visible_in_picker)
   }));
+  if (!normalized.some((provider) => provider.id === "mock")) {
+    normalized.push(FALLBACK_PROVIDERS.find((provider) => provider.id === "mock") as ProviderOption);
+  }
+  return normalized;
 }
 
 function normalizeModelConfig(config: ModelConfig | undefined) {
+  if (!config || config.provider_id === "mock") return DEFAULT_MODEL_CONFIG;
   return {
     ...DEFAULT_MODEL_CONFIG,
-    ...(config || {})
+    ...config,
+    thinking_level: (config.thinking_level || "") as ThinkingLevel,
+    thinking_level_options: config.thinking_level_options || []
   };
 }
 
+function thinkingLevelLabel(config: ModelConfig) {
+  const current = config.thinking_level || "";
+  if (!current) return "未配置";
+  return config.thinking_level_options?.find((item) => item.id === current)?.label || current;
+}
+
 const personalityOptions = [
-  { id: "none", label: "空", prompt: "不额外注入人格提示词。" },
+  { id: "none", label: "不使用人格", prompt: "不额外注入人格提示词，只按系统学习流程回复。" },
   { id: "warm", label: "热情开朗", prompt: "反馈积极，语气明亮，不夸张。" },
-  { id: "professional", label: "专业靠谱", prompt: "结论清晰，建议具体可执行。" },
+  { id: "professional", label: "专业可靠", prompt: "语气克制，结论清晰，建议具体可执行，适合日常正式学习。" },
   { id: "humorous", label: "幽默风趣", prompt: "轻松但不影响学习严谨性。" },
   { id: "custom", label: "自定义", prompt: "使用用户自定义人格提示词。" }
 ];
@@ -259,6 +390,9 @@ function groupSessions(sessions: SessionItem[]) {
 
 export default function App() {
   const appRef = useRef<HTMLDivElement | null>(null);
+  const messageEndRef = useRef<HTMLDivElement | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const selectedTextRef = useRef("");
   const [profile, setProfile] = useState<Profile>(MOCK_PROFILE);
   const [providers, setProviders] = useState<ProviderOption[]>(FALLBACK_PROVIDERS);
   const [modelConfig, setModelConfig] = useState<ModelConfig>(DEFAULT_MODEL_CONFIG);
@@ -267,11 +401,13 @@ export default function App() {
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [dailyPanel, setDailyPanel] = useState<DailyPanel>(DEFAULT_PANEL);
+  const [learningStats, setLearningStats] = useState<LearningStats>(DEFAULT_LEARNING_STATS);
   const [activeQuestion, setActiveQuestion] = useState<Question | null>(null);
   const [tokenUsage, setTokenUsage] = useState({ input: 0, output: 0, total: 0, estimated_current_context: 0 });
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [pendingNewSession, setPendingNewSession] = useState(false);
   const [leftOpen, setLeftOpen] = useState(() => localStorage.getItem("leftOpen") !== "false");
   const [rightOpen, setRightOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -280,13 +416,45 @@ export default function App() {
   const [fontSize, setFontSize] = useState(() => Number(localStorage.getItem("fontSize") || 16));
   const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>(() => {
     const saved = localStorage.getItem("expandedDates");
-    return saved ? JSON.parse(saved) : { [new Date().toISOString().slice(0, 10)]: true };
+    return saved ? JSON.parse(saved) : { [localDateString()]: true };
   });
   const [selectedText, setSelectedText] = useState("");
+  const [branchId, setBranchId] = useState<string | null>(null);
   const [branchMessages, setBranchMessages] = useState<Message[]>([]);
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    items: ContextMenuItem[];
+  } | null>(null);
 
-  const sessionsByDate = useMemo(() => groupSessions(sessions), [sessions]);
+  const displaySessions = useMemo(() => {
+    if (!pendingNewSession) return sessions;
+    const today = localDateString();
+    const draftSession: SessionItem = {
+      id: DRAFT_SESSION_ID,
+      title: "新聊天",
+      folder_date: today,
+      exam_id: profile.exam_id,
+      status: "draft",
+      draft: true
+    };
+    return [draftSession, ...sessions.filter((session) => session.id !== DRAFT_SESSION_ID)];
+  }, [pendingNewSession, profile.exam_id, sessions]);
+  const sessionsByDate = useMemo(() => groupSessions(displaySessions), [displaySessions]);
   const emptyContext = messages.length === 0;
+  const quickProviders = pickerProviders(providers, modelConfig.provider_id);
+  const quickProviderId = quickProviders.some((provider) => provider.id === modelConfig.provider_id)
+    ? modelConfig.provider_id
+    : quickProviders[0]?.id || modelConfig.provider_id;
+  const quickProvider = selectedProvider(quickProviders, quickProviderId);
+  const quickCurrentModel = quickProvider.id === modelConfig.provider_id ? modelConfig.model : quickProvider.model;
+  const quickModelOptions = modelOptionsFor(quickProvider, quickCurrentModel);
+  const quickThinkingOptions = quickProvider.id === modelConfig.provider_id
+    ? modelConfig.thinking_level_options || []
+    : thinkingOptionsForModel(quickProvider, quickCurrentModel);
+  const quickThinkingLevel = quickProvider.id === modelConfig.provider_id
+    ? modelConfig.thinking_level || ""
+    : defaultThinkingLevelForModel(quickProvider, quickCurrentModel);
 
   useGSAP(
     () => {
@@ -304,13 +472,13 @@ export default function App() {
         stagger: 0.08
       });
       
-      gsap.from(".memory-strip span", {
-        scale: 0,
-        rotationZ: -10,
-        duration: 0.6,
-        ease: "back.out(1.7)",
-        stagger: 0.05,
-        delay: 0.3,
+      gsap.from(".learning-stat-card", {
+        scale: 0.92,
+        y: 14,
+        duration: 0.45,
+        ease: "back.out(1.4)",
+        stagger: 0.04,
+        delay: 0.2,
         clearProps: "transform"
       });
       
@@ -350,10 +518,15 @@ export default function App() {
   }, [fontSize, themeMode]);
 
   useEffect(() => {
+    messageEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages, activeQuestion, sending]);
+
+  useEffect(() => {
     apiGet<{
       profile: Profile;
       sessions: SessionItem[];
       token_usage: typeof tokenUsage;
+      learning_stats?: LearningStats;
       providers: ProviderOption[];
       model_config: ModelConfig;
       exam_options?: ExamOption[];
@@ -367,6 +540,7 @@ export default function App() {
         setSyllabusStatus(data.syllabus_status || DEFAULT_SYLLABUS_STATUS);
         setSessions(data.sessions);
         setTokenUsage(data.token_usage);
+        setLearningStats(data.learning_stats || DEFAULT_LEARNING_STATS);
         setOnboardingOpen(data.profile.exam_id === "unassigned");
       })
       .catch(() => setOnboardingOpen(true));
@@ -389,12 +563,15 @@ export default function App() {
         daily_panel: DailyPanel;
         active_question: Question | null;
         token_usage: typeof tokenUsage;
-      }>("/api/chat", { content, session_id: activeSessionId });
+        learning_stats?: LearningStats;
+      }>("/api/chat", { content, session_id: activeSessionId, force_new_session: pendingNewSession });
       setActiveSessionId(data.session_id);
+      setPendingNewSession(false);
       setMessages((current) => [...current, data.message]);
       setDailyPanel(data.daily_panel);
       setActiveQuestion(data.active_question);
       setTokenUsage(data.token_usage);
+      if (data.learning_stats) setLearningStats(data.learning_stats);
       const refreshed = await apiGet<{ sessions: SessionItem[] }>("/api/sessions");
       setSessions(refreshed.sessions);
     } catch (err) {
@@ -407,7 +584,7 @@ export default function App() {
     } finally {
       setSending(false);
     }
-  }, [activeQuestion, activeSessionId, input, sending]);
+  }, [activeQuestion, activeSessionId, input, pendingNewSession, sending]);
 
   const sendQuestionAnswer = useCallback(async (selectedOption: string, extraPrompt: string) => {
     if (!activeQuestion || sending) return;
@@ -427,6 +604,7 @@ export default function App() {
         daily_panel: DailyPanel;
         active_question: Question | null;
         token_usage: typeof tokenUsage;
+        learning_stats?: LearningStats;
       }>("/api/chat", {
         content: "",
         session_id: activeSessionId,
@@ -439,6 +617,7 @@ export default function App() {
       setDailyPanel(data.daily_panel);
       setActiveQuestion(data.active_question);
       setTokenUsage(data.token_usage);
+      if (data.learning_stats) setLearningStats(data.learning_stats);
       const refreshed = await apiGet<{ sessions: SessionItem[] }>("/api/sessions");
       setSessions(refreshed.sessions);
     } catch (err) {
@@ -453,24 +632,30 @@ export default function App() {
     }
   }, [activeQuestion, activeSessionId, sending]);
 
-  const startNewChat = useCallback(async () => {
-    try {
-      const data = await apiPost<{
-        session_id: string;
-        sessions: SessionItem[];
-        daily_panel: DailyPanel;
-      }>("/api/sessions/new", {});
-      setActiveSessionId(data.session_id);
-      setSessions(data.sessions);
-      setDailyPanel(data.daily_panel);
-      setActiveQuestion(null);
-      setMessages([]);
-      setInput("");
-    } catch {
-      setActiveSessionId(null);
-      setActiveQuestion(null);
-      setMessages([]);
-      setInput("");
+  const startNewChat = useCallback(() => {
+    const today = localDateString();
+    setActiveSessionId(null);
+    setPendingNewSession(true);
+    setExpandedDates((current) => ({ ...current, [today]: true }));
+    setDailyPanel({ ...DEFAULT_PANEL, date: today });
+    setActiveQuestion(null);
+    setMessages([]);
+    setInput("");
+    composerRef.current?.focus();
+  }, []);
+
+  const saveQuickModelConfig = useCallback(async (nextConfig: ModelConfig) => {
+    const data = await apiPost<{ model_config: ModelConfig; providers?: ProviderOption[] }>("/api/model-config", {
+      provider_id: nextConfig.provider_id,
+      base_url: nextConfig.base_url,
+      model: nextConfig.model,
+      thinking_level: nextConfig.thinking_level || "",
+      thinking_level_options: nextConfig.thinking_level_options || [],
+      api_format: nextConfig.api_format || ""
+    });
+    setModelConfig(normalizeModelConfig(data.model_config));
+    if (data.providers) {
+      setProviders(normalizeProviders(data.providers));
     }
   }, []);
 
@@ -478,19 +663,105 @@ export default function App() {
     setExpandedDates((current) => ({ ...current, [date]: !current[date] }));
   }, []);
 
+  const copyText = useCallback(async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const area = document.createElement("textarea");
+      area.value = text;
+      document.body.appendChild(area);
+      area.select();
+      document.execCommand("copy");
+      document.body.removeChild(area);
+    }
+  }, []);
+
+  const createBranchFromText = useCallback(async (text: string) => {
+    const cleanText = text.trim();
+    if (!activeSessionId || !cleanText) return;
+    try {
+      const data = await apiPost<{ branch_id: string; message: string }>("/api/branch", {
+        session_id: activeSessionId,
+        selected_text: cleanText,
+        message: "解释这段内容，并指出是否应写回复习卡片。"
+      });
+      setBranchId(data.branch_id);
+      setRightOpen(true);
+      setBranchMessages([
+        { id: `${data.branch_id}-u`, role: "user", content: cleanText },
+        { id: `${data.branch_id}-a`, role: "assistant", content: data.message }
+      ]);
+    } catch (err) {
+      setRightOpen(true);
+      setBranchMessages([
+        { id: `branch-error-${Date.now()}`, role: "assistant", content: `分支创建失败：${err instanceof Error ? err.message : "未知错误"}` }
+      ]);
+    }
+  }, [activeSessionId]);
+
   const startBranch = useCallback(async () => {
-    if (!activeSessionId || !selectedText.trim()) return;
-    const data = await apiPost<{ branch_id: string; message: string }>("/api/branch", {
-      session_id: activeSessionId,
-      selected_text: selectedText,
-      message: "解释这段内容，并指出是否应写回复习卡片。"
+    await createBranchFromText(selectedTextRef.current || selectedText);
+  }, [createBranchFromText, selectedText]);
+
+  const sendBranchMessage = useCallback(async (content: string) => {
+    const cleanContent = content.trim();
+    if (!branchId || !cleanContent) return;
+    const userMessage: Message = { id: `branch-local-${Date.now()}`, role: "user", content: cleanContent };
+    setBranchMessages((current) => [...current, userMessage]);
+    try {
+      const data = await apiPost<{ branch_id: string; message: string }>(`/api/branch/${branchId}/messages`, { message: cleanContent });
+      setBranchMessages((current) => [...current, { id: `${data.branch_id}-a-${Date.now()}`, role: "assistant", content: data.message }]);
+    } catch (err) {
+      setBranchMessages((current) => [...current, { id: `branch-error-${Date.now()}`, role: "assistant", content: `分支回复失败：${err instanceof Error ? err.message : "未知错误"}` }]);
+    }
+  }, [branchId]);
+
+  const deleteSession = useCallback(async (sessionId: string) => {
+    if (!window.confirm("确认删除这个会话？相关消息、题目、作答和分支记录会一并删除。")) return;
+    const data = await apiDelete<{ deleted: boolean; sessions: SessionItem[]; learning_stats?: LearningStats }>(`/api/sessions/${sessionId}`);
+    setSessions(data.sessions);
+    if (data.learning_stats) setLearningStats(data.learning_stats);
+    if (sessionId === activeSessionId) {
+      setActiveSessionId(null);
+      setPendingNewSession(false);
+      setDailyPanel(DEFAULT_PANEL);
+      setActiveQuestion(null);
+      setMessages([]);
+    }
+  }, [activeSessionId]);
+
+  const showSessionMenu = useCallback((event: MouseEvent, session: SessionItem) => {
+    event.preventDefault();
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      items: [
+        { label: "删除会话", hint: "同时删除消息和题目", destructive: true, onSelect: () => void deleteSession(session.id) }
+      ]
     });
-    setRightOpen(true);
-    setBranchMessages([
-      { id: `${data.branch_id}-u`, role: "user", content: selectedText },
-      { id: `${data.branch_id}-a`, role: "assistant", content: data.message }
-    ]);
-  }, [activeSessionId, selectedText]);
+  }, [deleteSession]);
+
+  const showMessageMenu = useCallback((event: MouseEvent, message: Message) => {
+    event.preventDefault();
+    const items: ContextMenuItem[] = [
+      { label: "复制", onSelect: () => void copyText(message.content) },
+      {
+        label: "重新编辑",
+        hint: "放回输入框",
+        onSelect: () => {
+          setInput(message.content);
+          composerRef.current?.focus();
+        }
+      },
+      {
+        label: "开启分支对话",
+        hint: activeSessionId ? "基于这条消息" : "需要先发送主会话消息",
+        disabled: !activeSessionId,
+        onSelect: () => void createBranchFromText(message.content)
+      }
+    ];
+    setContextMenu({ x: event.clientX, y: event.clientY, items });
+  }, [activeSessionId, copyText, createBranchFromText]);
 
   return (
     <div className="app-shell" ref={appRef}>
@@ -518,9 +789,16 @@ export default function App() {
                   {expandedDates[date] &&
                     items.map((item) => (
                       <button
-                        className={`session-link ${item.id === activeSessionId ? "active" : ""}`}
+                        className={`session-link ${(item.id === activeSessionId || item.draft) ? "active" : ""} ${item.draft ? "draft" : ""}`}
                         key={item.id}
+                        onContextMenu={(event) => {
+                          if (!item.draft) showSessionMenu(event, item);
+                        }}
                         onClick={async () => {
+                          if (item.draft) {
+                            startNewChat();
+                            return;
+                          }
                           setActiveSessionId(item.id);
                           try {
                             const detail = await apiGet<{
@@ -529,12 +807,15 @@ export default function App() {
                               daily_panel: DailyPanel;
                               active_question: Question | null;
                               token_usage: typeof tokenUsage;
+                              learning_stats?: LearningStats;
                             }>(`/api/sessions/${item.id}`);
                             if (detail.messages) {
                               setMessages(detail.messages);
                               setDailyPanel(detail.daily_panel);
                               setActiveQuestion(detail.active_question);
                               setTokenUsage(detail.token_usage);
+                              if (detail.learning_stats) setLearningStats(detail.learning_stats);
+                              setPendingNewSession(false);
                             }
                           } catch {
                             // 加载失败时保持当前状态
@@ -543,21 +824,34 @@ export default function App() {
                       >
                         <ChatCircleText size={16} />
                         <span>{item.title}</span>
+                        {item.draft && <small>草稿</small>}
                       </button>
                     ))}
                 </section>
               ))}
             </div>
-            <InteractiveButton className="settings-button" onClick={() => setSettingsOpen(true)} title="设置">
+            <button className="settings-button" onClick={() => setSettingsOpen(true)} title="打开设置">
               <GearSix size={18} />
-            </InteractiveButton>
+              <span>设置</span>
+            </button>
           </>
         )}
       </aside>
 
       <main className="chat-main panel-motion">
-        <div className="message-stream" onMouseUp={() => setSelectedText(window.getSelection()?.toString() || "")}>
-          {emptyContext && <LongTermPanel profile={profile} tokenUsage={tokenUsage} />}
+        <div
+          className="message-stream"
+          onMouseUp={() => {
+            const text = window.getSelection()?.toString().trim() || "";
+            if (text) selectedTextRef.current = text;
+            setSelectedText(text);
+          }}
+        >
+          <LongTermPanel profile={profile} tokenUsage={tokenUsage} learningStats={learningStats} compact={!emptyContext} />
+          {messages.map((message) => (
+            <MessageItem key={message.id} message={message} onContextMenu={showMessageMenu} />
+          ))}
+          {sending && <ThinkingBubble />}
           {activeQuestion?.status === "ready" && (
             <QuestionDock
               question={activeQuestion}
@@ -566,12 +860,14 @@ export default function App() {
               onSubmit={(option, extraPrompt) => void sendQuestionAnswer(option, extraPrompt)}
             />
           )}
-          {messages.map((message) => (
-            <MessageItem key={message.id} message={message} />
-          ))}
+          <div ref={messageEndRef} />
         </div>
         {selectedText && (
-          <InteractiveButton className="branch-fab" onClick={startBranch}>
+          <InteractiveButton
+            className="branch-fab"
+            onClick={startBranch}
+            onPointerDown={(event) => event.preventDefault()}
+          >
             <GitBranch size={16} />
             开启分支对话
           </InteractiveButton>
@@ -582,8 +878,66 @@ export default function App() {
               {profile.display_name}，今天打算从哪里开始？
             </div>
           )}
+          <div className="chat-config-bar" aria-label="聊天模型快捷配置">
+            <select
+              value={quickProviderId}
+              onChange={(event) => {
+                const nextProvider = selectedProvider(quickProviders, event.target.value);
+                const nextModel = modelOptionsFor(nextProvider, nextProvider.model)[0]?.id || nextProvider.model || "";
+                void saveQuickModelConfig({
+                  ...modelConfig,
+                  provider_id: nextProvider.id,
+                  base_url: nextProvider.base_url,
+                  model: nextModel,
+                  api_format: nextProvider.api_format,
+                  thinking_level: defaultThinkingLevelForModel(nextProvider, nextModel)
+                });
+              }}
+              title="模型供应商"
+            >
+              {quickProviders.map((provider) => (
+                <option key={provider.id} value={provider.id}>{provider.label}</option>
+              ))}
+            </select>
+            <select
+              value={quickCurrentModel}
+              onChange={(event) => void saveQuickModelConfig({
+                ...modelConfig,
+                provider_id: quickProvider.id,
+                base_url: quickProvider.base_url,
+                api_format: quickProvider.api_format,
+                model: event.target.value,
+                thinking_level: defaultThinkingLevelForModel(quickProvider, event.target.value)
+              })}
+              title="模型"
+            >
+              {quickModelOptions.map((model) => (
+                <option key={model.id} value={model.id}>{modelOptionLabel(model)}</option>
+              ))}
+            </select>
+            {quickThinkingOptions.length > 0 && (
+              <select
+                value={quickThinkingLevel}
+                onChange={(event) => void saveQuickModelConfig({
+                  ...modelConfig,
+                  provider_id: quickProvider.id,
+                  base_url: quickProvider.base_url,
+                  api_format: quickProvider.api_format,
+                  model: quickCurrentModel,
+                  thinking_level: event.target.value as ThinkingLevel
+                })}
+                title="思考等级"
+              >
+                {quickThinkingOptions.map((option) => (
+                  <option key={option.id} value={option.id}>思考：{option.label}</option>
+                ))}
+              </select>
+            )}
+            <span title="按当前模型配置写入原生 API 参数">当前：{thinkingLevelLabel({ ...modelConfig, thinking_level: quickThinkingLevel, thinking_level_options: quickThinkingOptions })}</span>
+          </div>
           <div className="composer">
             <textarea
+              ref={composerRef}
               value={input}
               onChange={(event) => setInput(event.target.value)}
               placeholder={sending ? "发送中..." : "输入今日学习内容、答案或任何学习请求"}
@@ -609,9 +963,11 @@ export default function App() {
 
       <RightWorkbench
         open={rightOpen}
+        branchId={branchId}
         branchMessages={branchMessages}
         sessionId={activeSessionId}
         onToggle={() => setRightOpen((value) => !value)}
+        onSendBranchMessage={(content) => void sendBranchMessage(content)}
         onSendToChat={(content) => {
           setInput(content);
           setRightOpen(false);
@@ -640,6 +996,7 @@ export default function App() {
             setFontSize(nextFontSize);
           }}
           onProvidersChange={setProviders}
+          onLearningStatsChange={setLearningStats}
           onOpenOnboarding={() => {
             setSettingsOpen(false);
             setOnboardingOpen(true);
@@ -654,11 +1011,15 @@ export default function App() {
           onClose={() => setOnboardingOpen(false)}
           onDone={(nextProfile) => {
             setProfile(nextProfile);
-            void apiGet<{ model_config?: ModelConfig }>("/api/bootstrap").then((data) => setModelConfig(normalizeModelConfig(data.model_config)));
+            void apiGet<{ model_config?: ModelConfig; learning_stats?: LearningStats }>("/api/bootstrap").then((data) => {
+              setModelConfig(normalizeModelConfig(data.model_config));
+              if (data.learning_stats) setLearningStats(data.learning_stats);
+            });
             setOnboardingOpen(false);
           }}
         />
       )}
+      {contextMenu && <ContextMenu x={contextMenu.x} y={contextMenu.y} items={contextMenu.items} onClose={() => setContextMenu(null)} />}
     </div>
   );
 }
@@ -703,35 +1064,52 @@ function DailyStudyPanel({ panel }: { panel: DailyPanel }) {
   );
 }
 
-function LongTermPanel({ profile, tokenUsage }: { profile: Profile; tokenUsage: Record<string, number> }) {
+function LongTermPanel({
+  profile,
+  tokenUsage,
+  learningStats,
+  compact = false
+}: {
+  profile: Profile;
+  tokenUsage: TokenUsage;
+  learningStats: LearningStats;
+  compact?: boolean;
+}) {
+  const questionTotal = learningStats.questions_total || 0;
+  const wordsTotal = learningStats.words_total || 0;
+  const accuracyText = learningStats.attempts_total ? `${Math.round(learningStats.accuracy * 100)}%` : "未开始";
+  const questionPercent = questionTotal ? Math.round((learningStats.questions_done / questionTotal) * 100) : 0;
+  const wordPercent = wordsTotal ? Math.round((learningStats.words_mastered / wordsTotal) * 100) : 0;
   return (
-    <section className="long-panel">
+    <section className={`long-panel ${compact ? "compact" : ""}`}>
       <div className="long-grid">
         <div>
           <span className="kicker">Learning Memory（学习记忆）</span>
           <h1>长期学习记录总面板</h1>
-          <p>{`${profile.exam_name} · ${profile.target_language}`}</p>
+          <p>{`${profile.exam_name || learningStats.exam_name} · ${profile.target_language}`}</p>
         </div>
         <div className="score-stack">
-          <Stat label="Token（令牌）" value={String(tokenUsage.total)} />
-          <Stat label="到期复习" value="3" />
-          <Stat label="掌握度" value="V1" />
+          <Stat icon={<CheckCircle size={18} />} label="题目完成" value={`${learningStats.questions_done}/${questionTotal}`} detail={questionTotal ? `${questionPercent}%` : "等待题组"} />
+          <Stat icon={<Brain size={18} />} label="单词掌握" value={`${learningStats.words_mastered}/${wordsTotal}`} detail={wordsTotal ? `${wordPercent}%` : "等待导入"} />
+          <Stat icon={<ShieldCheck size={18} />} label="整体正确率" value={accuracyText} detail={`${learningStats.attempts_correct}/${learningStats.attempts_total} 次正确`} />
+          <Stat icon={<Target size={18} />} label="考试倒计时" value={countdownText(profile.deadline)} detail={profile.deadline ? "按考试时间实时计算" : "在设置中添加考试时间"} />
         </div>
       </div>
-      <div className="memory-strip">
-        <span><ShieldCheck size={16} /> 数据库为事实来源</span>
-        <span><Brain size={16} /> 动态提示词组装</span>
-        <span><ListBullets size={16} /> 三 Agent 协作</span>
+      <div className="learning-stat-strip" aria-label="长期学习统计">
+        <span><ListBullets size={16} /> 当前考试：{learningStats.exam_name || profile.exam_name}</span>
+        <span><Brain size={16} /> 累计 token（令牌）：{(tokenUsage.total || 0).toLocaleString("zh-CN")}</span>
       </div>
     </section>
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ icon, label, value, detail }: { icon: ReactNode; label: string; value: string; detail: string }) {
   return (
-    <div className="stat">
+    <div className="stat learning-stat-card">
+      <div className="stat-icon">{icon}</div>
       <strong>{value}</strong>
       <span>{label}</span>
+      <small>{detail}</small>
     </div>
   );
 }
@@ -808,6 +1186,7 @@ function SettingsDialog({
   onModelConfigChange,
   onAppearanceChange,
   onProvidersChange,
+  onLearningStatsChange,
   onOpenOnboarding
 }: {
   profile: Profile;
@@ -826,6 +1205,7 @@ function SettingsDialog({
   onModelConfigChange: (config: ModelConfig) => void;
   onAppearanceChange: (themeMode: ThemeMode, fontSize: number) => void;
   onProvidersChange: (providers: ProviderOption[]) => void;
+  onLearningStatsChange: (stats: LearningStats) => void;
   onOpenOnboarding: () => void;
 }) {
   const [draft, setDraft] = useState(profile);
@@ -846,17 +1226,31 @@ function SettingsDialog({
     notes: ""
   });
   const provider = selectedProvider(providers, modelDraft.provider_id);
-  const modelOptions = uniqueModelOptions(provider, modelDraft.model);
+  const modelOptions = modelOptionsFor(provider, modelDraft.model);
+  const modelThinkingOptions = modelDraft.thinking_level_options || thinkingOptionsForModel(provider, modelDraft.model);
   const chooseProvider = (providerId: string) => {
     const nextProvider = selectedProvider(providers, providerId);
-    const nextModel = nextProvider.model_options?.[0] || nextProvider.model || "";
+    const nextModel = modelOptionsFor(nextProvider, nextProvider.model)[0]?.id || nextProvider.model || "";
+    const nextThinkingOptions = thinkingOptionsForModel(nextProvider, nextModel);
     setModelDraft({
       ...modelDraft,
       provider_id: nextProvider.id,
       base_url: nextProvider.base_url,
-      model: nextModel
+      api_format: nextProvider.api_format,
+      model: nextModel,
+      thinking_level: defaultThinkingLevelForModel(nextProvider, nextModel),
+      thinking_level_options: nextThinkingOptions
     });
     setCustomModel("");
+  };
+  const chooseModel = (modelId: string) => {
+    const nextThinkingOptions = thinkingOptionsForModel(provider, modelId);
+    setModelDraft({
+      ...modelDraft,
+      model: modelId,
+      thinking_level: defaultThinkingLevelForModel(provider, modelId),
+      thinking_level_options: nextThinkingOptions
+    });
   };
   const chooseExam = async (examId: string) => {
     const option = examOptions.find((item) => item.id === examId) || examOptions[0];
@@ -914,7 +1308,8 @@ function SettingsDialog({
     const finalModel = customModel.trim() || modelDraft.model;
     const data = await apiPost<{ model_config: ModelConfig; providers?: ProviderOption[] }>("/api/model-config", {
       ...modelDraft,
-      model: finalModel
+      model: finalModel,
+      thinking_level_options: modelDraft.thinking_level_options || []
     });
     onModelConfigChange(data.model_config);
     if (data.providers) {
@@ -925,11 +1320,12 @@ function SettingsDialog({
   const saveSettings = async () => {
     // 持久化 profile 到后端
     try {
-      const profileData = await apiPost<{ profile: Profile; sessions?: SessionItem[]; syllabus_status?: SyllabusStatus }>("/api/profile", {
+      const profileData = await apiPost<{ profile: Profile; sessions?: SessionItem[]; syllabus_status?: SyllabusStatus; learning_stats?: LearningStats }>("/api/profile", {
         display_name: draft.display_name,
         target_language: draft.target_language,
         exam_id: draft.exam_id,
         exam_name: draft.exam_name,
+        deadline: draft.deadline || null,
         learning_goal: draft.learning_goal,
         learning_background: draft.learning_background,
         persona: draft.persona,
@@ -941,6 +1337,7 @@ function SettingsDialog({
         onSyllabusStatusChange(profileData.syllabus_status);
         setSyllabusDraft(profileData.syllabus_status);
       }
+      if (profileData.learning_stats) onLearningStatsChange(profileData.learning_stats);
     } catch {
       // 后端不可用时仅更新本地
       onProfileChange(draft);
@@ -963,6 +1360,25 @@ function SettingsDialog({
     } catch (e) {
       setSaveState(`添加失败: ${e instanceof Error ? e.message : e}`);
     }
+  };
+  const handleAddThinkingLevel = () => {
+    const label = window.prompt("请输入思考等级显示名称，例如：极高、最高、开启：");
+    if (!label?.trim()) return;
+    const apiValue = window.prompt("请输入该等级传给 API（接口）的原生值，例如：xhigh、max、high、enabled；留空表示关闭或自动：") || "";
+    const rawId = apiValue.trim() || label.trim();
+    const id = rawId
+      .toLowerCase()
+      .replace(/\s+/g, "_")
+      .replace(/[^a-z0-9_\-\u4e00-\u9fa5]/g, "");
+    if (!id) return;
+    const currentOptions = modelThinkingOptions.filter((option) => option.id !== id);
+    const nextOptions = [...currentOptions, { id, label: label.trim(), api_value: apiValue.trim() }];
+    setModelDraft({
+      ...modelDraft,
+      thinking_level: id,
+      thinking_level_options: nextOptions
+    });
+    setSaveState("已加入当前模型的思考等级，保存模型配置后生效。");
   };
   const resetDefaults = async () => {
     if (!window.confirm("确认恢复默认设置？模型、个性化、学习目标和自定义提供商会恢复默认，学习会话不会删除。")) return;
@@ -1019,7 +1435,7 @@ function SettingsDialog({
               <SettingSection title="模型提供商">
                 <div className="inline-row">
                   <select value={modelDraft.provider_id} onChange={(event) => chooseProvider(event.target.value)}>
-                    {providers.map((provider) => (
+                    {providers.filter((provider) => provider.id !== "mock").map((provider) => (
                       <option key={provider.id} value={provider.id}>{provider.label}</option>
                     ))}
                   </select>
@@ -1028,20 +1444,33 @@ function SettingsDialog({
                 <input
                   value={modelDraft.base_url}
                   onChange={(event) => setModelDraft({ ...modelDraft, base_url: event.target.value })}
-                  placeholder={provider.base_url || "Mock Provider（本地模拟）不需要 Base URL（基础网址）"}
+                  placeholder={provider.base_url || "供应商 Base URL（基础网址）"}
                 />
                 <input
                   value={modelDraft.api_key || ""}
                   onChange={(event) => setModelDraft({ ...modelDraft, api_key: event.target.value })}
-                  placeholder={provider.kind === "mock" ? "Mock Provider（本地模拟）不需要 API Key（接口密钥）" : modelDraft.has_api_key ? "API Key（接口密钥）已配置，留空则不覆盖" : "API Key（接口密钥）"}
+                  placeholder={modelDraft.has_api_key ? "API Key（接口密钥）已配置，留空则不覆盖" : "API Key（接口密钥）"}
                   type="password"
                   autoComplete="off"
                 />
-                <select value={modelDraft.model} onChange={(event) => setModelDraft({ ...modelDraft, model: event.target.value })}>
+                <select value={modelDraft.model} onChange={(event) => chooseModel(event.target.value)}>
                   {modelOptions.map((model) => (
-                    <option key={model} value={model}>{model}</option>
+                    <option key={model.id} value={model.id}>{modelOptionLabel(model)}</option>
                   ))}
                 </select>
+                <div className="inline-row">
+                  {modelThinkingOptions.length > 0 && (
+                    <select
+                      value={modelDraft.thinking_level || defaultThinkingLevelForModel(provider, modelDraft.model)}
+                      onChange={(event) => setModelDraft({ ...modelDraft, thinking_level: event.target.value as ThinkingLevel })}
+                    >
+                      {modelThinkingOptions.map((option) => (
+                        <option key={option.id} value={option.id}>思考等级：{option.label}</option>
+                      ))}
+                    </select>
+                  )}
+                  <button className="inline-action" onClick={() => void handleAddThinkingLevel()}>添加思考等级</button>
+                </div>
                 <input
                   value={customModel}
                   onChange={(event) => setCustomModel(event.target.value)}
@@ -1061,6 +1490,16 @@ function SettingsDialog({
                 <p className="hint">{currentExamOption?.description}</p>
                 <input value={draft.exam_name} onChange={(event) => setDraft({ ...draft, exam_name: event.target.value })} placeholder="考试名称" />
                 <input value={draft.target_language} onChange={(event) => setDraft({ ...draft, target_language: event.target.value })} placeholder="目标语言" />
+                <label className="field-label">
+                  <span>考试时间</span>
+                  <input
+                    type="datetime-local"
+                    value={toDateTimeLocalValue(draft.deadline)}
+                    onChange={(event) => setDraft({ ...draft, deadline: event.target.value || null })}
+                    onInput={(event) => setDraft({ ...draft, deadline: event.currentTarget.value || null })}
+                  />
+                  <small>{draft.deadline ? `剩余：${countdownText(draft.deadline)}` : "用于长期面板倒计时，可为空。"}</small>
+                </label>
                 {draft.exam_id === "custom" && (
                   <div className="custom-exam-grid">
                     <input value={customExam.name} onChange={(event) => setCustomExam({ ...customExam, name: event.target.value })} placeholder="自定义考试名称" />
@@ -1129,7 +1568,10 @@ function SettingsDialog({
                     placeholder="填写自定义人格提示词，例如：语气冷静、少废话、每次先给结论。"
                   />
                 )}
-                <select><option>mastery_score V1（掌握度 V1）</option><option>FSRS-ready（FSRS 预留）</option></select>
+                <select aria-label="掌握度算法">
+                  <option>掌握度算法：当前 V1（基础分数版）</option>
+                  <option>间隔复习算法：FSRS（Free Spaced Repetition Scheduler，间隔复习调度器）预留，暂未启用</option>
+                </select>
                 <label className="range-field">
                   <span>复习强度：{reviewIntensity}</span>
                   <input
@@ -1199,26 +1641,27 @@ function OnboardingDialog({
   onDone: (profile: Profile) => void;
 }) {
   const [draft, setDraft] = useState({
-    provider_id: modelConfig.provider_id || "mock",
-    base_url: modelConfig.base_url || "",
+    provider_id: modelConfig.provider_id || DEFAULT_MODEL_CONFIG.provider_id,
+    base_url: modelConfig.base_url || DEFAULT_MODEL_CONFIG.base_url,
     api_key: "",
-    model: modelConfig.model || "mock-tutor-v1",
+    model: modelConfig.model || DEFAULT_MODEL_CONFIG.model,
     display_name: profile.display_name,
-    target_language: "英语",
-    exam_id: "cet4",
-    exam_name: "大学英语四级",
-    learning_goal: "",
-    learning_background: "",
+    target_language: profile.target_language || "英语",
+    exam_id: profile.exam_id || "cet4",
+    exam_name: profile.exam_name || "大学英语四级",
+    deadline: profile.deadline || "",
+    learning_goal: profile.learning_goal || "",
+    learning_background: profile.learning_background || "",
     search_years: 3
   });
   const [customModel, setCustomModel] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const provider = selectedProvider(providers, draft.provider_id);
-  const modelOptions = uniqueModelOptions(provider, draft.model);
+  const modelOptions = modelOptionsFor(provider, draft.model);
   const chooseProvider = (providerId: string) => {
     const nextProvider = selectedProvider(providers, providerId);
-    const nextModel = nextProvider.model_options?.[0] || nextProvider.model || "";
+    const nextModel = modelOptionsFor(nextProvider, nextProvider.model)[0]?.id || nextProvider.model || "";
     setDraft({
       ...draft,
       provider_id: nextProvider.id,
@@ -1234,6 +1677,7 @@ function OnboardingDialog({
     try {
       const data = await apiPost<{ profile: Profile }>("/api/initialize", {
         ...draft,
+        deadline: draft.deadline || null,
         model: customModel.trim() || draft.model
       });
       onDone(data.profile);
@@ -1252,14 +1696,15 @@ function OnboardingDialog({
           <button className="icon-button" onClick={onClose}><X size={18} /></button>
         </div>
         <div className="onboarding-flow">
-          <label>供应商<select value={draft.provider_id} onChange={(event) => chooseProvider(event.target.value)}>{providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}</select></label>
-          <label>Base URL（基础网址）<input value={draft.base_url} onChange={(event) => setDraft({ ...draft, base_url: event.target.value })} placeholder={provider.base_url || "Mock Provider（本地模拟）不需要 Base URL"} /></label>
-          <label>API Key（接口密钥）<input value={draft.api_key} onChange={(event) => setDraft({ ...draft, api_key: event.target.value })} placeholder={provider.kind === "mock" ? "Mock Provider（本地模拟）不需要 API Key" : "留空则不覆盖已有密钥"} type="password" autoComplete="off" /></label>
-          <label>模型选项<select value={draft.model} onChange={(event) => setDraft({ ...draft, model: event.target.value })}>{modelOptions.map((model) => <option key={model} value={model}>{model}</option>)}</select></label>
+          <label>供应商<select value={draft.provider_id} onChange={(event) => chooseProvider(event.target.value)}>{providers.filter((provider) => provider.id !== "mock").map((provider) => <option key={provider.id} value={provider.id}>{provider.label}</option>)}</select></label>
+          <label>Base URL（基础网址）<input value={draft.base_url} onChange={(event) => setDraft({ ...draft, base_url: event.target.value })} placeholder={provider.base_url || "供应商 Base URL（基础网址）"} /></label>
+          <label>API Key（接口密钥）<input value={draft.api_key} onChange={(event) => setDraft({ ...draft, api_key: event.target.value })} placeholder="留空则不覆盖已有密钥" type="password" autoComplete="off" /></label>
+          <label>模型选项<select value={draft.model} onChange={(event) => setDraft({ ...draft, model: event.target.value })}>{modelOptions.map((model) => <option key={model.id} value={model.id}>{modelOptionLabel(model)}</option>)}</select></label>
           <label>自定义模型<input value={customModel} onChange={(event) => setCustomModel(event.target.value)} placeholder="填写后优先使用，例如厂商新模型名" /></label>
           <label>称呼<input value={draft.display_name} onChange={(event) => setDraft({ ...draft, display_name: event.target.value })} /></label>
           <label>目标语言<input value={draft.target_language} onChange={(event) => setDraft({ ...draft, target_language: event.target.value })} /></label>
           <label>目标考试<input value={draft.exam_name} onChange={(event) => setDraft({ ...draft, exam_name: event.target.value })} /></label>
+          <label>考试时间<input type="datetime-local" value={toDateTimeLocalValue(draft.deadline)} onChange={(event) => setDraft({ ...draft, deadline: event.target.value })} onInput={(event) => setDraft({ ...draft, deadline: event.currentTarget.value })} /></label>
           <label>学习目标<textarea value={draft.learning_goal} onChange={(event) => setDraft({ ...draft, learning_goal: event.target.value })} /></label>
           <label>学习背景<textarea value={draft.learning_background} onChange={(event) => setDraft({ ...draft, learning_background: event.target.value })} /></label>
           <label>真题参考年限<input type="number" min="1" max="10" value={draft.search_years} onChange={(event) => setDraft({ ...draft, search_years: Number(event.target.value) })} /></label>

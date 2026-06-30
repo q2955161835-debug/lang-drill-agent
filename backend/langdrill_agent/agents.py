@@ -3,13 +3,14 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime
 import logging
+import re
 
 from .algorithm import MasteryInputs, mastery_score, next_review_at
-from .models import EvaluationResult, Question, TaskType
+from .models import AuthoredQuestionSet, EvaluationResult, Question, TaskType
 from .prompt_engine import PromptAssembler, PromptRegistry
 from .providers import ModelProvider
 from .services import ProfileService, QuestionService, SessionService
-from .utils import dumps, estimate_tokens, new_id
+from .utils import dumps, estimate_tokens, loads, new_id
 from .validator import QuestionValidator
 
 
@@ -29,12 +30,18 @@ class OrchestratorAgent:
 
     def handle_daily_drill(self, session_id: str, content: str) -> dict:
         profile = self.profile_service.get()
+        imported_terms = self._import_inline_content(profile.exam_id, content)
+        new_content = [content.strip()] if content.strip() else []
+        for item in imported_terms:
+            summary = f"{item['term']}: {item['meaning']}" if item.get("meaning") else item["term"]
+            if summary not in new_content:
+                new_content.append(summary)
         plan = {
-            "new_content": [content.strip()],
+            "new_content": new_content,
             "review_content": self._select_review_stub(profile.exam_id),
             "target_minutes": profile.daily_minutes,
-            "status": "question_ready",
-            "algorithm": "mastery_score_v1_fsrs_ready",
+            "status": "formal_question_set_ready",
+            "algorithm": "formal_question_set_v1_mastery_score",
         }
         self.conn.execute(
             """
@@ -42,7 +49,7 @@ class OrchestratorAgent:
             SET daily_plan_json=?, status='active', title=?, updated_at=CURRENT_TIMESTAMP
             WHERE id=?
             """,
-            (dumps(plan), content.strip()[:18] or "日常学习", session_id),
+            (dumps(plan), (content.strip() or "日常学习")[:18], session_id),
         )
 
         pack = self.assembler.assemble(
@@ -60,6 +67,57 @@ class OrchestratorAgent:
         result = self.provider.complete(pack)
         self._record_model_call("daily_drill", result, [m["id"] for m in pack.system_modules])
         return plan
+
+    def _import_inline_content(self, exam_id: str, content: str) -> list[dict[str, str]]:
+        entries: list[dict[str, str]] = []
+        for raw_line in content.splitlines():
+            line = raw_line.strip()
+            if not line or len(line) > 120:
+                continue
+            term = ""
+            reading = ""
+            meaning = ""
+            notes = ""
+            if "|" in line:
+                parts = [part.strip() for part in line.split("|")]
+                term = parts[0] if parts else ""
+                reading = parts[1] if len(parts) > 1 else ""
+                meaning = parts[2] if len(parts) > 2 else ""
+                notes = parts[4] if len(parts) > 4 else ""
+            elif ":" in line or "：" in line:
+                pieces = re.split(r"[:：]", line, maxsplit=1)
+                term = pieces[0].strip()
+                meaning = pieces[1].strip() if len(pieces) > 1 else ""
+            if not term or not meaning:
+                continue
+            existing = self.conn.execute(
+                """
+                SELECT id FROM knowledge_items
+                WHERE term=? AND exam_id=? AND source_scope='chat_input'
+                LIMIT 1
+                """,
+                (term, exam_id),
+            ).fetchone()
+            if existing:
+                self.conn.execute(
+                    """
+                    UPDATE knowledge_items
+                    SET reading=?, meaning=?, notes=?, updated_at=CURRENT_TIMESTAMP
+                    WHERE id=?
+                    """,
+                    (reading, meaning, notes, existing["id"]),
+                )
+            else:
+                self.conn.execute(
+                    """
+                    INSERT INTO knowledge_items
+                    (id, kind, term, reading, meaning, notes, exam_id, source_scope, mastery_score)
+                    VALUES (?, 'word', ?, ?, ?, ?, ?, 'chat_input', 0.2)
+                    """,
+                    (new_id("kn"), term, reading, meaning, notes, exam_id),
+                )
+            entries.append({"term": term, "meaning": meaning})
+        return entries
 
     def _select_review_stub(self, exam_id: str) -> list[str]:
         rows = self.conn.execute(
@@ -107,66 +165,308 @@ class QuestionAuthorAgent:
         self.assembler = PromptAssembler(PromptRegistry(conn))
 
     def ensure_first_question(self, session_id: str) -> Question:
-        # ── Bug #3 修复：只查 status='ready' 的题，按 sequence 排序 ──
-        existing = self.conn.execute(
-            """
-            SELECT * FROM questions
-            WHERE session_id=? AND status='ready'
-            ORDER BY sequence ASC
-            LIMIT 1
-            """,
-            (session_id,),
-        ).fetchone()
-        if existing:
-            return self._question_from_row(existing)
+        active = QuestionService(self.conn).active_question(session_id)
+        if active:
+            return Question(**active)
+        self.ensure_question_set(session_id, "")
+        active = QuestionService(self.conn).active_question(session_id)
+        if active:
+            return Question(**active)
+        profile = self.profile_service.get()
+        question = self._fallback_question(session_id, profile.exam_name, 1, profile.exam_id)
+        self._save_question(question)
+        return question
 
-        # 计算下一个 sequence
-        max_seq_row = self.conn.execute(
-            "SELECT COALESCE(MAX(sequence), 0) AS max_seq FROM questions WHERE session_id=?",
-            (session_id,),
-        ).fetchone()
-        next_seq = (max_seq_row["max_seq"] if max_seq_row else 0) + 1
+    def ensure_question_set(
+        self,
+        session_id: str,
+        requested_content: str,
+        *,
+        target_count: int = 8,
+    ) -> dict[str, object]:
+        question_service = QuestionService(self.conn)
+        progress = question_service.question_progress(session_id)
+        if progress["ready"]:
+            return {"created": 0, "opening_message": "", "progress": progress}
 
         profile = self.profile_service.get()
         plan_row = self.conn.execute(
             "SELECT daily_plan_json FROM study_sessions WHERE id=?",
             (session_id,),
         ).fetchone()
-        plan = plan_row["daily_plan_json"] if plan_row else "{}"
+        plan = loads(plan_row["daily_plan_json"], {}) if plan_row else {}
+        start_sequence = question_service.next_sequence(session_id)
+        content_pool = self._content_pool(profile.exam_id, requested_content, target_count * 3)
+        count = self._target_count(profile.daily_minutes, len(content_pool), target_count)
         pack = self.assembler.assemble(
             task_type="question_authoring",
             exam_id=profile.exam_id,
             persona="none",
             context_pack={
                 "session_id": session_id,
-                "daily_plan_json": plan,
+                "daily_plan": plan,
                 "exam_id": profile.exam_id,
-                "next_sequence": next_seq,
-                "output_contract": "Question JSON Schema",
+                "exam_name": profile.exam_name,
+                "start_sequence": start_sequence,
+                "target_count": count,
+                "content_pool": content_pool,
+                "question_flow": "先生成完整题组并持久化，再逐题取出展示。",
+                "quality_rules": [
+                    "优先覆盖用户输入、截图导入、到期复习和低掌握度知识点。",
+                    "题型贴近考试风格，避免只靠中英文同形或裸释义猜答案。",
+                    "每题必须有准确答案、讲解和 knowledge_tags。",
+                    "选择题选项顺序要分散，不要全是 A。",
+                ],
+                "output_contract": "AuthoredQuestionSet JSON Schema",
             },
-            user_content=f"请生成第 {next_seq} 题，结构化输出并避免泄露答案。",
-            output_schema=Question.model_json_schema(),
+            user_content=(
+                f"请一次生成 {count} 道正式刷题题目，题目先入库后再展示。"
+                f"用户本轮输入：{requested_content or '继续今日学习'}"
+            ),
+            output_schema=AuthoredQuestionSet.model_json_schema(),
             allow_global_user_prompt=False,
         )
         result = self.provider.complete(pack)
-
-        # ── Bug #2 修复：真正解析模型输出，不再无条件 fallback ──
-        question = self._try_parse_model_output(result.content, session_id, next_seq)
-        if question is None:
-            # 解析失败或 mock provider 时使用 fallback
-            question = self._fallback_question(session_id, profile.exam_name, next_seq, profile.exam_id)
-
+        authored = self._try_parse_question_set(result.content, session_id, start_sequence, count)
+        questions = authored["questions"]
         validation_status = "passed"
         try:
-            self.validator.validate(question)
+            self._validate_questions(questions)
         except Exception:
-            # 校验失败，用 fallback 替代
-            question = self._fallback_question(session_id, profile.exam_name, next_seq, profile.exam_id)
+            questions = self._fallback_question_set(
+                session_id=session_id,
+                exam_name=profile.exam_name,
+                exam_id=profile.exam_id,
+                start_sequence=start_sequence,
+                target_count=count,
+                content_pool=content_pool,
+            )
             validation_status = "fallback_after_validation_failure"
-
-        self._save_question(question)
+        if len(questions) < max(2, min(count, 4)):
+            questions = self._fallback_question_set(
+                session_id=session_id,
+                exam_name=profile.exam_name,
+                exam_id=profile.exam_id,
+                start_sequence=start_sequence,
+                target_count=count,
+                content_pool=content_pool,
+            )
+            validation_status = "fallback_after_short_set"
+        question_service.save_questions(questions)
         self._record_model_call(result, [m["id"] for m in pack.system_modules], validation_status)
-        return question
+        return {
+            "created": len(questions),
+            "opening_message": authored["opening_message"],
+            "progress": question_service.question_progress(session_id),
+        }
+
+    def _target_count(self, daily_minutes: int, pool_size: int, default_count: int) -> int:
+        minute_based = max(6, min(16, daily_minutes // 4 or default_count))
+        pressure_based = max(default_count, min(18, pool_size // 2 if pool_size else default_count))
+        return max(4, min(24, max(minute_based, pressure_based)))
+
+    def _content_pool(self, exam_id: str, requested_content: str, limit: int) -> list[dict[str, object]]:
+        rows = self.conn.execute(
+            """
+            SELECT id, kind, term, reading, meaning, notes, source_scope, mastery_score, due_at
+            FROM knowledge_items
+            WHERE exam_id IN (?, 'unassigned')
+            ORDER BY
+              CASE WHEN due_at IS NOT NULL AND due_at<>'' AND due_at<=CURRENT_TIMESTAMP THEN 0 ELSE 1 END,
+              mastery_score ASC,
+              updated_at ASC
+            LIMIT ?
+            """,
+            (exam_id, limit),
+        ).fetchall()
+        pool = [dict(row) for row in rows]
+        text = requested_content.strip()
+        if text and not pool:
+            pool.append(
+                {
+                    "id": "user_content",
+                    "kind": "text",
+                    "term": text[:80],
+                    "reading": "",
+                    "meaning": text[:160],
+                    "notes": "来自用户本轮输入",
+                    "source_scope": "chat_input",
+                    "mastery_score": 0.2,
+                    "due_at": "",
+                }
+            )
+        return pool
+
+    def _try_parse_question_set(
+        self,
+        content: str,
+        session_id: str,
+        start_sequence: int,
+        target_count: int,
+    ) -> dict[str, object]:
+        json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL)
+        raw_json = json_match.group(1) if json_match else content
+        parsed = loads(raw_json.strip(), {})
+        if isinstance(parsed, list):
+            parsed = {"questions": parsed}
+        if not isinstance(parsed, dict):
+            return {"opening_message": "", "questions": []}
+        questions: list[Question] = []
+        for offset, item in enumerate(parsed.get("questions", [])[:target_count]):
+            if not isinstance(item, dict):
+                continue
+            question = self._question_from_authored(item, session_id, start_sequence + offset)
+            if question:
+                questions.append(question)
+        return {
+            "opening_message": str(parsed.get("opening_message", "") or ""),
+            "questions": questions,
+        }
+
+    def _question_from_authored(
+        self,
+        item: dict[str, object],
+        session_id: str,
+        sequence: int,
+    ) -> Question | None:
+        options = [str(option).strip() for option in item.get("options", []) or [] if str(option).strip()]
+        answer = item.get("answer") if isinstance(item.get("answer"), dict) else {}
+        normalized_answer = self._normalize_answer(answer, options)
+        if not normalized_answer:
+            return None
+        try:
+            return Question(
+                id=new_id("q"),
+                session_id=session_id,
+                sequence=sequence,
+                type=str(item.get("type") or "multiple_choice"),
+                prompt=str(item.get("prompt") or "").strip(),
+                options=options,
+                answer=normalized_answer,
+                explanation=str(item.get("explanation") or "").strip(),
+                knowledge_tags=[str(tag) for tag in item.get("knowledge_tags", []) or [] if str(tag).strip()],
+                difficulty=float(item.get("difficulty") or 0.5),
+                source_refs=[ref for ref in item.get("source_refs", []) or [] if isinstance(ref, dict)],
+            )
+        except Exception:
+            return None
+
+    def _authored_from_question(self, question: Question):
+        from .models import AuthoredQuestion
+
+        return AuthoredQuestion(
+            type=question.type,
+            prompt=question.prompt,
+            options=question.options,
+            answer=question.answer,
+            explanation=question.explanation,
+            knowledge_tags=question.knowledge_tags,
+            difficulty=question.difficulty,
+            source_refs=question.source_refs,
+        )
+
+    def _normalize_answer(self, answer: dict[str, object], options: list[str]) -> dict[str, str] | None:
+        letter = str(answer.get("letter") or "").strip().upper()
+        correct = str(answer.get("correct") or "").strip()
+        if letter in {"A", "B", "C", "D"} and options:
+            index = ord(letter) - ord("A")
+            if index < len(options):
+                return {"letter": letter, "correct": options[index]}
+        if correct in {"A", "B", "C", "D"} and options:
+            index = ord(correct) - ord("A")
+            if index < len(options):
+                return {"letter": correct, "correct": options[index]}
+        if correct and options and correct in options:
+            return {"letter": chr(ord("A") + options.index(correct)), "correct": correct}
+        if correct and not options:
+            return {"correct": correct}
+        return None
+
+    def _validate_questions(self, questions: list[Question]) -> None:
+        if not questions:
+            raise ValueError("题组为空")
+        letters: list[str] = []
+        for question in questions:
+            self.validator.validate(question)
+            letter = str(question.answer.get("letter", "")).upper()
+            if letter:
+                letters.append(letter)
+        if len(letters) >= 4 and len(set(letters)) == 1:
+            raise ValueError("整套题答案选项过度集中")
+
+    def _fallback_question_set(
+        self,
+        *,
+        session_id: str,
+        exam_name: str,
+        exam_id: str,
+        start_sequence: int,
+        target_count: int,
+        content_pool: list[dict[str, object]],
+    ) -> list[Question]:
+        terms = [item for item in content_pool if str(item.get("term") or "").strip()]
+        if not terms:
+            terms = [
+                {"term": "affect", "meaning": "影响", "source_scope": "generated"},
+                {"term": "effect", "meaning": "结果；效果", "source_scope": "generated"},
+                {"term": "context", "meaning": "语境", "source_scope": "generated"},
+                {"term": "evidence", "meaning": "证据", "source_scope": "generated"},
+                {"term": "infer", "meaning": "推断", "source_scope": "generated"},
+                {"term": "contrast", "meaning": "对比", "source_scope": "generated"},
+                {"term": "summarize", "meaning": "概括", "source_scope": "generated"},
+                {"term": "accurate", "meaning": "准确的", "source_scope": "generated"},
+            ]
+        questions: list[Question] = []
+        for offset in range(max(4, min(target_count, len(terms) or target_count))):
+            item = terms[offset % len(terms)]
+            sequence = start_sequence + offset
+            term = str(item.get("term") or f"item-{sequence}").strip()
+            meaning = str(item.get("meaning") or "该知识点的核心含义").strip()
+            questions.append(self._fallback_question_for_term(session_id, exam_id, sequence, term, meaning, terms))
+        return questions
+
+    def _fallback_question_for_term(
+        self,
+        session_id: str,
+        exam_id: str,
+        sequence: int,
+        term: str,
+        meaning: str,
+        terms: list[dict[str, object]],
+    ) -> Question:
+        distractors = [
+            str(item.get("meaning") or "").strip()
+            for item in terms
+            if str(item.get("term") or "").strip() != term and str(item.get("meaning") or "").strip()
+        ]
+        generic = ["表示让步或转折", "强调时间顺序", "表示数量增加", "描述原因或条件"]
+        options = [meaning, *distractors, *generic]
+        deduped = []
+        for option in options:
+            if option and option not in deduped:
+                deduped.append(option)
+        option_count = 4 if len(deduped) >= 4 else max(2, len(deduped))
+        correct_index = (sequence - 1) % option_count
+        selected = deduped[:option_count]
+        correct = selected.pop(0)
+        selected.insert(correct_index, correct)
+        letter = chr(ord("A") + correct_index)
+        return Question(
+            id=new_id("q"),
+            session_id=session_id,
+            sequence=sequence,
+            type="multiple_choice",
+            prompt=(
+                f"第 {sequence} 题\n"
+                f"结合 {exam_id} 备考语境，选择 “{term}” 最合适的理解。"
+            ),
+            options=selected,
+            answer={"correct": correct, "letter": letter},
+            explanation=f"“{term}” 在本轮知识库中的核心含义是：{meaning}。做题时要结合语境，不只看词形相似度。",
+            knowledge_tags=[f"vocabulary:{term}"],
+            difficulty=0.35 + min((sequence % 5) * 0.08, 0.32),
+            source_refs=[{"type": "generated", "boundary": "practice_only", "term": term}],
+        )
 
     def _try_parse_model_output(
         self, content: str, session_id: str, sequence: int

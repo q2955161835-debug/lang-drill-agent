@@ -3,101 +3,23 @@ setlocal EnableExtensions
 chcp 65001 >nul
 
 set "ROOT=%~dp0"
-set "BACKEND_TITLE=LangDrill Backend"
-set "FRONTEND_TITLE=LangDrill Frontend"
-set "VENV_PY=%ROOT%.venv\Scripts\python.exe"
-set "TASKKILL=%SystemRoot%\System32\taskkill.exe"
-set "PING=%SystemRoot%\System32\ping.exe"
 set "POWERSHELL=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+set "LAUNCHER=%ROOT%scripts\dev\start-dev.ps1"
 
-cd /d "%ROOT%"
-
-echo ========================================
-echo Lang Drill Agent 一键启动
-echo ========================================
-echo 项目目录：%ROOT%
-echo.
-
-where py >nul 2>nul
-if %errorlevel%==0 (
-  set "PY_LAUNCHER=py"
-) else (
-  where python >nul 2>nul
-  if %errorlevel%==0 (
-    set "PY_LAUNCHER=python"
-  ) else (
-    echo [错误] 未找到 Python。请先安装 Python 3.11+，并勾选 Add Python to PATH。
-    pause
-    exit /b 1
-  )
-)
-
-if not exist "%VENV_PY%" (
-  echo [准备] 未找到 .venv，正在创建 Python 虚拟环境...
-  %PY_LAUNCHER% -m venv "%ROOT%.venv"
-  if errorlevel 1 (
-    echo [错误] 创建虚拟环境失败。
-    pause
-    exit /b 1
-  )
-)
-
-echo [准备] 安装/更新后端依赖...
-call "%VENV_PY%" -m pip install -e "%ROOT%[dev]"
-if errorlevel 1 (
-  echo [错误] 后端依赖安装失败。
+if not exist "%LAUNCHER%" (
+  echo [错误] 未找到启动器：%LAUNCHER%
   pause
   exit /b 1
 )
 
-if not exist "%ROOT%frontend\node_modules" (
-  echo [准备] 未找到前端依赖，正在执行 npm install...
-  pushd "%ROOT%frontend"
-  call npm install
-  if errorlevel 1 (
-    popd
-    echo [错误] 前端依赖安装失败。请确认已安装 Node.js LTS。
-    pause
-    exit /b 1
-  )
-  popd
-)
+"%POWERSHELL%" -NoProfile -ExecutionPolicy Bypass -File "%LAUNCHER%"
+set "EXIT_CODE=%errorlevel%"
 
-echo [准备] 清理可能占用的端口 5173 / 8000...
-"%POWERSHELL%" -NoProfile -ExecutionPolicy Bypass -Command "$ports = 5173,8000; foreach ($port in $ports) { Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue } }"
-
-echo [准备] 写入开发期默认 MiMo 配置到 .env，并保留已有 API Key...
-if not exist ".env" type nul > ".env"
-findstr /v /b /c:"LANGDRILL_DEFAULT_PROVIDER=" /c:"LANGDRILL_DEFAULT_MODEL=" /c:"LANGDRILL_PROVIDER_BASE_URL=" ".env" > ".env.tmp" 2>nul
-type ".env.tmp" > ".env"
-del ".env.tmp" >nul 2>&1
-echo LANGDRILL_DEFAULT_PROVIDER=mimo>> ".env"
-echo LANGDRILL_DEFAULT_MODEL=mimo-v2.5-pro>> ".env"
-echo LANGDRILL_PROVIDER_BASE_URL=https://api.xiaomimimo.com/v1>> ".env"
-echo 已写入开发期默认 MiMo 配置。若尚未配置 API Key，请在网页设置中填写。
-set "PYTHONPATH=%ROOT%backend"
-call "%VENV_PY%" -m langdrill_agent.cli init --display-name boss --target-language 英语 --exam-id cet4 --exam-name 大学英语四级
-if errorlevel 1 (
-  echo [错误] 数据库初始化失败。
+if not "%EXIT_CODE%"=="0" (
+  echo.
+  echo [错误] Lang Drill Agent 启动失败，请查看 logs 目录中的日志。
   pause
-  exit /b 1
+  exit /b %EXIT_CODE%
 )
 
-echo [2/3] 启动后端 API：http://127.0.0.1:8000
-start "%BACKEND_TITLE%" /D "%ROOT%" cmd /k "set PYTHONPATH=%ROOT%backend&& call ""%VENV_PY%"" -m langdrill_agent.cli serve"
-
-echo [3/3] 启动前端 Web：http://127.0.0.1:5173
-start "%FRONTEND_TITLE%" /D "%ROOT%frontend" cmd /k "npm run dev"
-
-echo 等待服务初始化...
-"%PING%" 127.0.0.1 -n 7 >nul
-
-echo 正在打开浏览器...
-start "" "http://127.0.0.1:5173"
-
-echo.
-echo 已启动。关闭服务请运行 stop.bat。
-echo 如果浏览器暂时打不开，请等待几秒后手动访问：http://127.0.0.1:5173
-echo.
-pause
 endlocal

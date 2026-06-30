@@ -85,7 +85,7 @@ def main() -> None:
         syllabus_result = SyllabusService(conn).manual_check("cet4")
         model_config = ModelConfigService(conn).save(
             "mimo",
-            "https://api.xiaomimimo.com/v1",
+            "https://api.xiaomimimo.com/anthropic",
             "mimo-v2.5-pro",
             "",
         )

@@ -70,7 +70,10 @@ def test_sessions_are_scoped_to_active_exam(tmp_path: Path) -> None:
 
         profiles.update(UserProfile(exam_id="ielts", exam_name="雅思"))
         ielts_session = sessions.ensure_session(None, "ielts writing", force_new=True)
+        empty_listed = sessions.list_sessions_by_date()
+        sessions.add_message(ielts_session, "user", "ielts writing")
         listed = sessions.list_sessions_by_date()
 
+    assert empty_listed == []
     assert [item["id"] for item in listed] == [ielts_session]
     assert cet4_session != ielts_session
