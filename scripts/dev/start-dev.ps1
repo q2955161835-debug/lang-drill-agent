@@ -99,15 +99,15 @@ function Update-DevEnvFile {
 
     $newLines = @(
         "LANGDRILL_DEFAULT_PROVIDER=mimo",
-        "LANGDRILL_DEFAULT_MODEL=mimo-v2.5-pro",
-        "LANGDRILL_PROVIDER_BASE_URL=https://api.xiaomimimo.com/v1"
+        "LANGDRILL_DEFAULT_MODEL=mimo-v2.5",
+        "LANGDRILL_PROVIDER_BASE_URL=https://api.xiaomimimo.com/anthropic"
     )
 
     [System.IO.File]::WriteAllLines($EnvPath, [string[]]($keptLines + $newLines), $utf8)
 
     $env:LANGDRILL_DEFAULT_PROVIDER = "mimo"
-    $env:LANGDRILL_DEFAULT_MODEL = "mimo-v2.5-pro"
-    $env:LANGDRILL_PROVIDER_BASE_URL = "https://api.xiaomimimo.com/v1"
+    $env:LANGDRILL_DEFAULT_MODEL = "mimo-v2.5"
+    $env:LANGDRILL_PROVIDER_BASE_URL = "https://api.xiaomimimo.com/anthropic"
 }
 
 function Read-LogTail {

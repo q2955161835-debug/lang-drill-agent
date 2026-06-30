@@ -56,7 +56,7 @@ class SessionService:
         force_new: bool = False,
     ) -> str:
         profile = ProfileService(self.conn).get()
-        if session_id:
+        if session_id and not force_new:
             row = self.conn.execute(
                 "SELECT id FROM study_sessions WHERE id=? AND exam_id=?",
                 (session_id, profile.exam_id),
@@ -132,7 +132,7 @@ class SessionService:
               SUM(CASE WHEN q.status='answered' THEN 1 ELSE 0 END) AS done
             FROM questions q
             JOIN study_sessions s ON s.id = q.session_id
-            WHERE s.folder_date=? AND s.exam_id=?
+            WHERE s.folder_date=? AND s.exam_id=? AND s.status!='deleted'
             """,
             (scope["date"], scope["exam_id"]),
         ).fetchone()
@@ -141,7 +141,7 @@ class SessionService:
             SELECT COUNT(a.id) AS total, SUM(a.is_correct) AS correct
             FROM attempts a
             JOIN study_sessions s ON s.id = a.session_id
-            WHERE s.folder_date=? AND s.exam_id=?
+            WHERE s.folder_date=? AND s.exam_id=? AND s.status!='deleted'
             """,
             (scope["date"], scope["exam_id"]),
         ).fetchone()
@@ -168,14 +168,23 @@ class SessionService:
         profile = ProfileService(self.conn).get()
         rows = self.conn.execute(
             """
-            SELECT id, title, folder_date, exam_id, status, updated_at
-            FROM study_sessions
-            WHERE exam_id=?
-            ORDER BY folder_date DESC, updated_at DESC
+            SELECT s.id, s.title, s.folder_date, s.exam_id, s.status, s.updated_at
+            FROM study_sessions s
+            WHERE s.exam_id=?
+              AND s.status!='deleted'
+              AND EXISTS (SELECT 1 FROM messages m WHERE m.session_id=s.id)
+            ORDER BY s.folder_date DESC, s.updated_at DESC
             """,
             (profile.exam_id,),
         ).fetchall()
         return [dict(row) for row in rows]
+
+    def delete_session(self, session_id: str) -> bool:
+        row = self.conn.execute("SELECT id FROM study_sessions WHERE id=?", (session_id,)).fetchone()
+        if not row:
+            return False
+        self.conn.execute("DELETE FROM study_sessions WHERE id=?", (session_id,))
+        return True
 
     def load_session_messages(self, session_id: str) -> list[dict[str, Any]]:
         rows = self.conn.execute(
@@ -238,7 +247,7 @@ class SessionService:
               SUM(CASE WHEN status='active' THEN 1 ELSE 0 END) AS active_count,
               MAX(updated_at) AS updated_at
             FROM study_sessions
-            WHERE folder_date=? AND exam_id=?
+            WHERE folder_date=? AND exam_id=? AND status!='deleted'
             """,
             (date, exam_id),
         ).fetchone()
@@ -253,7 +262,7 @@ class SessionService:
         rows = self.conn.execute(
             """
             SELECT daily_plan_json FROM study_sessions
-            WHERE folder_date=? AND exam_id=?
+            WHERE folder_date=? AND exam_id=? AND status!='deleted'
             ORDER BY updated_at ASC
             """,
             (date, exam_id),
@@ -899,7 +908,7 @@ class ModelConfigService:
             if provider["id"] == "mock":
                 has_key = False
             provider["has_api_key"] = has_key
-            provider["visible_in_picker"] = provider["id"] == "mock" or (
+            provider["visible_in_picker"] = provider["id"] != "mock" and (
                 bool(provider.get("enabled", True)) and (not provider.get("api_key_required", True) or has_key)
             )
         return all_providers
@@ -910,7 +919,7 @@ class ModelConfigService:
         ).fetchone()
         config = loads(row["value_json"], {}) if row else {}
         env_values = {**self._read_env(), **self._read_process_env()}
-        provider_id = config.get("provider_id") or env_values.get("LANGDRILL_DEFAULT_PROVIDER") or "mock"
+        provider_id = config.get("provider_id") or env_values.get("LANGDRILL_DEFAULT_PROVIDER") or "mimo"
         provider = self.provider_by_id(provider_id)
         model = config.get("model") or env_values.get("LANGDRILL_DEFAULT_MODEL") or provider.get("model", "")
         options = self.thinking_level_options(provider_id, model)
@@ -935,7 +944,7 @@ class ModelConfigService:
                 "reasoning_parameter": "",
                 "api_format": "mock",
                 "has_api_key": False,
-                "visible_in_picker": True,
+                "visible_in_picker": False,
             }
         api_value = self._thinking_api_value(thinking_level, options)
         return {
@@ -950,10 +959,20 @@ class ModelConfigService:
             "reasoning_parameter": reasoning.get("parameter", ""),
             "api_format": config.get("api_format") or provider.get("api_format", "openai-chat-completions"),
             "has_api_key": has_key,
-            "visible_in_picker": provider_id == "mock" or (
-                bool(provider.get("enabled", True)) and (not provider.get("api_key_required", True) or has_key)
-            ),
+            "visible_in_picker": bool(provider.get("enabled", True)) and (not provider.get("api_key_required", True) or has_key),
         }
+
+    def current_for_ui(self) -> dict[str, Any]:
+        config = self.current()
+        if config.get("provider_id") != "mock":
+            return config
+        return self.save(
+            "mimo",
+            "https://api.xiaomimimo.com/anthropic",
+            "mimo-v2.5-pro",
+            thinking_level="enabled",
+            api_format="anthropic-messages",
+        )
 
     def current_with_secret(self) -> dict[str, Any]:
         config = self.current()
@@ -1191,7 +1210,7 @@ class ModelConfigService:
     def _current_provider_id(self, env_values: dict[str, str]) -> str:
         row = self.conn.execute("SELECT value_json FROM app_settings WHERE key='model.default'").fetchone()
         config = loads(row["value_json"], {}) if row else {}
-        return str(config.get("provider_id") or env_values.get("LANGDRILL_DEFAULT_PROVIDER") or "mock")
+        return str(config.get("provider_id") or env_values.get("LANGDRILL_DEFAULT_PROVIDER") or "mimo")
 
     def _api_key_env_key(self, provider_id: str) -> str:
         clean = "".join(ch if ch.isalnum() else "_" for ch in provider_id.upper()).strip("_")

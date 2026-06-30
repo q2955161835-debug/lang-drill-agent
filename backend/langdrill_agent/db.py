@@ -136,7 +136,7 @@ def seed_prompt_modules(conn: sqlite3.Connection) -> None:
             100,
             300,
             "",
-            "表达专业靠谱，结论清晰，建议可执行。",
+            "表达专业可靠，语气克制，结论清晰，建议可执行。",
             1,
         ),
         (

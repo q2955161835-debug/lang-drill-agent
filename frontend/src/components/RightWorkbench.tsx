@@ -8,17 +8,19 @@ import {
   ImageSquare,
   MicrophoneStage,
 } from "@phosphor-icons/react";
-import type { Message } from "../types";
 import type { DailyPanel } from "../types";
+import type { Message } from "../types";
 import { apiGet, apiPost } from "../api";
 
 type WorkbenchTab = "branch" | "mirror" | "screenshot" | "voice";
 
 type RightWorkbenchProps = {
   open: boolean;
+  branchId: string | null;
   branchMessages: Message[];
   sessionId: string | null;
   onToggle: () => void;
+  onSendBranchMessage: (content: string) => void;
   onSendToChat: (content: string) => void;
   onDailyPanelChange: (panel: DailyPanel) => void;
 };
@@ -40,7 +42,7 @@ type PhoneMirrorStatus = {
   recommended_project?: { name: string; url: string; reason: string };
 };
 
-export function RightWorkbench({ open, branchMessages, sessionId, onToggle, onSendToChat, onDailyPanelChange }: RightWorkbenchProps) {
+export function RightWorkbench({ open, branchId, branchMessages, sessionId, onToggle, onSendBranchMessage, onSendToChat, onDailyPanelChange }: RightWorkbenchProps) {
   const [activeTab, setActiveTab] = useState<WorkbenchTab>("branch");
 
   return (
@@ -76,7 +78,13 @@ export function RightWorkbench({ open, branchMessages, sessionId, onToggle, onSe
             })}
           </div>
 
-          {activeTab === "branch" && <BranchPanel branchMessages={branchMessages} />}
+          {activeTab === "branch" && (
+            <BranchPanel
+              branchId={branchId}
+              branchMessages={branchMessages}
+              onSendBranchMessage={onSendBranchMessage}
+            />
+          )}
           {activeTab === "mirror" && <PhoneMirrorPanel />}
           {activeTab === "screenshot" && (
             <ScreenshotImportPanel
@@ -92,15 +100,25 @@ export function RightWorkbench({ open, branchMessages, sessionId, onToggle, onSe
   );
 }
 
-function BranchPanel({ branchMessages }: { branchMessages: Message[] }) {
+function BranchPanel({
+  branchId,
+  branchMessages,
+  onSendBranchMessage
+}: {
+  branchId: string | null;
+  branchMessages: Message[];
+  onSendBranchMessage: (content: string) => void;
+}) {
+  const [draft, setDraft] = useState("");
   return (
-    <section className="branch-panel">
+    <section className="branch-panel workbench-form">
       <div className="panel-title">
         <GitBranch size={18} />
         <span>分支对话</span>
       </div>
+      <p className="hint">{branchId ? `当前分支：${branchId}` : "选中主聊天文本后，可以在这里展开解释，不污染主线学习记录。"}</p>
       {branchMessages.length === 0 ? (
-        <p className="empty-copy">选中主聊天里的文本后，可以在这里展开解释，不污染主线学习记录。</p>
+        <p className="empty-copy">这里会显示分支对话记录。</p>
       ) : (
         branchMessages.map((message) => (
           <div className={`branch-message ${message.role}`} key={message.id}>
@@ -108,6 +126,14 @@ function BranchPanel({ branchMessages }: { branchMessages: Message[] }) {
           </div>
         ))
       )}
+      <textarea
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        placeholder="继续追问，或者让分支整理成复习卡片。"
+      />
+      <div className="workbench-actions">
+        <button className="workbench-primary" onClick={() => { onSendBranchMessage(draft); setDraft(""); }} disabled={!draft.trim() || !branchId}>发送分支消息</button>
+      </div>
     </section>
   );
 }

@@ -8,8 +8,9 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - 以数据库作为唯一正式学习状态来源，保证题组、作答、掌握度、错题和会话历史可追踪。
 - 正式刷题必须先生成完整题组并写入数据库，再逐题展示、逐题判分、自动推进下一题。
 - Web（网页）体验以三栏学习工作台为主：左侧学习状态，中间聊天与题目，右侧分支/手机映像/截图导入。
-- 模型配置支持默认四个真实供应商 OpenAI/GPT、Claude、DeepSeek（深度求索）、MiMo（小米米魔）和保存后才出现的自定义供应商；聊天栏模型选择只暴露已启用且已配置 API Key（接口密钥）的真实供应商。
+- 模型配置支持默认四个真实供应商 OpenAI/GPT、Claude、DeepSeek（深度求索）、MiMo（小米米魔）和保存后才出现的自定义供应商；聊天栏模型选择只暴露已启用且已配置 API Key（接口密钥）的真实供应商，Mock Provider（本地模拟供应商）只保留给自动测试和离线调试。
 - 思考等级必须跟随当前模型的原生 reasoning（推理）配置；禁止把思考等级降级为提示词控制。没有原生档位或未自定义添加档位的模型，不在聊天栏暴露思考等级选择。
+- 长期学习总面板必须展示真实学习统计：题目完成/总数、单词掌握/总数、整体正确率、考试倒计时和 token（令牌）累计；新聊天在正式发送前只作为本地草稿，不写入数据库会话列表。
 - 启动链路必须适配中文路径、后台运行、日志落盘和 HTTP（HyperText Transfer Protocol，超文本传输协议）健康检查。
 
 ## GitHub（代码托管平台）
@@ -32,7 +33,8 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - `backend/langdrill_agent/`：共享后端核心。CLI（命令行接口）、API（接口）、服务层、Agent（智能体）、模型配置、学习算法和数据库访问都在这里。
 - `backend/langdrill_agent/api.py`：FastAPI（Web API 框架）入口，负责 bootstrap（初始化加载）、chat（聊天学习）、branch（分支）、profile（用户档案）、model-config（模型配置）、exam/syllabus（考试与考纲）、phone-mirror（手机映像）和 screenshot（截图导入）接口。
 - `backend/langdrill_agent/cli.py`：命令行入口，提供 init（初始化）、serve（启动服务）、status（状态）、chat（终端聊天）、data-paths（数据路径）和 backup-user-data（备份用户数据）。
-- `backend/langdrill_agent/services.py`：学习状态机、题组推进、作答写入、掌握度更新和业务编排。
+- `backend/langdrill_agent/services.py`：学习状态机、题组推进、作答写入、掌握度更新、会话生命周期和业务编排。
+- `backend/langdrill_agent/learning_stats.py`：长期学习统计服务，按当前考试聚合题目完成、词汇掌握和整体正确率。
 - `backend/langdrill_agent/agents.py`：Orchestrator（调度器）、Question Author（出题 Agent）和 Evaluator Tutor（判题讲解 Agent）的实现。
 - `backend/langdrill_agent/task_router.py`：用户意图识别与任务路由。
 - `backend/langdrill_agent/providers.py`：模型供应商配置、API Key（接口密钥）读取和模型调用适配。
@@ -41,7 +43,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - `backend/langdrill_agent/migrations/`：SQLite（轻量数据库）schema（数据库结构）初始化脚本。
 - `frontend/`：React（前端框架）+ TypeScript（类型化 JavaScript）+ Vite（前端构建工具）网页前端。
 - `frontend/src/App.tsx`：前端主入口，负责三栏布局、聊天、设置、初始化、题目显示和右侧工作台接入。
-- `frontend/src/components/`：前端可复用组件，当前重点是 `RightWorkbench.tsx`。
+- `frontend/src/components/`：前端可复用组件，当前重点是 `RightWorkbench.tsx` 和 `ContextMenu.tsx`。
 - `scripts/dev/`：开发期启动与维护脚本。`start-dev.ps1` 是一键启动主逻辑，`start.bat` 只作为 Windows 双击入口。
 - `src-tauri/`：Tauri（桌面壳）Windows 桌面封装骨架。
 - `doc/`：项目地图、验收标准、人工验收清单、桌面打包说明和进展记录。
@@ -60,6 +62,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 5. 前端只展示当前待答题；用户作答后写入 attempts（作答记录），更新 questions（题目状态）和 mastery（掌握度）。
 6. 简单题由程序判分，复杂题进入 Evaluator Tutor（判题讲解 Agent）。
 7. 系统自动返回下一道待答题；显式“下一题 / 继续 / 下一个”只读取当前题组库存，不重新初始化学习面板。
+8. Bootstrap（初始化加载）、chat（聊天）、profile（用户档案）、session delete（会话删除）接口返回 `learning_stats`，前端长期面板据此实时刷新。
 
 ## 启动与停止
 

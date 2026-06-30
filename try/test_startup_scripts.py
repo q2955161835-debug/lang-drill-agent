@@ -22,6 +22,7 @@ def test_powershell_launcher_waits_for_http_and_writes_logs() -> None:
     assert "-RedirectStandardOutput" in launcher
     assert "langdrill-backend.out.log" in launcher
     assert "langdrill-frontend.out.log" in launcher
+    assert "LANGDRILL_PROVIDER_BASE_URL=https://api.xiaomimimo.com/anthropic" in launcher
 
 
 def test_powershell_launcher_writes_env_without_utf8_bom() -> None:

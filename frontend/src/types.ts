@@ -3,6 +3,7 @@ export type Profile = {
   target_language: string;
   exam_id: string;
   exam_name: string;
+  deadline?: string | null;
   learning_goal: string;
   learning_background: string;
   persona: string;
@@ -64,6 +65,7 @@ export type SessionItem = {
   folder_date: string;
   exam_id?: string;
   status: string;
+  draft?: boolean;
 };
 
 export type DailyPanel = {
@@ -85,6 +87,18 @@ export type DailyPanel = {
   exam_name?: string;
   accuracy: number;
   summary: string;
+};
+
+export type LearningStats = {
+  exam_id: string;
+  exam_name: string;
+  questions_done: number;
+  questions_total: number;
+  words_mastered: number;
+  words_total: number;
+  accuracy: number;
+  attempts_total: number;
+  attempts_correct: number;
 };
 
 export type Question = {
