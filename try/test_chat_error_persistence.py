@@ -42,7 +42,7 @@ def test_chat_keeps_session_visible_when_model_request_fails(
     monkeypatch.setattr(ModelProvider, "complete", fail_complete)
     client = TestClient(app, raise_server_exceptions=False)
 
-    response = client.post("/api/chat", json={"content": "你好"})
+    response = client.post("/api/chat", json={"content": "我应该怎么安排四级复习计划？"})
 
     assert response.status_code == 200
     payload = response.json()
@@ -61,4 +61,4 @@ def test_chat_keeps_session_visible_when_model_request_fails(
         ).fetchall()
 
     assert [message["role"] for message in messages] == ["user", "assistant"]
-    assert messages[0]["content"] == "你好"
+    assert messages[0]["content"] == "我应该怎么安排四级复习计划？"

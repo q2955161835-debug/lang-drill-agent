@@ -36,6 +36,7 @@ from .models import (
     ScreenshotImportRequest,
     SyllabusCheckRequest,
     SyllabusSelectRequest,
+    TaskType,
     UserProfile,
 )
 from .providers import ModelProvider
@@ -51,7 +52,7 @@ from .services import (
     SyllabusService,
 )
 from .task_router import TaskRouter
-from .utils import dumps, new_id
+from .utils import dumps, loads, new_id
 
 
 app = FastAPI(title="Lang Drill Agent API")
@@ -160,6 +161,79 @@ def _model_request_error_message(exc: RuntimeError) -> str:
         f"⚠️ 当前模型请求失败：{exc}\n\n"
         "本次输入已保存在当前会话中；请检查 API Key、Base URL（基础网址）和网络后继续发送。"
     )
+
+
+_SIMPLE_GREETING_PATTERN = re.compile(
+    r"^(?:你?好|您好|hello|hi|hey|早上好|中午好|晚上好|在吗|在不在)[!！。.\s]*$",
+    re.IGNORECASE,
+)
+
+
+def _coerce_plain_model_text(content: str, fallback: str) -> str:
+    text = content.strip()
+    parsed = loads(text, None)
+    if isinstance(parsed, dict):
+        for key in ("message", "response", "content", "answer", "text"):
+            value = parsed.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return fallback
+    return text or fallback
+
+
+def _general_chat_response(
+    conn,
+    provider: ModelProvider,
+    *,
+    session_id: str,
+    content: str,
+    active_question: dict | None,
+) -> str:
+    text = content.strip()
+    if _SIMPLE_GREETING_PATTERN.match(text):
+        if active_question:
+            return "你好，boss。我在。当前题组还保留着；你可以继续答题，也可以问我这道题的提示或讲解。"
+        return "你好，boss。我在。你可以发词表、说“继续当前题组”，或者先问我学习计划和题目思路。"
+
+    pack = PromptPack(
+        system_modules=[
+            {
+                "id": "general.chat",
+                "content": (
+                    "你是 Lang Drill 的语言学习聊天助手。普通寒暄、学习建议、澄清问题只自然回复；"
+                    "不要生成正式题组，不要声称已经入库题目，不要输出 JSON。"
+                    "如果用户想练题，应提醒他明确发送词表、截图导入，或使用“出题/练习/刷题”等请求。"
+                ),
+            }
+        ],
+        context_pack={
+            "task_type": TaskType.general_chat.value,
+            "session_id": session_id,
+            "active_question": {
+                "id": active_question.get("id"),
+                "sequence": active_question.get("sequence"),
+                "prompt": active_question.get("prompt"),
+            } if active_question else None,
+        },
+        user_content=text,
+    )
+    try:
+        result = provider.complete(pack)
+        _record_model_call(
+            conn,
+            agent_name="general_chat",
+            task_type=TaskType.general_chat.value,
+            provider=provider,
+            result=result,
+            prompt_modules=[module["id"] for module in pack.system_modules],
+        )
+        return _coerce_plain_model_text(
+            result.content,
+            "我收到了。你可以继续说明想聊学习计划、题目讲解，还是要开始一组练习。",
+        )
+    except RuntimeError as exc:
+        logger.warning("model request failed during general chat", exc_info=True)
+        return _model_request_error_message(exc)
 
 
 def _screenshot_session_title(parsed: dict) -> str:
@@ -598,6 +672,17 @@ def chat(request: ChatRequest) -> ChatResponse:
         elif task.value == "branch_chat" and request.selected_text:
             # ── 分支对话：转发到分支接口 ──
             assistant_content = f"已识别到分支对话请求。请使用选中文本功能或右侧分支面板继续。选中内容：{request.selected_text[:60]}"
+
+        elif task.value == "general_chat":
+            # ── 普通聊天：不触发组卷，不写 daily_plan，不新增题目 ──
+            active_question = active
+            assistant_content = _general_chat_response(
+                conn,
+                provider,
+                session_id=session_id,
+                content=visible_content or request.content,
+                active_question=active_question,
+            )
 
         else:
             # ── 默认：有库存题先继续；无库存时先生成完整题组入库，再展示第一题 ──
