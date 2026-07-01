@@ -325,6 +325,10 @@ body.panel-resize-active * {
   position: relative;
   overflow: hidden;
   container-type: inline-size;
+  background: var(--app-background);
+  background-size: var(--app-background-size);
+  background-position: var(--app-background-position);
+  background-repeat: var(--app-background-repeat);
 }
 .long-panel {
   margin: 24px auto 12px;
@@ -689,7 +693,11 @@ body.panel-resize-active * {
   bottom: 0;
   z-index: 8;
   padding: 14px clamp(16px, 5vw, 40px) 18px;
-  background: linear-gradient(transparent, color-mix(in srgb, var(--bg) 92%, transparent) 22%, var(--bg));
+  background: linear-gradient(
+    transparent,
+    color-mix(in srgb, var(--bg) 72%, transparent) 28%,
+    color-mix(in srgb, var(--bg) 84%, transparent)
+  );
 }
 .first-prompt { width: min(900px, 100%); margin: 0 auto 14px; font-weight: 700; color: var(--muted-strong); font-size: 1rem; text-align: center; }
 .chat-config-bar {
