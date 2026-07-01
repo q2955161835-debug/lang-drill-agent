@@ -136,6 +136,13 @@ function localDateString(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+function hasDailyImportedContent(panel: DailyPanel) {
+  return (panel.knowledge_total || 0) > 0
+    || panel.questions_total > 0
+    || panel.questions_done > 0
+    || (panel.knowledge_terms?.length || 0) > 0;
+}
+
 const DEFAULT_PANEL: DailyPanel = {
   date: localDateString(),
   title: "长期学习记录",
@@ -523,6 +530,7 @@ export default function App() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [loadingLabel, setLoadingLabel] = useState("模型正在思考");
+  const [quickStartHint, setQuickStartHint] = useState("");
   const [compressingContext, setCompressingContext] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [pendingNewSession, setPendingNewSession] = useState(false);
@@ -671,6 +679,7 @@ export default function App() {
   const postChatContent = useCallback(async (content: string, forceNewSession = pendingNewSession) => {
     const cleanContent = content.trim();
     if (!cleanContent || sending) return;
+    setQuickStartHint("");
     const likelyScreenshot = looksLikeScreenshotVocabulary(cleanContent);
     const nextLabel = likelyScreenshot
       ? "截图解析中"
@@ -881,21 +890,20 @@ export default function App() {
     if (result.token_usage) setTokenUsage({ ...DEFAULT_TOKEN_USAGE, ...result.token_usage });
     if (result.learning_stats) setLearningStats(result.learning_stats);
     if (result.sessions) setSessions(result.sessions);
+    if (result.auto_started) setQuickStartHint("");
     if (result.auto_started) setRightOpen(false);
   }, []);
 
-  const hasTodayImportedContent =
-    (dailyPanel.knowledge_total || 0) > 0
-    || dailyPanel.questions_total > 0
-    || learningStats.words_total > 0
-    || learningStats.questions_total > 0;
+  const hasTodayImportedContent = dailyPanel.date === localDateString() && hasDailyImportedContent(dailyPanel);
 
   const quickStartToday = useCallback(() => {
     if (!hasTodayImportedContent) {
       setWorkbenchTab("screenshot");
       setRightOpen(true);
+      setQuickStartHint("今天空题库，右侧已打开截图导入。");
       return;
     }
+    setQuickStartHint("");
     void postChatContent("继续今天的答题", false);
   }, [hasTodayImportedContent, postChatContent]);
 
@@ -1056,6 +1064,7 @@ export default function App() {
             learningStats={learningStats}
             dailyPanel={dailyPanel}
             compact={!emptyContext}
+            quickStartHint={quickStartHint}
             onQuickStart={quickStartToday}
           />
           {messages.map((message) => (
@@ -1288,6 +1297,7 @@ function LongTermPanel({
   learningStats,
   dailyPanel,
   compact = false,
+  quickStartHint,
   onQuickStart
 }: {
   profile: Profile;
@@ -1295,6 +1305,7 @@ function LongTermPanel({
   learningStats: LearningStats;
   dailyPanel: DailyPanel;
   compact?: boolean;
+  quickStartHint?: string;
   onQuickStart: () => void;
 }) {
   const questionTotal = learningStats.questions_total || 0;
@@ -1302,11 +1313,7 @@ function LongTermPanel({
   const accuracyText = learningStats.attempts_total ? `${Math.round(learningStats.accuracy * 100)}%` : "未开始";
   const questionPercent = questionTotal ? Math.round((learningStats.questions_done / questionTotal) * 100) : 0;
   const wordPercent = wordsTotal ? Math.round((learningStats.words_mastered / wordsTotal) * 100) : 0;
-  const hasTodayContent =
-    (dailyPanel.knowledge_total || 0) > 0
-    || dailyPanel.questions_total > 0
-    || learningStats.words_total > 0
-    || learningStats.questions_total > 0;
+  const hasTodayContent = dailyPanel.date === localDateString() && hasDailyImportedContent(dailyPanel);
   return (
     <section className={`long-panel ${compact ? "compact" : ""}`}>
       <div className="long-grid">
@@ -1314,6 +1321,7 @@ function LongTermPanel({
           <span className="kicker">Learning Memory（学习记忆）</span>
           <h1>长期学习记录总面板</h1>
           <p>{`${profile.exam_name || learningStats.exam_name} · ${profile.target_language}`}</p>
+          {!hasTodayContent && quickStartHint && <p className="quick-start-hint" aria-live="polite">{quickStartHint}</p>}
         </div>
         <div className="score-stack">
           <Stat icon={<CheckCircle size={18} />} label="题目完成" value={`${learningStats.questions_done}/${questionTotal}`} detail={questionTotal ? `${questionPercent}%` : "等待题组"} />
@@ -1325,9 +1333,15 @@ function LongTermPanel({
       <div className="learning-stat-strip" aria-label="长期学习统计">
         <span><ListBullets size={16} /> 当前考试：{learningStats.exam_name || profile.exam_name}</span>
         <span><Brain size={16} /> 累计 token（令牌）：{(tokenUsage.total || 0).toLocaleString("zh-CN")}</span>
-        <button className="quick-start-button" onClick={onQuickStart}>
+        <button
+          type="button"
+          className={`quick-start-button ${hasTodayContent ? "primary" : "import"}`}
+          onClick={onQuickStart}
+          aria-label={hasTodayContent ? "继续今天的答题" : "打开当日截图导入"}
+          title={hasTodayContent ? "继续今天的答题" : "打开右侧截图导入"}
+        >
           {hasTodayContent ? <PlayCircle size={17} /> : <ImageSquare size={17} />}
-          <span>{hasTodayContent ? "快速开始" : "导入截图"}</span>
+          <span>{hasTodayContent ? "快速开始" : "当日导入"}</span>
         </button>
       </div>
     </section>

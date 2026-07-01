@@ -313,7 +313,7 @@ h1, h2, h3, h4, .brand, .kicker { font-weight: 750; letter-spacing: -0.03em; }
   border-top: var(--border-thin);
   padding-top: 16px;
 }
-.learning-stat-strip span {
+.learning-stat-strip > span {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -329,17 +329,45 @@ h1, h2, h3, h4, .brand, .kicker { font-weight: 750; letter-spacing: -0.03em; }
   margin-left: auto;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   min-height: 38px;
   border: var(--border-thin);
-  border-radius: 999px;
-  padding: 8px 13px;
-  background: var(--accent);
-  color: white;
+  border-radius: 12px;
+  padding: 8px 14px;
+  background: var(--surface);
+  color: var(--text);
   font-weight: 800;
   box-shadow: none;
+  white-space: nowrap;
 }
-.quick-start-button:hover { background: var(--accent-hover); }
+.quick-start-button.primary {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+.quick-start-button.import {
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--line));
+}
+.quick-start-button:hover { background: var(--surface-strong); }
+.quick-start-button.primary:hover { background: var(--accent-hover); }
+.quick-start-button.import:hover {
+  background: color-mix(in srgb, var(--accent) 20%, var(--surface));
+}
+.quick-start-hint {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border: var(--border-thin);
+  border-radius: 10px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--line));
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
 
 .question-dock {
   width: min(940px, calc(100% - 48px));
