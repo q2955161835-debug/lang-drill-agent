@@ -220,6 +220,14 @@ const DEFAULT_EXAM_OPTIONS: ExamOption[] = [
     description: "大学英语六级，按六级题型和难度组织。"
   },
   {
+    id: "cft4",
+    name: "法语四级",
+    target_language: "法语",
+    official_url: "https://cet.neea.edu.cn/xhtml1/folder/16113/1588-1.htm",
+    default_year: 2023,
+    description: "大学法语四级，官方 2023 版考纲。"
+  },
+  {
     id: "cjt4",
     name: "日语四级",
     target_language: "日语",

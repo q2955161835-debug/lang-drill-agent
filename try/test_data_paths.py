@@ -51,8 +51,8 @@ def test_question_database_folder_migrates_current_db(tmp_path: Path, monkeypatc
     assert os.environ["LANGDRILL_DB_PATH"] == str(target_db).replace("\\", "/")
     with sqlite3.connect(target_db) as conn:
         assert conn.execute("SELECT COUNT(*) FROM study_sessions").fetchone()[0] == 1
-        assert conn.execute("SELECT COUNT(*) FROM syllabus_sources").fetchone()[0] == 7
-        assert conn.execute("SELECT COUNT(*) FROM exam_assets").fetchone()[0] == 24
+        assert conn.execute("SELECT COUNT(*) FROM syllabus_sources").fetchone()[0] == 8
+        assert conn.execute("SELECT COUNT(*) FROM exam_assets").fetchone()[0] == 27
     env_text = (project_root / ".env").read_text(encoding="utf-8")
     assert "LANGDRILL_USER_DATA_DIR=" in env_text
     assert "LANGDRILL_DB_PATH=" in env_text
@@ -82,5 +82,5 @@ def test_question_database_folder_can_initialize_empty_db(tmp_path: Path, monkey
         assert conn.execute("SELECT COUNT(*) FROM study_sessions").fetchone()[0] == 0
         assert conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0] == 0
         assert conn.execute("SELECT COUNT(*) FROM questions").fetchone()[0] == 0
-        assert conn.execute("SELECT COUNT(*) FROM syllabus_sources").fetchone()[0] == 7
-        assert conn.execute("SELECT COUNT(*) FROM exam_assets").fetchone()[0] == 24
+        assert conn.execute("SELECT COUNT(*) FROM syllabus_sources").fetchone()[0] == 8
+        assert conn.execute("SELECT COUNT(*) FROM exam_assets").fetchone()[0] == 27

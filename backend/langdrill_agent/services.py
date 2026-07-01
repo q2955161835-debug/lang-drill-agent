@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import html
+import logging
 import os
 import re
 import shutil
@@ -8,6 +10,8 @@ from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+import httpx
 
 from .config import PROJECT_ROOT
 from .models import Question, UserProfile
@@ -21,6 +25,9 @@ from .paper_assets import (
     write_parsed_json,
 )
 from .utils import dumps, loads, new_id, normalize_api_key, today_str
+
+
+logger = logging.getLogger(__name__)
 
 
 class ProfileService:
@@ -443,6 +450,13 @@ class QuestionService:
 class SourceService:
     COMMON_SYLLABUS_SOURCES = [
         {
+            "exam_id": "cft4",
+            "title": "全国大学法语四级考试大纲（2023版）",
+            "year": 2023,
+            "url": "https://cet.neea.edu.cn/xhtml1/folder/16113/1588-1.htm",
+            "trusted_level": "official_or_exam_org",
+        },
+        {
             "exam_id": "cjt4",
             "title": "全国大学日语四、六级考试大纲（2024年启用）",
             "year": 2024,
@@ -527,6 +541,14 @@ class SourceService:
 
 
 class SyllabusService:
+    CET_SYLLABUS_PAGE = "https://cet.neea.edu.cn/xhtml1/folder/16113/1588-1.htm"
+    CET_SYLLABUS_MATCHERS = {
+        "cet4": {"required": ["英语"], "level_any": ["四、六级", "四级"]},
+        "cet6": {"required": ["英语"], "level_any": ["四、六级", "六级"]},
+        "cft4": {"required": ["法语"], "level_any": ["四级"]},
+        "cjt4": {"required": ["日语"], "level_any": ["四、六级", "四级"]},
+        "cjt6": {"required": ["日语"], "level_any": ["四、六级", "六级"]},
+    }
     EXAM_OPTIONS = [
         {
             "id": "cet4",
@@ -543,6 +565,14 @@ class SyllabusService:
             "official_url": "https://cet.neea.edu.cn/xhtml1/folder/16113/1588-1.htm",
             "default_year": 2016,
             "description": "大学英语六级，按六级题型和难度组织。",
+        },
+        {
+            "id": "cft4",
+            "name": "法语四级",
+            "target_language": "法语",
+            "official_url": "https://cet.neea.edu.cn/xhtml1/folder/16113/1588-1.htm",
+            "default_year": 2023,
+            "description": "大学法语四级，官方 2023 版考纲。",
         },
         {
             "id": "cjt4",
@@ -615,8 +645,11 @@ class SyllabusService:
             (target_exam,),
         ).fetchall()
         sources = [dict(row) for row in rows]
-        current = sources[0] if sources else self._default_source(target_exam)
-        selected_id = self._selected_source_id(target_exam) or current.get("id", "")
+        latest = sources[0] if sources else self._default_source(target_exam)
+        selected_id = self._selected_source_id(target_exam)
+        selected = next((item for item in sources if item.get("id") == selected_id), None)
+        current = selected or latest
+        selected_id = str(current.get("id", ""))
         return {
             "exam_id": target_exam,
             "current_source_id": selected_id,
@@ -629,12 +662,28 @@ class SyllabusService:
     def manual_check(self, exam_id: str) -> dict[str, Any]:
         SourceService(self.conn).seed_common_sources()
         option = self._exam_option(exam_id)
-        default_year = option.get("default_year")
+        official_candidate = self._latest_matching_official_syllabus(exam_id, option)
+        default_year = official_candidate["year"] if official_candidate else option.get("default_year")
+        default_title = (
+            official_candidate["title"]
+            if official_candidate
+            else option["name"] + f"考纲 {default_year}"
+        )
+        default_url = (
+            official_candidate["url"]
+            if official_candidate
+            else option.get("official_url", "")
+        )
         latest = self.status(exam_id)
         current_year = latest.get("current_year")
-        changed = bool(default_year and (not current_year or int(current_year) < int(default_year)))
+        current_year_int = self._int_year(current_year)
+        default_year_int = self._int_year(default_year)
+        changed = bool(
+            default_year_int and (not current_year_int or current_year_int < default_year_int)
+        )
         if changed:
-            source_id = f"src_{exam_id}_{default_year}"
+            source_id = self._source_id_for_year(latest["sources"], default_year)
+            source_id = source_id or f"src_{exam_id}_{default_year}"
             self.conn.execute(
                 """
                 INSERT OR IGNORE INTO syllabus_sources
@@ -644,10 +693,25 @@ class SyllabusService:
                 (
                     source_id,
                     exam_id,
-                    option["name"] + f"考纲 {default_year}",
+                    default_title,
                     default_year,
-                    option.get("official_url", ""),
-                    "official",
+                    default_url,
+                    "official_or_exam_org" if official_candidate else "official",
+                ),
+            )
+            self.conn.execute(
+                """
+                UPDATE syllabus_sources
+                SET title=?, year=?, url=?, trusted_level=?,
+                    is_latest_checked=1, checked_at=CURRENT_TIMESTAMP
+                WHERE id=?
+                """,
+                (
+                    default_title,
+                    default_year,
+                    default_url,
+                    "official_or_exam_org" if official_candidate else "official",
+                    source_id,
                 ),
             )
             self._select_source(exam_id, source_id)
@@ -657,13 +721,26 @@ class SyllabusService:
                 "status": self.status(exam_id),
             }
         if latest["sources"]:
+            source_id = (
+                self._source_id_for_year(latest["sources"], default_year)
+                or latest["sources"][0]["id"]
+            )
+            if official_candidate and default_year:
+                self.conn.execute(
+                    """
+                    UPDATE syllabus_sources
+                    SET title=?, url=CASE WHEN ?='' THEN url ELSE ? END
+                    WHERE id=?
+                    """,
+                    (default_title, default_url, default_url, source_id),
+                )
             self.conn.execute(
                 """
                 UPDATE syllabus_sources
                 SET is_latest_checked=1, checked_at=CURRENT_TIMESTAMP
                 WHERE id=?
                 """,
-                (latest["sources"][0]["id"],),
+                (source_id,),
             )
         return {
             "changed": False,
@@ -701,6 +778,89 @@ class SyllabusService:
 
     def _exam_option(self, exam_id: str) -> dict[str, Any]:
         return next((item for item in self.EXAM_OPTIONS if item["id"] == exam_id), self.EXAM_OPTIONS[-1])
+
+    @staticmethod
+    def parse_official_syllabus_candidates(
+        page_html: str, source_url: str = ""
+    ) -> list[dict[str, Any]]:
+        text = html.unescape(page_html or "")
+        text = re.sub(r"(?is)<script\b.*?</script>|<style\b.*?</style>", "\n", text)
+        text = re.sub(r"(?is)<br\s*/?>|</p>|</li>|</a>|</div>|</tr>|</td>", "\n", text)
+        text = re.sub(r"(?is)<[^>]+>", "", text)
+        candidates: list[dict[str, Any]] = []
+        seen: set[tuple[str, int]] = set()
+        for line in text.splitlines():
+            title = re.sub(r"\s+", " ", line).strip(" \u3000")
+            if "全国大学" not in title or "考试大纲" not in title:
+                continue
+            title = SyllabusService._clean_official_syllabus_title(title)
+            year_match = re.search(r"(19\d{2}|20\d{2})", title)
+            if not year_match:
+                continue
+            year = int(year_match.group(1))
+            key = (title, year)
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append({"title": title, "year": year, "url": source_url})
+        return candidates
+
+    @staticmethod
+    def _clean_official_syllabus_title(title: str) -> str:
+        starts = [index for token in ("《全国大学", "全国大学") if (index := title.find(token)) >= 0]
+        if starts:
+            title = title[min(starts) :]
+        for token in (" 《全国大学", " 全国大学"):
+            next_index = title.find(token, 1)
+            if next_index > 0:
+                title = title[:next_index]
+        return title.strip(" \u3000")
+
+    def _latest_matching_official_syllabus(
+        self, exam_id: str, option: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        official_url = str(option.get("official_url", ""))
+        if official_url != self.CET_SYLLABUS_PAGE or exam_id not in self.CET_SYLLABUS_MATCHERS:
+            return None
+        candidates = self._fetch_official_syllabus_candidates(official_url)
+        matched = [
+            item for item in candidates if self._matches_official_syllabus(exam_id, item["title"])
+        ]
+        return max(matched, key=lambda item: int(item["year"]), default=None)
+
+    def _fetch_official_syllabus_candidates(self, official_url: str) -> list[dict[str, Any]]:
+        try:
+            response = httpx.get(official_url, timeout=8, follow_redirects=True)
+            response.raise_for_status()
+        except httpx.HTTPError:
+            logger.warning("failed to fetch official syllabus page", exc_info=True)
+            return []
+        return self.parse_official_syllabus_candidates(response.text, official_url)
+
+    def _matches_official_syllabus(self, exam_id: str, title: str) -> bool:
+        matcher = self.CET_SYLLABUS_MATCHERS.get(exam_id)
+        if not matcher:
+            return False
+        required = matcher.get("required", [])
+        level_any = matcher.get("level_any", [])
+        return all(token in title for token in required) and any(token in title for token in level_any)
+
+    @staticmethod
+    def _source_id_for_year(sources: list[dict[str, Any]], year: Any) -> str:
+        year_int = SyllabusService._int_year(year)
+        if not year_int:
+            return ""
+        for source in sources:
+            if SyllabusService._int_year(source.get("year")) == year_int:
+                return str(source.get("id", ""))
+        return ""
+
+    @staticmethod
+    def _int_year(year: Any) -> int | None:
+        try:
+            return int(year)
+        except (TypeError, ValueError):
+            return None
 
     def _default_source(self, exam_id: str) -> dict[str, Any]:
         option = self._exam_option(exam_id)
@@ -742,6 +902,18 @@ class PastPaperService:
                 {"id": "translation", "label": "汉译英翻译", "description": "段落翻译，重视准确表达。"},
                 {"id": "writing", "label": "短文写作", "description": "观点论证、问题解决或图表表达。"},
                 {"id": "context_vocabulary", "label": "语境词汇", "description": "近义辨析、搭配和篇章词义。"},
+            ],
+        },
+        "cft4": {
+            "source_website": "https://cet.neea.edu.cn/",
+            "title_prefix": "大学法语四级",
+            "description": "CFT-4（大学法语四级）按听力、阅读、语法词汇、翻译和写作组织。",
+            "question_types": [
+                {"id": "listening", "label": "听力理解", "description": "对话、短文和信息判断。"},
+                {"id": "reading", "label": "阅读理解", "description": "篇章理解、细节定位和推断。"},
+                {"id": "grammar_vocabulary", "label": "语法词汇", "description": "词形、搭配、句法和语义辨析。"},
+                {"id": "translation", "label": "翻译表达", "description": "法汉互译和句意转换。"},
+                {"id": "writing", "label": "写作表达", "description": "短文、应用文或开放表达。"},
             ],
         },
         "cjt4": {

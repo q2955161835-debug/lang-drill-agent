@@ -12,7 +12,17 @@ from .config import PROJECT_ROOT
 from .utils import dumps
 
 
-BUILTIN_PAPER_EXAM_IDS = ["cet4", "cet6", "cjt4", "cjt6", "ielts", "toefl", "gaokao-english", "custom"]
+BUILTIN_PAPER_EXAM_IDS = [
+    "cet4",
+    "cet6",
+    "cft4",
+    "cjt4",
+    "cjt6",
+    "ielts",
+    "toefl",
+    "gaokao-english",
+    "custom",
+]
 TEXT_SUFFIXES = {".md", ".markdown", ".txt", ".csv"}
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".jp2", ".webp", ".gif", ".bmp"}
 MINERU_FLASH_SUFFIXES = IMAGE_SUFFIXES | {".pptx", ".xlsx"}
