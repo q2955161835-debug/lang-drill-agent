@@ -565,12 +565,6 @@ function normalizeModelConfig(config: ModelConfig | undefined) {
   };
 }
 
-function thinkingLevelLabel(config: ModelConfig) {
-  const current = config.thinking_level || "";
-  if (!current) return "未配置";
-  return config.thinking_level_options?.find((item) => item.id === current)?.label || current;
-}
-
 const personalityOptions = [
   { id: "none", label: "不使用人格", prompt: "不额外注入人格提示词，只按系统学习流程回复。" },
   { id: "warm", label: "热情开朗", prompt: "反馈积极，语气明亮，不夸张。" },
@@ -1311,7 +1305,6 @@ export default function App() {
                 ))}
               </select>
             )}
-            <span title="按当前模型配置写入原生 API 参数">当前：{thinkingLevelLabel({ ...modelConfig, thinking_level: quickThinkingLevel, thinking_level_options: quickThinkingOptions })}</span>
             <span title={currentModelVision ? "拖入图片会随消息发给当前模型" : "拖入图片会先调用 MinerU/本地 OCR 提取文本"}>图片：{currentModelVision ? "模型视觉" : "MinerU解析"}</span>
           </div>
           {composerAttachments.length > 0 && (
