@@ -16,7 +16,6 @@ DEFAULT_ENABLED_PERMISSION_IDS = [
     "web_search_import",
     "profile_exam",
     "context_settings",
-    "skills",
 ]
 
 
@@ -45,17 +44,14 @@ def test_agent_settings_permissions_default_enables_non_sensitive_and_save() -> 
 
     status = service.status()
     assert status["enabled_feature_ids"] == DEFAULT_ENABLED_PERMISSION_IDS
-    assert all(
-        feature["enabled"] is True
-        for feature in status["features"]
-        if not feature["sensitive"]
-    )
+    assert all(feature["enabled"] is True for feature in status["features"] if feature["default_enabled"])
+    assert next(feature for feature in status["features"] if feature["id"] == "skills")["enabled"] is False
     assert all(
         feature["enabled"] is False
         for feature in status["features"]
         if feature["sensitive"]
     )
-    assert [group["id"] for group in status["groups"]] == ["default_enabled", "sensitive"]
+    assert [group["id"] for group in status["groups"]] == ["default_enabled", "optional", "sensitive"]
 
     updated = service.save(["past_paper_import", "unknown", "model_config", "past_paper_import"])
     assert updated["enabled_feature_ids"] == ["past_paper_import", "model_config"]
@@ -64,7 +60,22 @@ def test_agent_settings_permissions_default_enables_non_sensitive_and_save() -> 
     assert service.is_enabled("unknown") is False
 
 
+def test_agent_permissions_legacy_rows_merge_new_defaults_without_skills() -> None:
+    conn = _settings_conn()
+    conn.execute(
+        """
+        INSERT INTO app_settings (key, value_json)
+        VALUES ('agent.settings.permissions', '{"enabled_feature_ids":[]}')
+        """
+    )
+    service = AgentSettingsPermissionService(conn)
+
+    assert service.status()["enabled_feature_ids"] == DEFAULT_ENABLED_PERMISSION_IDS
+    assert service.is_enabled("skills") is False
+
+
 def test_skill_registry_selects_no_key_web_search_skill(tmp_path: Path) -> None:
+    conn = _settings_conn()
     skill_dir = tmp_path / "multi-search-engine"
     skill_dir.mkdir()
     (skill_dir / "SKILL.md").write_text(
@@ -80,13 +91,22 @@ This skill does not require API keys.
         encoding="utf-8",
     )
 
-    status = SkillRegistryService([tmp_path]).status()
+    service = SkillRegistryService([tmp_path], conn=conn)
+    status = service.status()
 
     assert status["installed_count"] == 1
     assert status["web_search_skill"]["id"] == "multi-search-engine"
     assert status["web_search_skill"]["installed"] is True
+    assert status["web_search_skill"]["enabled"] is False
     assert status["web_search_skill"]["requires_api_key"] is False
     assert "multi-search-engine" in status["no_key_skill_ids"]
+
+    enabled = service.save_enabled("multi-search-engine", True)
+    assert enabled["enabled_skill_ids"] == ["multi-search-engine"]
+    assert enabled["web_search_skill"]["enabled"] is True
+
+    disabled = service.save_enabled("multi-search-engine", False)
+    assert disabled["enabled_skill_ids"] == []
 
 
 def test_agent_permissions_api_round_trip(tmp_path: Path, monkeypatch) -> None:
@@ -120,6 +140,30 @@ def test_skills_status_api_reports_recommended_no_key_skill(tmp_path: Path, monk
     assert status["web_search_skill"]["id"] == "multi-search-engine"
     assert status["web_search_skill"]["requires_api_key"] is False
     assert status["web_search_skill"]["requires_token"] is False
+    assert status["web_search_skill"]["enabled"] is False
+
+
+def test_skill_toggle_api_saves_enabled_state(tmp_path: Path, monkeypatch) -> None:
+    skills_root = tmp_path / "skills"
+    skill_dir = skills_root / "multi-search-engine"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: multi-search-engine\ndescription: No API keys.\n---\nThis skill does not require API keys.\n",
+        encoding="utf-8",
+    )
+    db_path = tmp_path / "skill-toggle.db"
+    monkeypatch.setenv("LANGDRILL_DB_PATH", str(db_path))
+    monkeypatch.setenv("LANGDRILL_SKILLS_ROOTS", str(skills_root))
+    init_db(db_path)
+    client = TestClient(_api_app())
+
+    enabled = client.post("/api/skills/enabled", json={"skill_id": "multi-search-engine", "enabled": True})
+    assert enabled.status_code == 200
+    assert enabled.json()["skills_status"]["enabled_skill_ids"] == ["multi-search-engine"]
+
+    disabled = client.post("/api/skills/enabled", json={"skill_id": "multi-search-engine", "enabled": False})
+    assert disabled.status_code == 200
+    assert disabled.json()["skills_status"]["enabled_skill_ids"] == []
 
 
 def test_chat_settings_requires_permission_then_returns_action(tmp_path: Path, monkeypatch) -> None:
@@ -195,7 +239,7 @@ def test_screenshot_import_permission_can_block_inline_database_write(tmp_path: 
     assert payload["active_question"] is None
 
 
-def test_search_import_requires_skills_permission(tmp_path: Path, monkeypatch) -> None:
+def test_search_import_requires_online_permission(tmp_path: Path, monkeypatch) -> None:
     db_path = tmp_path / "search-import-permission.db"
     monkeypatch.setenv("LANGDRILL_DB_PATH", str(db_path))
     monkeypatch.setenv("LANGDRILL_PAPER_ROOT", str(tmp_path / "papers"))
@@ -209,7 +253,7 @@ def test_search_import_requires_skills_permission(tmp_path: Path, monkeypatch) -
     )
     assert blocked.status_code == 403
 
-    client.post("/api/settings/agent-permissions", json={"enabled_feature_ids": ["skills", "web_search_import"]})
+    client.post("/api/settings/agent-permissions", json={"enabled_feature_ids": ["web_search_import"]})
     allowed = client.post(
         "/api/past-papers/search-import",
         json={"exam_id": "cet4", "source_website": "https://example.test/cet4"},

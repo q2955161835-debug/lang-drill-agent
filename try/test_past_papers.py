@@ -121,7 +121,9 @@ def test_past_papers_default_selects_recent_three_and_creates_files(tmp_path: Pa
         status = PastPaperService(conn).status("cet4")
 
     assert status["selected_paper_ids"] == ["paper_cet4_2025", "paper_cet4_2024", "paper_cet4_2023"]
+    assert status["source_website"] == "https://www.guojiya.cn/#exams"
     assert [paper["year"] for paper in status["current_papers"]] == [2025, 2024, 2023]
+    assert all(paper["source_url"] == "https://www.guojiya.cn/#exams" for paper in status["current_papers"])
     assert {item["id"] for item in status["question_types"]} >= {"listening", "reading", "translation", "writing"}
     first = status["current_papers"][0]["metadata"]
     assert Path(first["raw_path"]).exists()

@@ -10,7 +10,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - Web（网页）体验以三栏学习工作台为主：左侧学习状态，中间聊天与题目，右侧分支/手机映像/截图导入。
 - Web（网页）三栏边界必须可拖拽调整并持久化左右栏宽度；折叠侧栏或切换右侧工作台页签时不得卸载工作台内部状态，截图导入的待解析队列、解析状态和识别文本必须保留。
 - 模型配置支持默认四个真实供应商 OpenAI/GPT、Claude、DeepSeek（深度求索）、MiMo（小米米魔）和保存后才出现的自定义供应商；设置页可按当前 Base URL（基础网址）、API 格式和 API Key（接口密钥）从供应商模型列表接口自动获取可调用模型，并给每个模型维护聊天栏显示/隐藏开关，默认全部显示；聊天栏模型选择只暴露已启用、已配置 API Key 且未隐藏的真实供应商/模型，Mock Provider（本地模拟供应商）只保留给自动测试和离线调试。
-- 设置页必须维护 Agent 设置权限；截图导入、学习数据库写入、历年真题草稿、联网搜索导入、考试目标、上下文容量和 Skills（技能）等非敏感权限默认开启；模型配置、密钥、数据迁移、MinerU token 等敏感设置集中放在下方并默认关闭，开启后会话 Agent 也只能生成可确认草稿或打开对应设置动作，关键保存仍必须由用户确认执行。
+- 设置页必须维护 Agent 设置权限；截图导入、学习数据库写入、历年真题草稿、联网功能、考试目标和上下文容量等非敏感权限默认开启；Skills（技能）属于默认关闭的扩展权限，需在权限页开启后再到 Skills 页逐个启用具体技能；模型配置、密钥、数据迁移、MinerU token 等敏感设置集中放在下方并默认关闭，开启后会话 Agent 也只能生成可确认草稿或打开对应设置动作，关键保存仍必须由用户确认执行。
 - 设置页模型配置可声明当前模型是否具备视觉能力；聊天栏拖入图片时，具备视觉能力的模型直接接收图片附件，不具备视觉能力时前端必须走文件抽取链路交给 MinerU/RapidOCR（文档解析/本地文字识别）提取文本。
 - 思考等级必须跟随当前模型的原生 reasoning（推理）配置；禁止把思考等级降级为提示词控制。没有原生档位或未自定义添加档位的模型，不在聊天栏暴露思考等级选择；聊天栏只保留思考等级选择器作为当前思考状态入口，不额外显示“当前：开启”这类重复状态标签。切换模型时必须按新模型能力刷新档位；内置原生档位不得删除，用户新增的自定义档位可删除并自动回退到当前模型默认档位；不再提供手填自定义模型名入口，新模型必须来自供应商模型列表刷新或供应商默认模型配置。
 - OpenAI/GPT 官方 provider（供应商）可使用 Chat Completions（聊天补全）中的 `developer` role（角色）承载上下文；DeepSeek（深度求索）、本地模型和自定义 OpenAI-compatible（OpenAI 兼容）供应商必须只发送兼容的 `system`/`user` 消息，把上下文合并进 user 内容，避免供应商拒收 `developer` role。
@@ -25,7 +25,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - 右侧“截图导入”和设置页“手动导入试卷”必须支持拖拽文件和点击“选择文件”打开本机文件管理器：截图导入选择或拖入文件后进入待解析队列，支持多张图片/多个文件继续追加；只有用户点击“解析文本”后才抽取 OCR（文字识别）/文本并填入识别文本框；设置页主动加入试卷必须先点击“加入试卷”展开导入栏和详细信息，再选择/拖入试卷文件或填写文本；确认加入后上传到后端，保存到 `papers/<考试>/raw` 并生成 `papers/<考试>/parsed` 解析 JSON（JSON 数据交换格式）。
 - 答题提交后必须让 Evaluator Tutor（判题讲解 Agent）结合当前会话上下文、用户背景和程序判定生成个性化讲解；模型不可用时才回退基础判题，且不得丢失作答记录。刚答完的题目必须作为普通聊天回顾卡片保留，显示用户选择、正确答案和对错状态；只有当前待答题使用置顶/吸附题卡。
 - 聊天输入区需要展示当前上下文容量占用，默认上限 1,000,000 token（令牌），上下文容量上限设置放在设置页“模型”页签，令牌页只展示使用台账；支持主动压缩上下文；LLMLingua（提示词压缩库）作为可选增强，默认使用本地抽取式摘要兜底。
-- 内置系统提示词必须让模型知道 Lang Drill Agent 的真实功能和权限边界：可解释截图导入、主聊天词表/文件导入、题组生成、答题讲解、分支、联网搜索导入、Skills（技能）、设置草稿和上下文压缩；不得声称“无法访问题库”而忽略程序流程；模型配置、API Key（接口密钥）、MinerU token、数据库迁移和试卷保存仍必须由用户确认。
+- 内置系统提示词必须让模型知道 Lang Drill Agent 的真实功能和权限边界：可解释截图导入、主聊天词表/文件导入、题组生成、答题讲解、分支、联网来源、Skills（技能）、设置草稿和上下文压缩；不得声称“无法访问题库”而忽略程序流程；模型配置、API Key（接口密钥）、MinerU token、数据库迁移和试卷保存仍必须由用户确认。
 - 主聊天和右侧分支消息必须通过安全的 Markdown（标记语言）渲染组件展示基础格式，包括加粗、内联代码、列表、标题和代码块；禁止用不可信模型内容直接写入 HTML（超文本标记语言）。
 - 历年真题以 `exam_assets` 中的试卷记录和 `papers/<考试>/raw`、`papers/<考试>/parsed` 中的原始/解析资产为准，默认选择近 3 年真题；出题 Agent（智能体）必须参考当前选中的真题解析结果和已勾选题型，但不得复刻或长段引用完整真题原文。
 - 用户题目数据库支持自定义用户数据文件夹和迁移：模型生成给用户作答的题目、会话、作答、知识项和统计仍写入同一个 SQLite（轻量数据库）运行库；设置页“数据”页签和 CLI（命令行接口）可迁移当前库或初始化空库，Web（网页）设置页应提供本机文件夹选择按钮辅助填写目录。
@@ -50,8 +50,8 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - `backend/langdrill_agent/api.py`：FastAPI（Web API 框架）入口，负责 bootstrap（初始化加载）、chat（聊天学习）、branch（分支）、profile（用户档案）、model-config（模型配置）、MinerU 配置、exam/syllabus（考试与考纲）、phone-mirror（手机映像）、screenshot（截图导入）、文件文本抽取和数据路径选择接口。
 - `backend/langdrill_agent/cli.py`：命令行入口，提供 init（初始化）、serve（启动服务）、status（状态）、chat（终端聊天）、data-paths（数据路径）和 backup-user-data（备份用户数据）。
 - `backend/langdrill_agent/services.py`：学习状态机、题组推进、作答写入、掌握度更新、会话生命周期、Agent 设置权限、Skills（技能）状态、试卷导入草稿和业务编排。
-- `backend/langdrill_agent/services.py` 中的 `PastPaperService`：历年真题试卷资产、默认近三年选择、题型开关、手动导入、重新解析和联网搜索导入索引。
-- `backend/langdrill_agent/services.py` 中的 `SkillRegistryService`：发现本地 Skills（技能），当前推荐 `D:\2Folder\skills\multi-search-engine` 作为无需个人 API Key（接口密钥）或 token（令牌）的联网搜索导入技能。
+- `backend/langdrill_agent/services.py` 中的 `PastPaperService`：历年真题试卷资产、默认近三年选择、题型开关、手动导入和重新解析；英语四/六级默认真题来源网站为 `https://www.guojiya.cn/#exams`。
+- `backend/langdrill_agent/services.py` 中的 `SkillRegistryService`：发现本地 Skills（技能）并维护单个 Skill 开启/关闭状态；默认不启用任何 Skill。
 - `backend/langdrill_agent/paper_assets.py`：历年真题目录、原始文件保存、PDF（Portable Document Format，便携式文档格式）/DOCX（Word 文档格式）/Markdown（Markdown 文本格式）/图片文件文本抽取、解析 JSON（JSON 数据交换格式）生成和短摘录提取；配置 `MINERU_TOKEN` 时使用 MinerU 精准解析，否则使用 MinerU 轻量解析；图片 OCR（文字识别）失败时回退 RapidOCR（本地文字识别），复杂文档依赖可选 MinerU CLI。
 - `backend/langdrill_agent/learning_stats.py`：长期学习统计服务，按当前考试聚合题目完成、词汇掌握和整体正确率。
 - `backend/langdrill_agent/context.py`：上下文容量、会话上下文快照、主动压缩、使用统计和 token（令牌）统计口径。
