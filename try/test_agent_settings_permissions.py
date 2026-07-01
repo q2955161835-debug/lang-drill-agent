@@ -45,7 +45,7 @@ def test_agent_settings_permissions_default_enables_non_sensitive_and_save() -> 
     status = service.status()
     assert status["enabled_feature_ids"] == DEFAULT_ENABLED_PERMISSION_IDS
     assert all(feature["enabled"] is True for feature in status["features"] if feature["default_enabled"])
-    assert next(feature for feature in status["features"] if feature["id"] == "skills")["enabled"] is False
+    assert all(feature["id"] != "skills" for feature in status["features"])
     custom_models = next(feature for feature in status["features"] if feature["id"] == "custom_models")
     assert custom_models["enabled"] is False
     assert custom_models["sensitive"] is True
@@ -54,7 +54,7 @@ def test_agent_settings_permissions_default_enables_non_sensitive_and_save() -> 
         for feature in status["features"]
         if feature["sensitive"]
     )
-    assert [group["id"] for group in status["groups"]] == ["default_enabled", "optional", "sensitive"]
+    assert [group["id"] for group in status["groups"]] == ["default_enabled", "sensitive"]
 
     updated = service.save(["past_paper_import", "unknown", "model_config", "past_paper_import"])
     assert updated["enabled_feature_ids"] == ["past_paper_import", "model_config"]
@@ -63,17 +63,31 @@ def test_agent_settings_permissions_default_enables_non_sensitive_and_save() -> 
     assert service.is_enabled("unknown") is False
 
 
-def test_agent_permissions_legacy_rows_merge_new_defaults_without_skills() -> None:
+def test_agent_permissions_legacy_rows_merge_new_defaults_and_drop_skills() -> None:
     conn = _settings_conn()
     conn.execute(
         """
         INSERT INTO app_settings (key, value_json)
-        VALUES ('agent.settings.permissions', '{"enabled_feature_ids":[]}')
+        VALUES ('agent.settings.permissions', '{"enabled_feature_ids":["skills"]}')
         """
     )
     service = AgentSettingsPermissionService(conn)
 
     assert service.status()["enabled_feature_ids"] == DEFAULT_ENABLED_PERMISSION_IDS
+    assert service.is_enabled("skills") is False
+
+
+def test_agent_permissions_current_rows_drop_removed_skills_feature() -> None:
+    conn = _settings_conn()
+    conn.execute(
+        """
+        INSERT INTO app_settings (key, value_json)
+        VALUES ('agent.settings.permissions', '{"version":2,"enabled_feature_ids":["skills","model_config"]}')
+        """
+    )
+    service = AgentSettingsPermissionService(conn)
+
+    assert service.status()["enabled_feature_ids"] == ["model_config"]
     assert service.is_enabled("skills") is False
 
 

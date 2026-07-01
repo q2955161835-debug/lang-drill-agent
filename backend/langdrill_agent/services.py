@@ -77,13 +77,6 @@ class AgentSettingsPermissionService:
             "default_enabled": True,
         },
         {
-            "id": "skills",
-            "label": "Skills 功能",
-            "description": "允许会话 Agent 使用已启用的本地 Skills 扩展能力；默认关闭，需要单独授权。",
-            "sensitive": False,
-            "default_enabled": False,
-        },
-        {
             "id": "model_config",
             "label": "模型供应商与默认模型",
             "description": "允许会话 Agent 帮助填写模型供应商、模型名、Base URL（基础网址）和能力开关。",
@@ -125,38 +118,39 @@ class AgentSettingsPermissionService:
             }
             for feature in self.FEATURES
         ]
+        groups = [
+            {
+                "id": "default_enabled",
+                "label": "默认开启的能力权限",
+                "feature_ids": [
+                    feature["id"]
+                    for feature in self.FEATURES
+                    if not bool(feature.get("sensitive")) and bool(feature.get("default_enabled"))
+                ],
+            },
+            {
+                "id": "optional",
+                "label": "默认关闭的扩展权限",
+                "feature_ids": [
+                    feature["id"]
+                    for feature in self.FEATURES
+                    if not bool(feature.get("sensitive")) and not bool(feature.get("default_enabled"))
+                ],
+            },
+            {
+                "id": "sensitive",
+                "label": "敏感设置权限",
+                "feature_ids": [
+                    feature["id"]
+                    for feature in self.FEATURES
+                    if bool(feature.get("sensitive"))
+                ],
+            },
+        ]
         return {
             "features": features,
             "enabled_feature_ids": [feature["id"] for feature in self.FEATURES if feature["id"] in enabled_ids],
-            "groups": [
-                {
-                    "id": "default_enabled",
-                    "label": "默认开启的能力权限",
-                    "feature_ids": [
-                        feature["id"]
-                        for feature in self.FEATURES
-                        if not bool(feature.get("sensitive")) and bool(feature.get("default_enabled"))
-                    ],
-                },
-                {
-                    "id": "optional",
-                    "label": "默认关闭的扩展权限",
-                    "feature_ids": [
-                        feature["id"]
-                        for feature in self.FEATURES
-                        if not bool(feature.get("sensitive")) and not bool(feature.get("default_enabled"))
-                    ],
-                },
-                {
-                    "id": "sensitive",
-                    "label": "敏感设置权限",
-                    "feature_ids": [
-                        feature["id"]
-                        for feature in self.FEATURES
-                        if bool(feature.get("sensitive"))
-                    ],
-                },
-            ],
+            "groups": [group for group in groups if group["feature_ids"]],
         }
 
     def save(self, enabled_feature_ids: list[str]) -> dict[str, Any]:
@@ -187,11 +181,12 @@ class AgentSettingsPermissionService:
             return self._default_enabled_feature_ids()
         data = loads(row["value_json"], {})
         stored_ids = [str(item) for item in data.get("enabled_feature_ids", []) if str(item).strip()]
+        allowed = {feature["id"] for feature in self.FEATURES}
         if data.get("version") == self.SETTINGS_VERSION:
-            return stored_ids
+            return [feature_id for feature_id in stored_ids if feature_id in allowed]
         merged_ids = []
         for feature_id in [*self._default_enabled_feature_ids(), *stored_ids]:
-            if feature_id not in merged_ids:
+            if feature_id in allowed and feature_id not in merged_ids:
                 merged_ids.append(feature_id)
         return merged_ids
 
@@ -294,7 +289,7 @@ class SkillRegistryService:
             "no_key_skill_ids": no_key_skill_ids,
             "builtin_web_search": builtin_web_search,
             "web_search_skill": web_search_skill,
-            "permission_feature_id": "skills",
+            "permission_feature_id": "skill_toggles",
             "web_search_permission_feature_id": "web_search_import",
             "message": "内置联网检索独立于 Skills；multi-search-engine 仅作为可选搜索 URL 辅助技能，默认不启用。",
         }

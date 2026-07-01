@@ -518,16 +518,17 @@ const DEFAULT_AGENT_PERMISSIONS: AgentSettingsPermissionsStatus = {
       default_enabled: true
     },
     {
-      id: "skills",
-      label: "Skills 功能",
-      description: "允许会话 Agent 使用已启用的本地 Skills 扩展能力；默认关闭，需要单独授权。",
-      enabled: false,
-      default_enabled: false
-    },
-    {
       id: "model_config",
       label: "模型供应商与默认模型",
       description: "允许会话 Agent 帮助填写模型供应商、模型名、Base URL（基础网址）和能力开关。",
+      enabled: false,
+      sensitive: true,
+      default_enabled: false
+    },
+    {
+      id: "custom_models",
+      label: "配置自定义模型",
+      description: "允许会话 Agent 帮助整理自定义模型草稿；添加、删除和保存仍需用户在设置页确认。",
       enabled: false,
       sensitive: true,
       default_enabled: false
@@ -563,11 +564,6 @@ const DEFAULT_AGENT_PERMISSIONS: AgentSettingsPermissionsStatus = {
       ]
     },
     {
-      id: "optional",
-      label: "默认关闭的扩展权限",
-      feature_ids: ["skills"]
-    },
-    {
       id: "sensitive",
       label: "敏感设置权限",
       feature_ids: ["model_config", "custom_models", "data_paths", "mineru_config"]
@@ -581,7 +577,7 @@ const DEFAULT_SKILLS_STATUS: SkillsStatus = {
   installed_count: 0,
   enabled_skill_ids: [],
   no_key_skill_ids: [],
-  permission_feature_id: "skills",
+  permission_feature_id: "skill_toggles",
   web_search_permission_feature_id: "web_search_import",
   builtin_web_search: {
     id: "builtin-web-search",
@@ -3927,7 +3923,7 @@ function SettingsDialog({
             )}
             {activeSettingsTab === "skills" && (
               <SettingSection title="Skills 功能">
-                <p className="hint">Skills 默认关闭；需要先在权限页开启「Skills 功能」，再在这里逐个启用具体 Skill。联网功能是独立权限，默认开启。</p>
+                <p className="hint">每个本地 Skill 都有独立开关，默认关闭；联网功能是独立权限，默认开启，不受本地 Skills 开关影响。</p>
                 <div className="skill-highlight">
                   <div>
                     <strong>{skillsDraft.builtin_web_search.label || "内置联网检索"}</strong>
