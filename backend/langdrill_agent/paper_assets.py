@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,7 @@ BUILTIN_PAPER_EXAM_IDS = [
 TEXT_SUFFIXES = {".md", ".markdown", ".txt", ".csv"}
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".jp2", ".webp", ".gif", ".bmp"}
 MINERU_FLASH_SUFFIXES = IMAGE_SUFFIXES | {".pptx", ".xlsx"}
+_RAPIDOCR_ENGINE: Any | None = None
 
 
 def paper_root() -> Path:
@@ -105,6 +107,8 @@ def extract_text_from_file(path: Path, *, language: str = "ch") -> tuple[str, st
         return _extract_pdf_text(path, language=language)
     if suffix == ".docx":
         return _extract_docx_text(path)
+    if suffix in IMAGE_SUFFIXES:
+        return _extract_image_text(path, language=language)
     if suffix in MINERU_FLASH_SUFFIXES:
         return _extract_with_mineru_flash(path, language=language)
     raise RuntimeError(f"暂不支持解析 {suffix or '无扩展名'} 文件，请先转换为 Markdown/TXT/PDF/DOCX 或图片。")
@@ -127,20 +131,75 @@ def _extract_pdf_text(path: Path, *, language: str) -> tuple[str, str]:
         raise RuntimeError(f"PDF 解析失败：{exc}") from exc
 
 
+def _extract_image_text(path: Path, *, language: str) -> tuple[str, str]:
+    mineru_error = ""
+    try:
+        return _extract_with_mineru_flash(path, language=language)
+    except RuntimeError as exc:
+        mineru_error = str(exc)
+    try:
+        return _extract_with_rapidocr_image(path)
+    except RuntimeError as exc:
+        raise RuntimeError(f"图片 OCR 失败：{mineru_error}；RapidOCR 失败：{exc}") from exc
+
+
 def _extract_with_mineru_flash(path: Path, *, language: str) -> tuple[str, str]:
     mineru = shutil.which("mineru-open-api")
     if not mineru:
         raise RuntimeError("图片或复杂文档解析需要安装 MinerU CLI：npm install -g mineru-open-api。")
-    result = subprocess.run(
-        [mineru, "flash-extract", str(path), "--language", language],
-        capture_output=True,
-        text=True,
-        timeout=900,
-        check=False,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"MinerU 解析失败：{result.stderr.strip()[:300]}")
-    return result.stdout, "mineru-open-api flash-extract"
+    attempts = 2
+    last_error = ""
+    for attempt in range(1, attempts + 1):
+        result = subprocess.run(
+            [mineru, "flash-extract", str(path), "--language", language],
+            capture_output=True,
+            text=True,
+            timeout=900,
+            check=False,
+        )
+        if result.returncode == 0:
+            return result.stdout, "mineru-open-api flash-extract"
+        last_error = result.stderr.strip()[:300] or result.stdout.strip()[:300]
+        if attempt < attempts and _should_retry_mineru_error(last_error):
+            time.sleep(1.5)
+            continue
+        break
+    raise RuntimeError(f"MinerU 解析失败：{last_error}")
+
+
+def _should_retry_mineru_error(message: str) -> bool:
+    lower = message.lower()
+    retry_markers = ["eof", "timeout", "timed out", "temporarily", "connection reset"]
+    return any(marker in lower for marker in retry_markers)
+
+
+def _extract_with_rapidocr_image(path: Path) -> tuple[str, str]:
+    engine = _rapidocr_engine()
+    try:
+        result, _elapsed = engine(str(path))
+    except Exception as exc:
+        raise RuntimeError(f"RapidOCR 解析失败：{exc}") from exc
+    lines = []
+    for item in result or []:
+        if len(item) < 2:
+            continue
+        text = str(item[1]).strip()
+        if text:
+            lines.append(text)
+    if not lines:
+        raise RuntimeError("RapidOCR 未识别到文本。")
+    return "\n".join(lines), "rapidocr-onnxruntime"
+
+
+def _rapidocr_engine() -> Any:
+    global _RAPIDOCR_ENGINE
+    if _RAPIDOCR_ENGINE is None:
+        try:
+            from rapidocr_onnxruntime import RapidOCR  # type: ignore
+        except Exception as exc:
+            raise RuntimeError("本地 RapidOCR 不可用，请安装 rapidocr-onnxruntime。") from exc
+        _RAPIDOCR_ENGINE = RapidOCR()
+    return _RAPIDOCR_ENGINE
 
 
 def _extract_docx_text(path: Path) -> tuple[str, str]:

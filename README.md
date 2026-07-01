@@ -190,13 +190,13 @@ pip install -e .[context-compression]
 pip install -e .[paper-parsing]
 ```
 
-内置解析器优先处理 Markdown（Markdown 文本格式）/TXT（纯文本格式）；安装增强依赖后可解析 PDF（Portable Document Format，便携式文档格式）和 DOCX（Word 文档格式）。若本机安装 MinerU CLI（MinerU 命令行工具），PDF 文本抽取失败时会尝试 `mineru-open-api flash-extract`：
+内置解析器优先处理 Markdown（Markdown 文本格式）/TXT（纯文本格式）；安装增强依赖后可解析 PDF（Portable Document Format，便携式文档格式）、DOCX（Word 文档格式）和图片本地 OCR（文字识别）。若本机安装 MinerU CLI（MinerU 命令行工具），PDF 文本抽取失败时会尝试 `mineru-open-api flash-extract`：
 
 ```powershell
 npm install -g mineru-open-api
 ```
 
-拖拽上传的试卷文件和截图文件会先走后端文本抽取；TXT（纯文本格式）/Markdown（Markdown 文本格式）直接读取，PDF（便携式文档格式）优先使用 `pypdf`，DOCX（Word 文档格式）使用 `python-docx`，图片、PPTX（PowerPoint 文档格式）和 XLSX（Excel 工作簿格式）依赖可选 MinerU CLI（MinerU 命令行工具）。解析结果只保留组卷需要的章节、题型、短摘录、摘要、来源和路径。
+拖拽上传的试卷文件和截图文件会先走后端文本抽取；TXT（纯文本格式）/Markdown（Markdown 文本格式）直接读取，PDF（便携式文档格式）优先使用 `pypdf`，DOCX（Word 文档格式）使用 `python-docx`，图片优先使用 MinerU CLI（MinerU 命令行工具）并在失败时回退到 RapidOCR（本地文字识别），PPTX（PowerPoint 文档格式）和 XLSX（Excel 工作簿格式）仍依赖可选 MinerU CLI。解析结果只保留组卷需要的章节、题型、短摘录、摘要、来源和路径。
 
 聊天栏快捷模型选择只显示已启用且已配置 API Key（接口密钥）的真实供应商；没有添加的自定义供应商不会暴露。模型名称在网页里同时提供供应商常见模型选项和自定义填写项。thinking level（思考等级）跟随当前模型配置，写入模型 API（接口）的原生 reasoning（推理）参数；没有原生档位且未自定义添加档位的模型不显示思考等级选择。
 

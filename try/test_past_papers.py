@@ -186,6 +186,90 @@ def test_extract_text_endpoint_reads_uploaded_text_file() -> None:
     assert "collision" in payload["text"]
 
 
+def test_extract_text_endpoint_rejects_empty_upload() -> None:
+    client = TestClient(_api_app())
+    response = client.post(
+        "/api/files/extract-text",
+        params={"filename": "empty.txt"},
+        content=b"",
+        headers={"content-type": "text/plain"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "上传文件为空。"
+
+
+def test_extract_text_endpoint_reports_parser_error_without_500(monkeypatch) -> None:
+    import langdrill_agent.api as api_module
+
+    def fail_extract(path: Path, *, language: str = "ch") -> tuple[str, str]:
+        raise RuntimeError("MinerU 解析失败：download markdown EOF")
+
+    monkeypatch.setattr(api_module, "extract_text_from_file", fail_extract)
+
+    client = TestClient(_api_app())
+    response = client.post(
+        "/api/files/extract-text",
+        params={"filename": "words.png"},
+        content=b"not-a-real-image",
+        headers={"content-type": "image/png"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "MinerU 解析失败：download markdown EOF"
+
+
+def test_mineru_flash_retries_transient_download_errors(tmp_path: Path, monkeypatch) -> None:
+    import langdrill_agent.paper_assets as paper_assets
+
+    class MineruResult:
+        def __init__(self, returncode: int, stderr: str = "", stdout: str = "") -> None:
+            self.returncode = returncode
+            self.stderr = stderr
+            self.stdout = stdout
+
+    calls = {"count": 0}
+
+    def fake_run(*args, **kwargs) -> MineruResult:
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return MineruResult(1, stderr='Error: download markdown: Get "full.md": EOF')
+        return MineruResult(0, stdout="collision: 碰撞；冲突")
+
+    monkeypatch.setattr(paper_assets.shutil, "which", lambda name: "mineru-open-api")
+    monkeypatch.setattr(paper_assets.subprocess, "run", fake_run)
+    monkeypatch.setattr(paper_assets.time, "sleep", lambda seconds: None)
+    image_path = tmp_path / "words.png"
+    image_path.write_bytes(b"fake-image")
+
+    text, parser = paper_assets._extract_with_mineru_flash(image_path, language="ch")
+
+    assert calls["count"] == 2
+    assert parser == "mineru-open-api flash-extract"
+    assert "collision" in text
+
+
+def test_image_text_extract_falls_back_to_rapidocr(tmp_path: Path, monkeypatch) -> None:
+    import langdrill_agent.paper_assets as paper_assets
+
+    def fail_mineru(path: Path, *, language: str) -> tuple[str, str]:
+        raise RuntimeError("MinerU 解析失败：download markdown EOF")
+
+    monkeypatch.setattr(paper_assets, "_extract_with_mineru_flash", fail_mineru)
+    monkeypatch.setattr(
+        paper_assets,
+        "_extract_with_rapidocr_image",
+        lambda path: ("collision: 碰撞；冲突", "rapidocr-onnxruntime"),
+    )
+    image_path = tmp_path / "words.png"
+    image_path.write_bytes(b"fake-image")
+
+    text, parser = paper_assets.extract_text_from_file(image_path)
+
+    assert parser == "rapidocr-onnxruntime"
+    assert "collision" in text
+
+
 def test_past_paper_file_upload_imports_and_parses_text_file(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("LANGDRILL_PAPER_ROOT", str(tmp_path / "paper-assets"))
     db_path = tmp_path / "uploaded-paper.db"

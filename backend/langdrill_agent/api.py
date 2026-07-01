@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi import HTTPException
 from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -199,10 +200,10 @@ def _safe_upload_filename(filename: str) -> str:
 async def _uploaded_file_to_temp(request: Request, *, filename: str) -> tuple[tempfile.TemporaryDirectory, Path, int]:
     data = await request.body()
     if not data:
-        raise ValueError("上传文件为空。")
+        raise HTTPException(status_code=400, detail="上传文件为空。")
     max_bytes = 25 * 1024 * 1024
     if len(data) > max_bytes:
-        raise ValueError("上传文件不能超过 25MB。")
+        raise HTTPException(status_code=413, detail="上传文件不能超过 25MB。")
     temp_dir = tempfile.TemporaryDirectory(prefix="langdrill-upload-")
     path = Path(temp_dir.name) / _safe_upload_filename(filename)
     path.write_bytes(data)
@@ -217,7 +218,10 @@ async def _extract_uploaded_file_text(
 ) -> dict:
     temp_dir, path, size = await _uploaded_file_to_temp(request, filename=filename)
     try:
-        text, parser = extract_text_from_file(path, language=language)
+        try:
+            text, parser = extract_text_from_file(path, language=language)
+        except (OSError, RuntimeError, UnicodeDecodeError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {
             "filename": filename or path.name,
             "text": text,
