@@ -86,7 +86,12 @@ export function RightWorkbench({
           onKeyDown={onResizeKeyDown}
         />
       )}
-      <button className="right-toggle" onClick={onToggle} title="展开右侧工作台">
+      <button
+        className="right-toggle"
+        onClick={onToggle}
+        title={open ? "收起右侧工作台" : "展开右侧工作台"}
+        aria-label={open ? "收起右侧工作台" : "展开右侧工作台"}
+      >
         {open ? <CaretRight size={18} /> : <CaretLeft size={18} />}
       </button>
       <div className="workbench-panel" hidden={!open} aria-hidden={!open}>
