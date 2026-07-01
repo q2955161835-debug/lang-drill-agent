@@ -53,6 +53,7 @@ import type {
   SyllabusStatus,
   ThemeMode,
   ThinkingLevel,
+  ThinkingLevelOption,
   TokenUsage
 } from "./types";
 
@@ -694,6 +695,34 @@ function defaultThinkingLevelForModel(provider: ProviderOption, modelId: string)
   return model?.reasoning?.default_level || model?.reasoning?.levels?.[0]?.id || "";
 }
 
+function defaultThinkingLevelFromOptions(options: ThinkingLevelOption[], fallback = "") {
+  if (!options.length) return "";
+  if (fallback && options.some((option) => option.id === fallback)) return fallback;
+  return options[0]?.id || "";
+}
+
+function thinkingLevelForOptions(options: ThinkingLevelOption[], value: string | undefined, fallback = "") {
+  if (!options.length) return "";
+  if (value && options.some((option) => option.id === value)) return value;
+  return defaultThinkingLevelFromOptions(options, fallback);
+}
+
+function modelThinkingSelection(provider: ProviderOption, modelId: string, value: string | undefined) {
+  const options = thinkingOptionsForModel(provider, modelId);
+  return {
+    options,
+    level: thinkingLevelForOptions(options, value, defaultThinkingLevelForModel(provider, modelId))
+  };
+}
+
+function slugifyThinkingLevelId(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-z0-9_\-\u4e00-\u9fa5]/g, "");
+}
+
 function modelSupportsVision(provider: ProviderOption, modelId: string) {
   const model = modelOptionsFor(provider, modelId).find((option) => option.id === modelId);
   return Boolean(model?.vision);
@@ -838,13 +867,16 @@ export default function App() {
   const quickProvider = selectedProvider(quickProviders, quickProviderId);
   const quickCurrentModel = quickProvider.id === modelConfig.provider_id ? modelConfig.model : quickProvider.model;
   const quickModelOptions = modelOptionsFor(quickProvider, quickCurrentModel);
-  const quickThinkingOptions = quickProvider.id === modelConfig.provider_id
-    ? modelConfig.thinking_level_options || []
-    : thinkingOptionsForModel(quickProvider, quickCurrentModel);
-  const quickThinkingLevel = quickProvider.id === modelConfig.provider_id
-    ? modelConfig.thinking_level || ""
-    : defaultThinkingLevelForModel(quickProvider, quickCurrentModel);
-  const currentModelVision = Boolean(modelConfig.vision);
+  const quickThinkingSelection = modelThinkingSelection(
+    quickProvider,
+    quickCurrentModel,
+    quickProvider.id === modelConfig.provider_id ? modelConfig.thinking_level : undefined
+  );
+  const quickThinkingOptions = quickThinkingSelection.options;
+  const quickThinkingLevel = quickThinkingSelection.level;
+  const currentModelVision = quickProvider.id === modelConfig.provider_id && quickCurrentModel === modelConfig.model
+    ? Boolean(modelConfig.vision)
+    : modelSupportsVision(quickProvider, quickCurrentModel);
   const appShellStyle = {
     "--left-rail-width": `${panelSizes.left}px`,
     "--right-rail-width": `${panelSizes.right}px`
@@ -1241,12 +1273,19 @@ export default function App() {
   }, []);
 
   const saveQuickModelConfig = useCallback(async (nextConfig: ModelConfig) => {
+    const nextProvider = selectedProvider(providers, nextConfig.provider_id);
+    const nextThinkingOptions = thinkingOptionsForModel(nextProvider, nextConfig.model);
+    const nextThinkingLevel = thinkingLevelForOptions(
+      nextThinkingOptions,
+      nextConfig.thinking_level,
+      defaultThinkingLevelForModel(nextProvider, nextConfig.model)
+    );
     const data = await apiPost<{ model_config: ModelConfig; providers?: ProviderOption[] }>("/api/model-config", {
       provider_id: nextConfig.provider_id,
       base_url: nextConfig.base_url,
       model: nextConfig.model,
-      thinking_level: nextConfig.thinking_level || "",
-      thinking_level_options: nextConfig.thinking_level_options || [],
+      thinking_level: nextThinkingLevel,
+      thinking_level_options: nextThinkingOptions,
       api_format: nextConfig.api_format || "",
       vision: Boolean(nextConfig.vision)
     });
@@ -1254,7 +1293,7 @@ export default function App() {
     if (data.providers) {
       setProviders(normalizeProviders(data.providers));
     }
-  }, []);
+  }, [providers]);
 
   const toggleDate = useCallback((date: string) => {
     setExpandedDates((current) => ({ ...current, [date]: !current[date] }));
@@ -2078,6 +2117,9 @@ function SettingsDialog({
     base_url: "",
     default_model: ""
   });
+  const [thinkingLevelFormOpen, setThinkingLevelFormOpen] = useState(false);
+  const [thinkingLevelDraft, setThinkingLevelDraft] = useState({ label: "", api_value: "" });
+  const [thinkingLevelError, setThinkingLevelError] = useState("");
   const [appearanceDraft, setAppearanceDraft] = useState({ themeMode, fontSize });
   const [reviewIntensity, setReviewIntensity] = useState(3);
   const [saveState, setSaveState] = useState("");
@@ -2122,7 +2164,14 @@ function SettingsDialog({
   });
   const provider = selectedProvider(providers, modelDraft.provider_id);
   const modelOptions = modelOptionsFor(provider, modelDraft.model);
-  const modelThinkingOptions = modelDraft.thinking_level_options || thinkingOptionsForModel(provider, modelDraft.model);
+  const modelThinkingOptions = modelDraft.thinking_level_options?.length
+    ? modelDraft.thinking_level_options
+    : thinkingOptionsForModel(provider, modelDraft.model);
+  const selectedModelThinkingLevel = thinkingLevelForOptions(
+    modelThinkingOptions,
+    modelDraft.thinking_level,
+    defaultThinkingLevelForModel(provider, modelDraft.model)
+  );
   const applyPaperDraftToForm = useCallback((draft: PastPaperDraft, message: string) => {
     setActiveSettingsTab("syllabus");
     setPaperImportOpen(true);
@@ -2160,6 +2209,9 @@ function SettingsDialog({
       vision: modelSupportsVision(nextProvider, nextModel)
     });
     setCustomModel("");
+    setThinkingLevelFormOpen(false);
+    setThinkingLevelDraft({ label: "", api_value: "" });
+    setThinkingLevelError("");
   };
   const chooseModel = (modelId: string) => {
     const nextThinkingOptions = thinkingOptionsForModel(provider, modelId);
@@ -2170,6 +2222,9 @@ function SettingsDialog({
       thinking_level_options: nextThinkingOptions,
       vision: modelSupportsVision(provider, modelId)
     });
+    setThinkingLevelFormOpen(false);
+    setThinkingLevelDraft({ label: "", api_value: "" });
+    setThinkingLevelError("");
   };
   const chooseExam = async (examId: string) => {
     const option = examOptions.find((item) => item.id === examId) || examOptions[0];
@@ -2392,10 +2447,17 @@ function SettingsDialog({
   };
   const saveModelConfig = async (successMessage = "模型配置已保存。如有自定义 URL/模型将永久应用于此提供商。") => {
     const finalModel = customModel.trim() || modelDraft.model;
+    const finalThinkingOptions = finalModel === modelDraft.model ? modelThinkingOptions : thinkingOptionsForModel(provider, finalModel);
+    const finalThinkingLevel = thinkingLevelForOptions(
+      finalThinkingOptions,
+      modelDraft.thinking_level,
+      defaultThinkingLevelForModel(provider, finalModel)
+    );
     const data = await apiPost<{ model_config: ModelConfig; providers?: ProviderOption[] }>("/api/model-config", {
       ...modelDraft,
       model: finalModel,
-      thinking_level_options: modelDraft.thinking_level_options || []
+      thinking_level: finalThinkingLevel,
+      thinking_level_options: finalThinkingOptions
     });
     onModelConfigChange(data.model_config);
     if (data.providers) {
@@ -2405,10 +2467,17 @@ function SettingsDialog({
   };
   const saveDefaultModelConfig = async () => {
     const finalModel = customModel.trim() || modelDraft.model;
+    const finalThinkingOptions = finalModel === modelDraft.model ? modelThinkingOptions : thinkingOptionsForModel(provider, finalModel);
+    const finalThinkingLevel = thinkingLevelForOptions(
+      finalThinkingOptions,
+      modelDraft.thinking_level,
+      defaultThinkingLevelForModel(provider, finalModel)
+    );
     const data = await apiPost<{ model_config: ModelConfig; providers?: ProviderOption[] }>("/api/model-config/default", {
       ...modelDraft,
       model: finalModel,
-      thinking_level_options: modelDraft.thinking_level_options || []
+      thinking_level: finalThinkingLevel,
+      thinking_level_options: finalThinkingOptions
     });
     onModelConfigChange(data.model_config);
     if (data.providers) {
@@ -2499,24 +2568,59 @@ function SettingsDialog({
       setCustomProviderSaving(false);
     }
   };
+  const openThinkingLevelForm = () => {
+    setThinkingLevelFormOpen(true);
+    setThinkingLevelError("");
+    setSaveState("");
+  };
+  const cancelThinkingLevelForm = () => {
+    setThinkingLevelFormOpen(false);
+    setThinkingLevelDraft({ label: "", api_value: "" });
+    setThinkingLevelError("");
+  };
   const handleAddThinkingLevel = () => {
-    const label = window.prompt("请输入思考等级显示名称，例如：极高、最高、开启：");
-    if (!label?.trim()) return;
-    const apiValue = window.prompt("请输入该等级传给 API（接口）的原生值，例如：xhigh、max、high、enabled；留空表示关闭或自动：") || "";
-    const rawId = apiValue.trim() || label.trim();
-    const id = rawId
-      .toLowerCase()
-      .replace(/\s+/g, "_")
-      .replace(/[^a-z0-9_\-\u4e00-\u9fa5]/g, "");
-    if (!id) return;
-    const currentOptions = modelThinkingOptions.filter((option) => option.id !== id);
-    const nextOptions = [...currentOptions, { id, label: label.trim(), api_value: apiValue.trim() }];
+    const label = thinkingLevelDraft.label.trim();
+    const apiValue = thinkingLevelDraft.api_value.trim();
+    if (!label) {
+      setThinkingLevelError("请填写显示名称。");
+      return;
+    }
+    const id = slugifyThinkingLevelId(apiValue || label);
+    if (!id) {
+      setThinkingLevelError("思考等级标识无效，请换一个名称或原生值。");
+      return;
+    }
+    if (modelThinkingOptions.some((option) => option.id === id)) {
+      setThinkingLevelError("当前模型已有同名思考等级。");
+      return;
+    }
+    const nextOptions = [...modelThinkingOptions, { id, label, api_value: apiValue, custom: true }];
     setModelDraft({
       ...modelDraft,
       thinking_level: id,
       thinking_level_options: nextOptions
     });
-    setSaveState("已加入当前模型的思考等级，保存模型配置后生效。");
+    setThinkingLevelDraft({ label: "", api_value: "" });
+    setThinkingLevelFormOpen(false);
+    setThinkingLevelError("");
+    setSaveState("已加入当前模型的自定义思考等级，保存模型配置后生效。");
+  };
+  const handleRemoveThinkingLevel = (optionId: string) => {
+    const target = modelThinkingOptions.find((option) => option.id === optionId);
+    if (!target?.custom) return;
+    const nextOptions = modelThinkingOptions.filter((option) => option.id !== optionId);
+    const nextLevel = thinkingLevelForOptions(
+      nextOptions,
+      modelDraft.thinking_level === optionId ? "" : modelDraft.thinking_level,
+      defaultThinkingLevelForModel(provider, modelDraft.model)
+    );
+    setModelDraft({
+      ...modelDraft,
+      thinking_level: nextLevel,
+      thinking_level_options: nextOptions
+    });
+    setThinkingLevelError("");
+    setSaveState("已删除自定义思考等级，保存模型配置后生效。");
   };
   const resetDefaults = async () => {
     if (!window.confirm("确认恢复默认设置？模型、个性化、学习目标和自定义提供商会恢复默认，学习会话不会删除。")) return;
@@ -2768,18 +2872,67 @@ function SettingsDialog({
                   </div>
                   {mineruMessage && <p className="hint strong-hint">{mineruMessage}</p>}
                 </div>
-                <div className="inline-row">
-                  {modelThinkingOptions.length > 0 && (
-                    <select
-                      value={modelDraft.thinking_level || defaultThinkingLevelForModel(provider, modelDraft.model)}
-                      onChange={(event) => setModelDraft({ ...modelDraft, thinking_level: event.target.value as ThinkingLevel })}
-                    >
-                      {modelThinkingOptions.map((option) => (
-                        <option key={option.id} value={option.id}>思考等级：{option.label}</option>
+                <div className="reasoning-config">
+                  <div className="inline-row">
+                    {modelThinkingOptions.length > 0 ? (
+                      <select
+                        value={selectedModelThinkingLevel}
+                        onChange={(event) => setModelDraft({ ...modelDraft, thinking_level: event.target.value as ThinkingLevel })}
+                      >
+                        {modelThinkingOptions.map((option) => (
+                          <option key={option.id} value={option.id}>思考等级：{option.label}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="settings-summary-line">当前模型未配置思考等级</span>
+                    )}
+                    {!thinkingLevelFormOpen && (
+                      <button type="button" className="inline-action" onClick={openThinkingLevelForm}>添加自定义思考等级</button>
+                    )}
+                  </div>
+                  {modelThinkingOptions.some((option) => option.custom) && (
+                    <div className="thinking-level-list" aria-label="自定义思考等级">
+                      {modelThinkingOptions.filter((option) => option.custom).map((option) => (
+                        <span className="thinking-level-item" key={option.id}>
+                          <span>{option.label}</span>
+                          <button
+                            type="button"
+                            className="icon-button mini-icon-button"
+                            onClick={() => handleRemoveThinkingLevel(option.id)}
+                            title={`删除 ${option.label}`}
+                            aria-label={`删除 ${option.label}`}
+                          >
+                            <X size={13} />
+                          </button>
+                        </span>
                       ))}
-                    </select>
+                    </div>
                   )}
-                  <button className="inline-action" onClick={() => void handleAddThinkingLevel()}>添加思考等级</button>
+                  {thinkingLevelFormOpen && (
+                    <div className="custom-provider-form thinking-level-form">
+                      <label className="field-label">
+                        <span>显示名称</span>
+                        <input
+                          value={thinkingLevelDraft.label}
+                          onChange={(event) => setThinkingLevelDraft({ ...thinkingLevelDraft, label: event.target.value })}
+                          placeholder="例如：最高"
+                        />
+                      </label>
+                      <label className="field-label">
+                        <span>API（接口）原生值</span>
+                        <input
+                          value={thinkingLevelDraft.api_value}
+                          onChange={(event) => setThinkingLevelDraft({ ...thinkingLevelDraft, api_value: event.target.value })}
+                          placeholder="例如：xhigh、max、enabled"
+                        />
+                      </label>
+                      <div className="inline-row form-actions">
+                        <button type="button" className="inline-action" onClick={cancelThinkingLevelForm}>取消</button>
+                        <button type="button" className="inline-action primary-inline" onClick={handleAddThinkingLevel}>添加</button>
+                      </div>
+                      {thinkingLevelError && <p className="hint strong-hint">{thinkingLevelError}</p>}
+                    </div>
+                  )}
                 </div>
                 <input
                   value={customModel}
