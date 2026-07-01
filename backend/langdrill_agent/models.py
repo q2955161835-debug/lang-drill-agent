@@ -156,6 +156,19 @@ class ModelConfigRequest(BaseModel):
     vision: bool | None = None
 
 
+class ModelListRefreshRequest(BaseModel):
+    provider_id: str = "mimo"
+    base_url: str = ""
+    api_key: str = ""
+    api_format: str = ""
+
+
+class ModelVisibilityRequest(BaseModel):
+    provider_id: str
+    model: str
+    visible: bool = True
+
+
 class MinerUConfigRequest(BaseModel):
     token: str = ""
     clear_token: bool = False

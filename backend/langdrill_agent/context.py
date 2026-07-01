@@ -180,7 +180,9 @@ class ContextService:
             """
             SELECT
               COALESCE(SUM(input_tokens), 0) AS input,
-              COALESCE(SUM(output_tokens), 0) AS output
+              COALESCE(SUM(output_tokens), 0) AS output,
+              COUNT(*) AS calls,
+              COALESCE(AVG(latency_ms), 0) AS avg_latency_ms
             FROM model_calls
             """
         ).fetchone()
@@ -194,6 +196,8 @@ class ContextService:
         model_rows = self.conn.execute(
             """
             SELECT provider_id, model,
+                   COALESCE(SUM(input_tokens), 0) AS input,
+                   COALESCE(SUM(output_tokens), 0) AS output,
                    COALESCE(SUM(input_tokens + output_tokens), 0) AS tokens,
                    COUNT(*) AS calls
             FROM model_calls
@@ -210,16 +214,45 @@ class ContextService:
                 {
                     "provider_id": row["provider_id"],
                     "model": row["model"],
+                    "input": int(row["input"] or 0),
+                    "output": int(row["output"] or 0),
                     "tokens": tokens,
                     "calls": int(row["calls"] or 0),
                     "percent": round(tokens / total_tokens, 4) if total_tokens else 0,
                 }
             )
         daily_activity = self._daily_activity()
+        provider_breakdown = self._provider_breakdown(total_tokens)
+        task_breakdown = self._task_breakdown(total_tokens)
+        today = today_str()
+        today_stats = self._period_usage("DATE(created_at, 'localtime') = ?", (today,))
+        yesterday_date = (datetime.strptime(today, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+        yesterday_stats = self._period_usage("DATE(created_at, 'localtime') = ?", (yesterday_date,))
+        last_7_days_stats = self._period_usage(
+            "DATE(created_at, 'localtime') >= ?",
+            ((datetime.strptime(today, "%Y-%m-%d") - timedelta(days=6)).strftime("%Y-%m-%d"),),
+        )
+        last_30_days_stats = self._period_usage(
+            "DATE(created_at, 'localtime') >= ?",
+            ((datetime.strptime(today, "%Y-%m-%d") - timedelta(days=29)).strftime("%Y-%m-%d"),),
+        )
+        month_stats = self._period_usage(
+            "strftime('%Y-%m', created_at, 'localtime') = ?",
+            (today[:7],),
+        )
+        total_calls = int(totals["calls"] or 0)
         return {
             "input": int(totals["input"] or 0),
             "output": int(totals["output"] or 0),
             "total": total_tokens,
+            "total_calls": total_calls,
+            "average_tokens_per_call": round(total_tokens / total_calls, 2) if total_calls else 0,
+            "average_latency_ms": int(totals["avg_latency_ms"] or 0),
+            "today": today_stats,
+            "yesterday": yesterday_stats,
+            "last_7_days": last_7_days_stats,
+            "last_30_days": last_30_days_stats,
+            "current_month": month_stats,
             "sessions_total": int(sessions["count"] or 0),
             "messages_total": int(messages["count"] or 0),
             "active_days": int(active_days["count"] or 0),
@@ -227,7 +260,10 @@ class ContextService:
             "most_used_model": breakdown[0]["model"] if breakdown else "",
             "most_used_model_percent": breakdown[0]["percent"] if breakdown else 0,
             "model_breakdown": breakdown,
+            "provider_breakdown": provider_breakdown,
+            "task_breakdown": task_breakdown,
             "daily_activity": daily_activity,
+            "recent_calls": self._recent_calls(),
         }
 
     def _daily_activity(self) -> list[dict[str, Any]]:
@@ -236,6 +272,8 @@ class ContextService:
         rows = self.conn.execute(
             """
             SELECT DATE(created_at, 'localtime') AS date,
+                   COALESCE(SUM(input_tokens), 0) AS input,
+                   COALESCE(SUM(output_tokens), 0) AS output,
                    COALESCE(SUM(input_tokens + output_tokens), 0) AS tokens,
                    COUNT(*) AS calls
             FROM model_calls
@@ -252,11 +290,117 @@ class ContextService:
             activity.append(
                 {
                     "date": date,
+                    "input": int(row["input"] or 0) if row else 0,
+                    "output": int(row["output"] or 0) if row else 0,
                     "tokens": int(row["tokens"] or 0) if row else 0,
                     "calls": int(row["calls"] or 0) if row else 0,
                 }
             )
         return activity
+
+    def _period_usage(self, where_sql: str, params: tuple[Any, ...]) -> dict[str, Any]:
+        row = self.conn.execute(
+            f"""
+            SELECT
+              COALESCE(SUM(input_tokens), 0) AS input,
+              COALESCE(SUM(output_tokens), 0) AS output,
+              COUNT(*) AS calls,
+              COALESCE(AVG(latency_ms), 0) AS avg_latency_ms
+            FROM model_calls
+            WHERE {where_sql}
+            """,
+            params,
+        ).fetchone()
+        input_tokens = int(row["input"] or 0)
+        output_tokens = int(row["output"] or 0)
+        calls = int(row["calls"] or 0)
+        return {
+            "input": input_tokens,
+            "output": output_tokens,
+            "total": input_tokens + output_tokens,
+            "calls": calls,
+            "average_tokens_per_call": round((input_tokens + output_tokens) / calls, 2) if calls else 0,
+            "average_latency_ms": int(row["avg_latency_ms"] or 0),
+        }
+
+    def _provider_breakdown(self, total_tokens: int) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            """
+            SELECT provider_id,
+                   COALESCE(SUM(input_tokens), 0) AS input,
+                   COALESCE(SUM(output_tokens), 0) AS output,
+                   COALESCE(SUM(input_tokens + output_tokens), 0) AS tokens,
+                   COUNT(*) AS calls
+            FROM model_calls
+            GROUP BY provider_id
+            ORDER BY tokens DESC, calls DESC
+            LIMIT 12
+            """
+        ).fetchall()
+        return [
+            {
+                "provider_id": row["provider_id"],
+                "input": int(row["input"] or 0),
+                "output": int(row["output"] or 0),
+                "tokens": int(row["tokens"] or 0),
+                "calls": int(row["calls"] or 0),
+                "percent": round(int(row["tokens"] or 0) / total_tokens, 4) if total_tokens else 0,
+            }
+            for row in rows
+        ]
+
+    def _task_breakdown(self, total_tokens: int) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            """
+            SELECT task_type,
+                   COALESCE(SUM(input_tokens), 0) AS input,
+                   COALESCE(SUM(output_tokens), 0) AS output,
+                   COALESCE(SUM(input_tokens + output_tokens), 0) AS tokens,
+                   COUNT(*) AS calls
+            FROM model_calls
+            GROUP BY task_type
+            ORDER BY tokens DESC, calls DESC
+            LIMIT 12
+            """
+        ).fetchall()
+        return [
+            {
+                "task_type": row["task_type"],
+                "input": int(row["input"] or 0),
+                "output": int(row["output"] or 0),
+                "tokens": int(row["tokens"] or 0),
+                "calls": int(row["calls"] or 0),
+                "percent": round(int(row["tokens"] or 0) / total_tokens, 4) if total_tokens else 0,
+            }
+            for row in rows
+        ]
+
+    def _recent_calls(self) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            """
+            SELECT id, agent_name, task_type, provider_id, model,
+                   input_tokens, output_tokens, latency_ms, validation_status, created_at
+            FROM model_calls
+            ORDER BY created_at DESC
+            LIMIT 24
+            """
+        ).fetchall()
+        return [
+            {
+                "id": row["id"],
+                "agent_name": row["agent_name"],
+                "task_type": row["task_type"],
+                "provider_id": row["provider_id"],
+                "model": row["model"],
+                "input_tokens": int(row["input_tokens"] or 0),
+                "output_tokens": int(row["output_tokens"] or 0),
+                "total_tokens": int(row["input_tokens"] or 0) + int(row["output_tokens"] or 0),
+                "latency_ms": int(row["latency_ms"] or 0),
+                "validation_status": row["validation_status"],
+                "created_at": row["created_at"],
+            }
+            for row in rows
+        ]
 
     def _current_streak_days(self) -> int:
         rows = self.conn.execute(
