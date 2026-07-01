@@ -1886,7 +1886,7 @@ class ModelConfigService:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
 
-    def thinking_level_options(self, provider_id: str, model: str) -> list[dict[str, str]]:
+    def thinking_level_options(self, provider_id: str, model: str) -> list[dict[str, Any]]:
         model_config = self._model_config(provider_id, model)
         reasoning = model_config.get("reasoning", {}) if model_config else {}
         return [dict(item) for item in reasoning.get("levels", []) if item.get("id")]
@@ -2014,7 +2014,7 @@ class ModelConfigService:
         api_key: str = "",
         *,
         thinking_level: str = "auto",
-        thinking_level_options: list[dict[str, str]] | None = None,
+        thinking_level_options: list[dict[str, Any]] | None = None,
         api_format: str = "",
         vision: bool | None = None,
     ) -> dict[str, Any]:
@@ -2210,6 +2210,14 @@ class ModelConfigService:
             for item in default_levels
         ]:
             return dict(default_reasoning)
+        native_pairs = {
+            (item.get("id"), item.get("api_value", ""))
+            for item in default_levels
+        }
+        for item in normalized["levels"]:
+            option_pair = (item.get("id"), item.get("api_value", ""))
+            if not default_levels or option_pair not in native_pairs:
+                item["custom"] = True
         return normalized
 
     def _normalize_model_option(self, value: Any) -> dict[str, Any]:
@@ -2231,21 +2239,22 @@ class ModelConfigService:
             item["reasoning"]["levels"] = self._normalize_thinking_options(item["reasoning"].get("levels", []))
         return item
 
-    def _normalize_thinking_options(self, options: list[dict[str, str]] | None) -> list[dict[str, str]]:
-        normalized: list[dict[str, str]] = []
+    def _normalize_thinking_options(self, options: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+        normalized: list[dict[str, Any]] = []
         seen: set[str] = set()
         for option in options or []:
             option_id = str(option.get("id", "")).strip()
             if not option_id or option_id in seen:
                 continue
             seen.add(option_id)
-            normalized.append(
-                {
-                    "id": option_id,
-                    "label": str(option.get("label") or option_id).strip(),
-                    "api_value": str(option.get("api_value", "")).strip(),
-                }
-            )
+            item = {
+                "id": option_id,
+                "label": str(option.get("label") or option_id).strip(),
+                "api_value": str(option.get("api_value", "")).strip(),
+            }
+            if bool(option.get("custom")):
+                item["custom"] = True
+            normalized.append(item)
         return normalized
 
     def _model_id(self, value: Any) -> str:

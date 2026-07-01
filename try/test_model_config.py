@@ -332,19 +332,54 @@ def test_custom_reasoning_level_is_saved_for_current_model(tmp_path, monkeypatch
     monkeypatch.setattr(services_module, "PROJECT_ROOT", tmp_path)
     service = ModelConfigService(_settings_conn())
 
+    native_options = service.thinking_level_options("openai", "gpt-5.5")
     config = service.save(
         "openai",
         "https://api.openai.com/v1",
         "gpt-5.5",
         thinking_level="extreme",
-        thinking_level_options=[
-            {"id": "auto", "label": "自动", "api_value": ""},
-            {"id": "extreme", "label": "极限", "api_value": "xhigh"},
-        ],
+        thinking_level_options=[*native_options, {"id": "extreme", "label": "极限", "api_value": "xhigh"}],
     )
 
     assert config["thinking_level"] == "extreme"
-    assert config["thinking_level_options"][-1] == {"id": "extreme", "label": "极限", "api_value": "xhigh"}
+    assert config["thinking_level_options"][-1] == {
+        "id": "extreme",
+        "label": "极限",
+        "api_value": "xhigh",
+        "custom": True,
+    }
+
+
+def test_custom_reasoning_level_can_be_removed_without_deleting_native_levels(tmp_path, monkeypatch):
+    monkeypatch.setattr(services_module, "PROJECT_ROOT", tmp_path)
+    service = ModelConfigService(_settings_conn())
+    native_options = service.thinking_level_options("openai", "gpt-5.5")
+
+    service.save(
+        "openai",
+        "https://api.openai.com/v1",
+        "gpt-5.5",
+        thinking_level="extreme",
+        thinking_level_options=[*native_options, {"id": "extreme", "label": "极限", "api_value": "xhigh"}],
+    )
+    config = service.save(
+        "openai",
+        "https://api.openai.com/v1",
+        "gpt-5.5",
+        thinking_level="xhigh",
+        thinking_level_options=native_options,
+    )
+
+    assert [item["id"] for item in config["thinking_level_options"]] == [
+        "auto",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+    ]
+    assert all(not item.get("custom") for item in config["thinking_level_options"])
+    assert config["thinking_level"] == "xhigh"
 
 
 def test_model_vision_capability_is_saved_for_current_model(tmp_path, monkeypatch):

@@ -1244,6 +1244,39 @@ body.panel-resize-active * {
 .custom-provider-form .form-actions .inline-action {
   min-width: 112px;
 }
+.reasoning-config {
+  display: grid;
+  gap: 10px;
+}
+.thinking-level-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.thinking-level-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  border: var(--border-thin);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  color: var(--muted-strong);
+  padding: 3px 4px 3px 10px;
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+.mini-icon-button {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+}
+.thinking-level-form {
+  border: var(--border-thin);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  padding: 12px;
+}
 .mineru-config {
   display: grid;
   gap: 10px;

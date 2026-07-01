@@ -32,6 +32,7 @@ export type ThinkingLevelOption = {
   id: ThinkingLevel;
   label: string;
   api_value: string;
+  custom?: boolean;
 };
 
 export type ModelOption = string | {

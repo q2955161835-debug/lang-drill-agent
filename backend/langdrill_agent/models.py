@@ -151,7 +151,7 @@ class ModelConfigRequest(BaseModel):
     base_url: str = "https://api.xiaomimimo.com/anthropic"
     api_key: str = ""
     thinking_level: str = "enabled"
-    thinking_level_options: list[dict[str, str]] = Field(default_factory=list)
+    thinking_level_options: list[dict[str, Any]] = Field(default_factory=list)
     api_format: str = ""
     vision: bool | None = None
 
