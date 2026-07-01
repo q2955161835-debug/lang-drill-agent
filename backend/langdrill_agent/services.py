@@ -1949,6 +1949,13 @@ class PastPaperService:
         return options
 
 
+class ModelListUnsupportedError(ValueError):
+    def __init__(self, attempts: list[str]) -> None:
+        self.attempts = attempts
+        tried = "、".join(attempts)
+        super().__init__(f"供应商未开放模型列表接口。已尝试：{tried}")
+
+
 class ModelConfigService:
     MOCK_PROVIDER = {
         "id": "mock",
@@ -2385,7 +2392,28 @@ class ModelConfigService:
         if provider.get("api_key_required", True) and not clean_api_key:
             raise ValueError("获取模型列表需要先填写或保存 API Key（接口密钥）。")
 
-        fetched_models = self._fetch_provider_models(clean_base_url, clean_api_key, clean_api_format)
+        try:
+            fetched_models = self._fetch_provider_models(clean_base_url, clean_api_key, clean_api_format)
+        except ModelListUnsupportedError:
+            row_ov = self.conn.execute("SELECT value_json FROM app_settings WHERE key='model.provider_overrides'").fetchone()
+            overrides = loads(row_ov["value_json"], {}) if row_ov else {}
+            ov = overrides.setdefault(provider_id, {"added_models": [], "model_reasoning_overrides": {}})
+            ov["base_url"] = clean_base_url
+            ov["api_format"] = clean_api_format
+            self._save_provider_overrides(overrides)
+            fallback_provider = self.provider_by_id(provider_id)
+            fallback_models = [
+                self._normalize_model_option(item)
+                for item in fallback_provider.get("model_options", [])
+                if self._model_id(item)
+            ]
+            return {
+                "provider": fallback_provider,
+                "providers": self.providers(),
+                "models": fallback_models,
+                "refresh_supported": False,
+                "message": "当前供应商未开放模型列表接口，已保留现有模型列表；可继续使用已保存或内置模型。",
+            }
         if not fetched_models:
             raise ValueError("供应商 API 没有返回可用模型。")
 
@@ -2600,6 +2628,8 @@ class ModelConfigService:
         clean_key = validate_http_header_value(normalize_api_key(api_key), "API Key") if api_key else ""
         attempts: list[str] = []
         last_error = ""
+        last_blocking_error = ""
+        unsupported_count = 0
         for endpoint, headers in self._model_list_candidates(base_url, clean_key, api_format):
             attempts.append(endpoint)
             try:
@@ -2607,11 +2637,34 @@ class ModelConfigService:
                 response.raise_for_status()
                 return self._extract_model_options(response.json())
             except httpx.HTTPStatusError as exc:
-                last_error = f"{exc.response.status_code}: {exc.response.text[:160]}"
+                status_code = exc.response.status_code
+                formatted_error = self._format_model_list_http_error(exc.response)
+                if status_code in {404, 405, 501}:
+                    unsupported_count += 1
+                else:
+                    last_blocking_error = formatted_error
+                last_error = formatted_error
             except Exception as exc:
                 last_error = str(exc)
+                last_blocking_error = last_error
+        if attempts and unsupported_count == len(attempts):
+            raise ModelListUnsupportedError(attempts)
         tried = "、".join(attempts)
-        raise ValueError(f"获取模型列表失败。已尝试：{tried}。最后错误：{last_error}")
+        raise ValueError(f"获取模型列表失败。已尝试：{tried}。最后错误：{last_blocking_error or last_error}")
+
+    def _format_model_list_http_error(self, response: httpx.Response) -> str:
+        status_code = response.status_code
+        if status_code in {401, 403}:
+            return f"HTTP {status_code}：API Key（接口密钥）无效或没有模型列表权限。"
+        if status_code == 404:
+            return "HTTP 404：模型列表接口不存在或供应商未开放自动发现。"
+        if status_code == 405:
+            return "HTTP 405：模型列表接口不支持当前请求方法。"
+        if status_code == 501:
+            return "HTTP 501：供应商未实现模型列表接口。"
+        if status_code >= 500:
+            return f"HTTP {status_code}：供应商模型列表接口暂时不可用。"
+        return f"HTTP {status_code}：供应商模型列表接口返回错误。"
 
     def _model_list_candidates(self, base_url: str, api_key: str, api_format: str) -> list[tuple[str, dict[str, str]]]:
         clean_base = (base_url or "").strip().rstrip("/")

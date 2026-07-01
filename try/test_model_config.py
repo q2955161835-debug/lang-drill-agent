@@ -1,6 +1,8 @@
 import sqlite3
 from typing import Any
 
+import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 import langdrill_agent.services as services_module
@@ -448,6 +450,69 @@ def test_refresh_provider_models_loads_api_models_and_keeps_native_reasoning(tmp
     assert models["deepseek-v4-ultra"]["visible"] is True
     assert [item["id"] for item in models["deepseek-v4-pro"]["reasoning"]["levels"]] == ["off", "high", "max"]
     assert result["message"].startswith("已从供应商 API 获取 2 个可调用模型")
+
+
+def test_refresh_provider_models_keeps_existing_models_when_endpoint_is_unsupported(tmp_path, monkeypatch):
+    monkeypatch.setattr(services_module, "PROJECT_ROOT", tmp_path)
+    attempted: list[str] = []
+
+    def fake_get(url: str, **kwargs: Any) -> httpx.Response:
+        attempted.append(url)
+        return httpx.Response(
+            404,
+            request=httpx.Request("GET", url),
+            text="<html><head><title>404 Not Found</title></head><body>openresty</body></html>",
+        )
+
+    monkeypatch.setattr("langdrill_agent.services.httpx.get", fake_get)
+    service = ModelConfigService(_settings_conn())
+
+    result = service.refresh_provider_models(
+        "mimo",
+        "https://api.xiaomimimo.com/anthropic",
+        "mimo-key",
+        api_format="anthropic-messages",
+    )
+    provider = next(item for item in result["providers"] if item["id"] == "mimo")
+    models = {item["id"]: item for item in provider["model_options"]}
+
+    assert attempted == [
+        "https://api.xiaomimimo.com/anthropic/v1/models",
+        "https://api.xiaomimimo.com/anthropic/models",
+    ]
+    assert "mimo-v2.5" in models
+    assert "mimo-v2.5-pro" in models
+    assert result["refresh_supported"] is False
+    assert "未开放模型列表接口" in result["message"]
+    assert "<html>" not in result["message"]
+    assert "openresty" not in result["message"]
+
+
+def test_refresh_provider_models_error_does_not_expose_html_body(tmp_path, monkeypatch):
+    monkeypatch.setattr(services_module, "PROJECT_ROOT", tmp_path)
+
+    def fake_get(url: str, **kwargs: Any) -> httpx.Response:
+        return httpx.Response(
+            500,
+            request=httpx.Request("GET", url),
+            text="<html><head><title>500 Server Error</title></head><body>gateway</body></html>",
+        )
+
+    monkeypatch.setattr("langdrill_agent.services.httpx.get", fake_get)
+    service = ModelConfigService(_settings_conn())
+
+    with pytest.raises(ValueError) as exc:
+        service.refresh_provider_models(
+            "deepseek",
+            "https://api.deepseek.com",
+            "deepseek-key",
+            api_format="openai-chat-completions",
+        )
+
+    message = str(exc.value)
+    assert "HTTP 500" in message
+    assert "<html>" not in message
+    assert "gateway" not in message
 
 
 def test_model_visibility_hides_model_from_picker_metadata(tmp_path, monkeypatch):
