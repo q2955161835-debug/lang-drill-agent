@@ -46,6 +46,7 @@ from .models import (
     QuestionDatabaseFolderRequest,
     QuestionTypeSelectRequest,
     ScreenshotImportRequest,
+    SkillToggleRequest,
     SyllabusCheckRequest,
     SyllabusSelectRequest,
     TaskType,
@@ -278,10 +279,10 @@ def _general_chat_response(
                 "content": (
                     "你是 Lang Drill Agent 的语言学习聊天助手，了解本程序能力：普通学习聊天、题组练习、答题讲解、"
                     "右侧截图导入、主聊天粘贴词表或拖入文件/图片、分支对话、模型设置、上下文压缩、MinerU 配置、"
-                    "历年真题导入、联网搜索导入、本地 Skills 和本地数据库目录设置。普通寒暄、学习建议、澄清问题只自然回复；"
+                    "历年真题导入、联网功能、本地 Skills 和本地数据库目录设置。普通寒暄、学习建议、澄清问题只自然回复；"
                     "不要生成正式题组，不要声称已经入库题目，不要输出 JSON。如果用户问你是否能导入单词、截图或题目，"
                     "不要说没有后台题库权限；应说明可以在权限开启时通过右侧截图导入、主聊天粘贴词表、"
-                    "拖入 TXT/Markdown/PDF/DOCX/图片，或使用联网搜索导入索引触发程序流程。"
+                    "拖入 TXT/Markdown/PDF/DOCX/图片，或打开联网来源辅助用户手动导入。"
                     "你不能直接读取或填写 API Key、MinerU token、cookie，也不能自行保存模型配置、迁移数据库或导入试卷；"
                     "敏感设置权限开启时也只能生成可确认草稿，最终保存必须由用户确认。"
                     "如果用户想练题，应提醒他明确发送词表、截图导入，或使用“出题/练习/刷题”等请求。"
@@ -682,7 +683,7 @@ def bootstrap() -> dict:
             "data_paths": DataPathService().status(),
             "mineru_config": MinerUConfigService(conn).status(),
             "agent_permissions": AgentSettingsPermissionService(conn).status(),
-            "skills_status": SkillRegistryService().status(),
+            "skills_status": SkillRegistryService(conn=conn).status(),
         }
 
 
@@ -796,7 +797,16 @@ def save_agent_settings_permissions(request: AgentSettingsPermissionRequest) -> 
 
 @app.get("/api/skills")
 def skills_status() -> dict:
-    return {"skills_status": SkillRegistryService().status()}
+    init_db()
+    with transaction() as conn:
+        return {"skills_status": SkillRegistryService(conn=conn).status()}
+
+
+@app.post("/api/skills/enabled")
+def set_skill_enabled(request: SkillToggleRequest) -> dict:
+    init_db()
+    with transaction() as conn:
+        return {"skills_status": SkillRegistryService(conn=conn).save_enabled(request.skill_id, request.enabled)}
 
 
 @app.post("/api/config/providers/custom")
@@ -1503,13 +1513,13 @@ def past_paper_search_import(request: PastPaperSearchImportRequest) -> dict:
     with transaction() as conn:
         _require_agent_permissions(
             conn,
-            ["skills", "web_search_import"],
-            "联网搜索导入权限未开启。请在设置里的「权限」页开启「Skills 功能」和「联网搜索导入」。",
+            ["web_search_import"],
+            "联网功能权限未开启。请在设置里的「权限」页开启「联网功能」。",
         )
         status = PastPaperService(conn).search_import(request.exam_id, request.source_website)
         return {
             **status,
-            "skill": SkillRegistryService().status()["web_search_skill"],
+            "skill": SkillRegistryService(conn=conn).status()["web_search_skill"],
         }
 
 

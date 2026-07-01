@@ -340,7 +340,7 @@ const DEFAULT_SYLLABUS_STATUS: SyllabusStatus = {
 const DEFAULT_PAST_PAPER_STATUS: PastPaperStatus = {
   exam_id: "cet4",
   description: "CET-4（大学英语四级）真题按听力、阅读、翻译和写作组织。",
-  source_website: "https://cet.neea.edu.cn/",
+  source_website: "https://www.guojiya.cn/#exams",
   papers: [],
   selected_paper_ids: [],
   current_papers: [],
@@ -442,8 +442,7 @@ const DEFAULT_AGENT_PERMISSIONS: AgentSettingsPermissionsStatus = {
     "past_paper_import",
     "web_search_import",
     "profile_exam",
-    "context_settings",
-    "skills"
+    "context_settings"
   ],
   features: [
     {
@@ -469,8 +468,8 @@ const DEFAULT_AGENT_PERMISSIONS: AgentSettingsPermissionsStatus = {
     },
     {
       id: "web_search_import",
-      label: "联网搜索导入",
-      description: "允许会话 Agent 使用无需个人 API Key 的本地 Skills 生成真题来源搜索索引和可核验来源。",
+      label: "联网功能",
+      description: "允许会话 Agent 打开或引用联网来源。该权限独立于 Skills，默认开启。",
       enabled: true,
       default_enabled: true
     },
@@ -491,9 +490,9 @@ const DEFAULT_AGENT_PERMISSIONS: AgentSettingsPermissionsStatus = {
     {
       id: "skills",
       label: "Skills 功能",
-      description: "允许会话 Agent 读取已安装的本地 Skills 能力，并优先使用无需密钥的技能辅助搜索和导入。",
-      enabled: true,
-      default_enabled: true
+      description: "允许会话 Agent 使用已启用的本地 Skills 扩展能力；默认关闭，需要单独授权。",
+      enabled: false,
+      default_enabled: false
     },
     {
       id: "model_config",
@@ -530,9 +529,13 @@ const DEFAULT_AGENT_PERMISSIONS: AgentSettingsPermissionsStatus = {
         "past_paper_import",
         "web_search_import",
         "profile_exam",
-        "context_settings",
-        "skills"
+        "context_settings"
       ]
+    },
+    {
+      id: "optional",
+      label: "默认关闭的扩展权限",
+      feature_ids: ["skills"]
     },
     {
       id: "sensitive",
@@ -546,6 +549,7 @@ const DEFAULT_SKILLS_STATUS: SkillsStatus = {
   skills_roots: ["D:\\2Folder\\skills"],
   installed: [],
   installed_count: 0,
+  enabled_skill_ids: [],
   no_key_skill_ids: [],
   permission_feature_id: "skills",
   web_search_permission_feature_id: "web_search_import",
@@ -558,6 +562,7 @@ const DEFAULT_SKILLS_STATUS: SkillsStatus = {
     requires_api_key: false,
     requires_token: false,
     installed: false,
+    enabled: false,
     permission_feature_id: "web_search_import"
   }
 };
@@ -2294,8 +2299,6 @@ function SettingsDialog({
     modelDraft.thinking_level,
     defaultThinkingLevelForModel(provider, modelDraft.model)
   );
-  const savedPermissionIds = new Set(agentPermissions.enabled_feature_ids);
-  const canUseWebSearchImport = savedPermissionIds.has("skills") && savedPermissionIds.has("web_search_import");
   const applyPaperDraftToForm = useCallback((draft: PastPaperDraft, message: string) => {
     setActiveSettingsTab("syllabus");
     setPaperImportOpen(true);
@@ -2533,25 +2536,6 @@ function SettingsDialog({
       setPastPaperMessage("已重新解析试卷。");
     } catch (err) {
       setPastPaperMessage(err instanceof Error ? err.message : "重新解析失败");
-    }
-  };
-  const searchImportPastPapers = async () => {
-    if (!canUseWebSearchImport) {
-      setPastPaperMessage("请先在「权限」页开启「Skills 功能」和「联网搜索导入」，再使用真题搜索导入。");
-      setActiveSettingsTab("permissions");
-      return;
-    }
-    setPastPaperMessage("正在创建联网搜索导入索引...");
-    try {
-      const status = await apiPost<PastPaperStatus>("/api/past-papers/search-import", {
-        exam_id: draft.exam_id,
-        source_website: paperImportDraft.source_url || customExam.paper_source_url || pastPaperDraft.source_website
-      });
-      setPastPaperDraft(status);
-      onPastPaperStatusChange(status);
-      setPastPaperMessage(status.message || "已导入近三年真题搜索索引。");
-    } catch (err) {
-      setPastPaperMessage(err instanceof Error ? err.message : "联网搜索导入失败");
     }
   };
   const selectPastPaperFile = useCallback((file: File) => {
@@ -2906,6 +2890,7 @@ function SettingsDialog({
       .filter((featureIdItem) => enabled.has(featureIdItem));
     setPermissionDraft({
       enabled_feature_ids: nextIds,
+      groups: permissionDraft.groups,
       features: permissionDraft.features.map((feature) => ({
         ...feature,
         enabled: enabled.has(feature.id)
@@ -2937,6 +2922,20 @@ function SettingsDialog({
       setSkillsMessage(err instanceof Error ? err.message : "Skills 状态刷新失败。");
     }
   };
+  const toggleSkillEnabled = async (skillId: string, enabled: boolean) => {
+    setSkillsMessage(enabled ? "正在启用 Skill..." : "正在关闭 Skill...");
+    try {
+      const data = await apiPost<{ skills_status: SkillsStatus }>("/api/skills/enabled", {
+        skill_id: skillId,
+        enabled
+      });
+      setSkillsDraft(data.skills_status);
+      onSkillsStatusChange(data.skills_status);
+      setSkillsMessage(enabled ? "Skill 已启用。" : "Skill 已关闭。");
+    } catch (err) {
+      setSkillsMessage(err instanceof Error ? err.message : "Skill 状态保存失败。");
+    }
+  };
   const permissionGroups = (
     permissionDraft.groups?.length
       ? permissionDraft.groups
@@ -2944,7 +2943,16 @@ function SettingsDialog({
           {
             id: "default_enabled",
             label: "默认开启的能力权限",
-            feature_ids: permissionDraft.features.filter((feature) => !feature.sensitive).map((feature) => feature.id)
+            feature_ids: permissionDraft.features
+              .filter((feature) => !feature.sensitive && feature.default_enabled)
+              .map((feature) => feature.id)
+          },
+          {
+            id: "optional",
+            label: "默认关闭的扩展权限",
+            feature_ids: permissionDraft.features
+              .filter((feature) => !feature.sensitive && !feature.default_enabled)
+              .map((feature) => feature.id)
           },
           {
             id: "sensitive",
@@ -3310,14 +3318,6 @@ function SettingsDialog({
                 </div>
                 <div className="settings-summary-line">{pastPaperDraft.description}</div>
                 <div className="inline-row">
-                  <button
-                    className="inline-action"
-                    onClick={() => void searchImportPastPapers()}
-                    disabled={!canUseWebSearchImport}
-                    title={canUseWebSearchImport ? "使用已授权的 Skills 联网搜索导入" : "先在权限页开启 Skills 功能和联网搜索导入"}
-                  >
-                    <Sparkle size={16} /> 联网搜索导入
-                  </button>
                   {pastPaperDraft.source_website && <a className="inline-link" href={pastPaperDraft.source_website} target="_blank" rel="noreferrer">打开来源网站</a>}
                 </div>
                 <div className="paper-list">
@@ -3339,7 +3339,7 @@ function SettingsDialog({
                       <button className="inline-action compact-action" onClick={() => void parsePastPaper(paper.id)}>重新解析</button>
                     </div>
                   ))}
-                  {!pastPaperDraft.papers.length && <p className="hint">暂无真题试卷索引，可手动导入或使用联网搜索导入。</p>}
+                  {!pastPaperDraft.papers.length && <p className="hint">暂无真题试卷索引，可手动导入。</p>}
                 </div>
                 <div className="inline-row">
                   <button type="button" className="inline-action" onClick={() => setPaperImportOpen((open) => !open)}>
@@ -3679,7 +3679,7 @@ function SettingsDialog({
             )}
             {activeSettingsTab === "skills" && (
               <SettingSection title="Skills 功能">
-                <p className="hint">当前只接入本地已安装 Skills 的状态展示和授权入口；需要密钥或个人 token 的技能不会作为默认联网搜索方案。</p>
+                <p className="hint">Skills 默认关闭；需要先在权限页开启「Skills 功能」，再在这里逐个启用具体 Skill。联网功能是独立权限，默认开启。</p>
                 <div className="skill-highlight">
                   <div>
                     <strong>{skillsDraft.web_search_skill.label || skillsDraft.web_search_skill.name}</strong>
@@ -3689,6 +3689,9 @@ function SettingsDialog({
                   <div className="skill-badges">
                     <span className={skillsDraft.web_search_skill.installed ? "skill-ok" : "skill-warn"}>
                       {skillsDraft.web_search_skill.installed ? "已安装" : "未发现"}
+                    </span>
+                    <span className={skillsDraft.web_search_skill.enabled ? "skill-ok" : "skill-warn"}>
+                      {skillsDraft.web_search_skill.enabled ? "已启用" : "未启用"}
                     </span>
                     <span className="skill-ok">无需 API Key</span>
                     <span className="skill-ok">无需 token</span>
@@ -3703,7 +3706,7 @@ function SettingsDialog({
                   )}
                 </div>
                 <div className="settings-summary-line">
-                  已发现 {skillsDraft.installed_count} 个本地 Skills；其中 {skillsDraft.no_key_skill_ids.length} 个未声明需要个人密钥。
+                  已发现 {skillsDraft.installed_count} 个本地 Skills；已启用 {skillsDraft.enabled_skill_ids.length} 个；其中 {skillsDraft.no_key_skill_ids.length} 个未声明需要个人密钥。
                 </div>
                 <div className="skill-root-list">
                   {skillsDraft.skills_roots.map((root) => (
@@ -3719,6 +3722,14 @@ function SettingsDialog({
                         {skill.path && <small>{skill.path}</small>}
                       </div>
                       <div className="skill-badges">
+                        <label className="skill-toggle">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(skill.enabled)}
+                            onChange={(event) => void toggleSkillEnabled(skill.id, event.target.checked)}
+                          />
+                          <span>{skill.enabled ? "已启用" : "未启用"}</span>
+                        </label>
                         <span className={skill.requires_api_key || skill.requires_token ? "skill-warn" : "skill-ok"}>
                           {skill.requires_api_key || skill.requires_token ? "可能需要密钥" : "无密钥"}
                         </span>

@@ -270,5 +270,10 @@ class AgentSettingsPermissionRequest(BaseModel):
     enabled_feature_ids: list[str] = Field(default_factory=list)
 
 
+class SkillToggleRequest(BaseModel):
+    skill_id: str
+    enabled: bool = True
+
+
 class PhoneMirrorStartRequest(BaseModel):
     device_id: str = ""

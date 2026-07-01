@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 class AgentSettingsPermissionService:
     SETTINGS_KEY = "agent.settings.permissions"
+    SETTINGS_VERSION = 2
     FEATURES = [
         {
             "id": "screenshot_import",
@@ -56,8 +57,8 @@ class AgentSettingsPermissionService:
         },
         {
             "id": "web_search_import",
-            "label": "联网搜索导入",
-            "description": "允许会话 Agent 使用无需个人 API Key 的本地 Skills 生成真题来源搜索索引和可核验来源。",
+            "label": "联网功能",
+            "description": "允许会话 Agent 打开或引用联网来源。该权限独立于 Skills，默认开启。",
             "sensitive": False,
             "default_enabled": True,
         },
@@ -78,9 +79,9 @@ class AgentSettingsPermissionService:
         {
             "id": "skills",
             "label": "Skills 功能",
-            "description": "允许会话 Agent 读取已安装的本地 Skills 能力，并优先使用无需密钥的技能辅助搜索和导入。",
+            "description": "允许会话 Agent 使用已启用的本地 Skills 扩展能力；默认关闭，需要单独授权。",
             "sensitive": False,
-            "default_enabled": True,
+            "default_enabled": False,
         },
         {
             "id": "model_config",
@@ -127,7 +128,16 @@ class AgentSettingsPermissionService:
                     "feature_ids": [
                         feature["id"]
                         for feature in self.FEATURES
-                        if not bool(feature.get("sensitive"))
+                        if not bool(feature.get("sensitive")) and bool(feature.get("default_enabled"))
+                    ],
+                },
+                {
+                    "id": "optional",
+                    "label": "默认关闭的扩展权限",
+                    "feature_ids": [
+                        feature["id"]
+                        for feature in self.FEATURES
+                        if not bool(feature.get("sensitive")) and not bool(feature.get("default_enabled"))
                     ],
                 },
                 {
@@ -154,7 +164,7 @@ class AgentSettingsPermissionService:
             INSERT OR REPLACE INTO app_settings (key, value_json, updated_at)
             VALUES (?, ?, CURRENT_TIMESTAMP)
             """,
-            (self.SETTINGS_KEY, dumps({"enabled_feature_ids": clean_ids})),
+            (self.SETTINGS_KEY, dumps({"version": self.SETTINGS_VERSION, "enabled_feature_ids": clean_ids})),
         )
         return self.status()
 
@@ -167,16 +177,27 @@ class AgentSettingsPermissionService:
             (self.SETTINGS_KEY,),
         ).fetchone()
         if not row:
-            return [
-                str(feature["id"])
-                for feature in self.FEATURES
-                if bool(feature.get("default_enabled"))
-            ]
+            return self._default_enabled_feature_ids()
         data = loads(row["value_json"], {})
-        return [str(item) for item in data.get("enabled_feature_ids", []) if str(item).strip()]
+        stored_ids = [str(item) for item in data.get("enabled_feature_ids", []) if str(item).strip()]
+        if data.get("version") == self.SETTINGS_VERSION:
+            return stored_ids
+        merged_ids = []
+        for feature_id in [*self._default_enabled_feature_ids(), *stored_ids]:
+            if feature_id not in merged_ids:
+                merged_ids.append(feature_id)
+        return merged_ids
+
+    def _default_enabled_feature_ids(self) -> list[str]:
+        return [
+            str(feature["id"])
+            for feature in self.FEATURES
+            if bool(feature.get("default_enabled"))
+        ]
 
 
 class SkillRegistryService:
+    SETTINGS_KEY = "skills.enabled"
     DEFAULT_SEARCH_ROOT = Path("D:/2Folder/skills")
     RECOMMENDED_WEB_SEARCH_SKILL = {
         "id": "multi-search-engine",
@@ -190,7 +211,8 @@ class SkillRegistryService:
         "reason": "适合为真题、考纲和来源网站生成可核验搜索入口，避免绑定需要个人申请的搜索 API。",
     }
 
-    def __init__(self, skills_roots: list[Path] | None = None):
+    def __init__(self, skills_roots: list[Path] | None = None, conn: sqlite3.Connection | None = None):
+        self.conn = conn
         env_roots = [
             Path(item.strip())
             for item in os.getenv("LANGDRILL_SKILLS_ROOTS", "").split(os.pathsep)
@@ -205,7 +227,11 @@ class SkillRegistryService:
         self.skills_roots = self._dedupe_roots(roots)
 
     def status(self) -> dict[str, Any]:
-        installed = self.installed_skills()
+        enabled_ids = set(self._enabled_skill_ids())
+        installed = [
+            {**skill, "enabled": skill["id"] in enabled_ids}
+            for skill in self.installed_skills()
+        ]
         web_search_skill = next(
             (skill for skill in installed if skill["id"] == self.RECOMMENDED_WEB_SEARCH_SKILL["id"]),
             None,
@@ -219,11 +245,13 @@ class SkillRegistryService:
                 "requires_api_key": False,
                 "requires_token": False,
                 "installed": True,
+                "enabled": str(web_search_skill.get("id", "")) in enabled_ids,
             }
         else:
             web_search_skill = {
                 **self.RECOMMENDED_WEB_SEARCH_SKILL,
                 "installed": False,
+                "enabled": False,
                 "path": str(self.DEFAULT_SEARCH_ROOT / self.RECOMMENDED_WEB_SEARCH_SKILL["id"]),
             }
         no_key_skill_ids = [
@@ -235,12 +263,38 @@ class SkillRegistryService:
             "skills_roots": [str(path) for path in self.skills_roots],
             "installed": installed,
             "installed_count": len(installed),
+            "enabled_skill_ids": [
+                str(skill["id"])
+                for skill in installed
+                if bool(skill.get("enabled"))
+            ],
             "no_key_skill_ids": no_key_skill_ids,
             "web_search_skill": web_search_skill,
             "permission_feature_id": "skills",
             "web_search_permission_feature_id": "web_search_import",
-            "message": "已优先选择无需个人 API Key 或 token 的 multi-search-engine 作为联网搜索导入技能。",
+            "message": "已发现无需个人 API Key 或 token 的 multi-search-engine 搜索辅助技能；默认不启用，需用户单独开启。",
         }
+
+    def save_enabled(self, skill_id: str, enabled: bool) -> dict[str, Any]:
+        if self.conn is None:
+            raise ValueError("保存 Skills 状态需要数据库连接。")
+        clean_id = skill_id.strip()
+        known_ids = {str(skill["id"]) for skill in self.installed_skills()}
+        if clean_id not in known_ids:
+            raise ValueError("未找到指定 Skill。")
+        enabled_ids = self._enabled_skill_ids()
+        if enabled and clean_id not in enabled_ids:
+            enabled_ids.append(clean_id)
+        if not enabled:
+            enabled_ids = [item for item in enabled_ids if item != clean_id]
+        self.conn.execute(
+            """
+            INSERT OR REPLACE INTO app_settings (key, value_json, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            """,
+            (self.SETTINGS_KEY, dumps({"enabled_skill_ids": enabled_ids})),
+        )
+        return self.status()
 
     def installed_skills(self) -> list[dict[str, Any]]:
         skills: list[dict[str, Any]] = []
@@ -290,6 +344,7 @@ class SkillRegistryService:
             "requires_api_key": bool(requires_secret),
             "requires_token": bool(requires_secret),
             "installed": True,
+            "enabled": False,
         }
 
     def _frontmatter(self, text: str) -> dict[str, str]:
@@ -308,6 +363,16 @@ class SkillRegistryService:
             if clean_key in {"name", "description", "homepage"}:
                 metadata[clean_key] = clean_value
         return metadata
+
+    def _enabled_skill_ids(self) -> list[str]:
+        if self.conn is None:
+            return []
+        row = self.conn.execute(
+            "SELECT value_json FROM app_settings WHERE key=?",
+            (self.SETTINGS_KEY,),
+        ).fetchone()
+        data = loads(row["value_json"], {}) if row else {}
+        return [str(item) for item in data.get("enabled_skill_ids", []) if str(item).strip()]
 
     def _dedupe_roots(self, roots: list[Path]) -> list[Path]:
         deduped: list[Path] = []
@@ -1312,9 +1377,10 @@ class SyllabusService:
 
 class PastPaperService:
     DEFAULT_RECENT_YEARS = [2025, 2024, 2023]
+    CET_PAPER_SOURCE = "https://www.guojiya.cn/#exams"
     EXAM_PAPER_SOURCES = {
         "cet4": {
-            "source_website": "https://cet.neea.edu.cn/",
+            "source_website": CET_PAPER_SOURCE,
             "title_prefix": "大学英语四级",
             "description": "CET-4（大学英语四级）真题按听力、阅读、翻译和写作组织。",
             "question_types": [
@@ -1326,7 +1392,7 @@ class PastPaperService:
             ],
         },
         "cet6": {
-            "source_website": "https://cet.neea.edu.cn/",
+            "source_website": CET_PAPER_SOURCE,
             "title_prefix": "大学英语六级",
             "description": "CET-6（大学英语六级）真题强调更高难度阅读、听力和写译表达。",
             "question_types": [
@@ -1508,22 +1574,20 @@ class PastPaperService:
                 summary=summary,
                 question_types=question_type_ids,
             )
-            if not raw_path.exists():
-                raw_path.write_text(manifest, encoding="utf-8")
-            if not parsed_path.exists():
-                parsed_payload = parse_paper_text(
-                    manifest,
-                    exam_id=exam_id,
-                    title=title,
-                    year=year,
-                    source_url=source_info["source_website"],
-                    raw_path=relative_display_path(raw_path),
-                    parser="source_manifest",
-                    fallback_summary=summary,
-                    fallback_question_types=question_type_ids,
-                    parse_status="source_manifest_only",
-                )
-                write_parsed_json(parsed_path, parsed_payload)
+            raw_path.write_text(manifest, encoding="utf-8")
+            parsed_payload = parse_paper_text(
+                manifest,
+                exam_id=exam_id,
+                title=title,
+                year=year,
+                source_url=source_info["source_website"],
+                raw_path=relative_display_path(raw_path),
+                parser="source_manifest",
+                fallback_summary=summary,
+                fallback_question_types=question_type_ids,
+                parse_status="source_manifest_only",
+            )
+            write_parsed_json(parsed_path, parsed_payload)
             metadata = {
                 "summary": summary,
                 "question_types": question_type_ids,
@@ -1555,14 +1619,12 @@ class PastPaperService:
             self.conn.execute(
                 """
                 UPDATE exam_assets
-                SET local_path=CASE WHEN local_path='' THEN ? ELSE local_path END,
-                    metadata_json=CASE
-                        WHEN metadata_json='' OR metadata_json='{}' THEN ?
-                        ELSE metadata_json
-                    END
+                SET source_url=?,
+                    local_path=?,
+                    metadata_json=?
                 WHERE id=?
                 """,
-                (relative_display_path(raw_path), dumps(metadata), paper_id),
+                (source_info["source_website"], relative_display_path(raw_path), dumps(metadata), paper_id),
             )
 
     def select_papers(self, exam_id: str, paper_ids: list[str]) -> dict[str, Any]:

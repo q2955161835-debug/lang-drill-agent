@@ -110,6 +110,7 @@ export type SkillInfo = {
   requires_api_key?: boolean;
   requires_token?: boolean;
   installed?: boolean;
+  enabled?: boolean;
   permission_feature_id?: string;
   reason?: string;
 };
@@ -118,6 +119,7 @@ export type SkillsStatus = {
   skills_roots: string[];
   installed: SkillInfo[];
   installed_count: number;
+  enabled_skill_ids: string[];
   no_key_skill_ids: string[];
   web_search_skill: SkillInfo;
   permission_feature_id: string;
