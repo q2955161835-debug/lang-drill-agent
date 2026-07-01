@@ -152,6 +152,12 @@ class AddCustomProviderRequest(BaseModel):
     default_model: str
 
 
+class QuestionDatabaseFolderRequest(BaseModel):
+    folder: str
+    migrate: bool = True
+    overwrite: bool = False
+
+
 class ProfileUpdateRequest(BaseModel):
     display_name: str | None = None
     target_language: str | None = None

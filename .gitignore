@@ -12,6 +12,7 @@ frontend/*.tsbuildinfo
 data/*.db
 data/*.db-*
 data_backups/
+测试数据/
 backend/*.db
 backend/*.db-*
 try/*.db

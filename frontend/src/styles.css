@@ -945,6 +945,7 @@ h1, h2, h3, h4, .brand, .kicker { font-weight: 750; letter-spacing: -0.03em; }
 .token-card strong { display: block; font-size: 2rem; font-weight: 800; }
 .inline-row { display: flex; gap: 10px; align-items: center; }
 .inline-row select, .inline-row input { flex: 1; }
+.wrap-row { flex-wrap: wrap; }
 .square-action { width: 44px; justify-content: center; }
 .inline-action.square-action { width: 44px; min-width: 44px; padding-inline: 0; }
 .custom-provider-form {
@@ -1056,6 +1057,41 @@ h1, h2, h3, h4, .brand, .kicker { font-weight: 750; letter-spacing: -0.03em; }
 .usage-card span { color: var(--muted); font-weight: 750; }
 .usage-card strong { font-size: 1.8rem; line-height: 1; }
 .usage-card small { color: var(--muted-strong); font-weight: 650; }
+.compact-dashboard { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.compact-card {
+  min-height: 82px;
+  padding: 12px;
+}
+.compact-card strong { font-size: 1.25rem; }
+.data-path-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.data-path-grid div {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  border: var(--border-thin);
+  border-radius: var(--radius-sm);
+  background: var(--surface-strong);
+  padding: 14px;
+}
+.data-path-grid span {
+  color: var(--muted);
+  font-weight: 750;
+  font-size: 0.84rem;
+}
+.data-path-grid strong {
+  font-size: 0.9rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.toggle-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
 .context-setting-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1160,7 +1196,7 @@ h1, h2, h3, h4, .brand, .kicker { font-weight: 750; letter-spacing: -0.03em; }
   .right-rail { right: 0; }
   .right-rail.closed { width: 0; overflow: hidden; border: none; }
   .chat-main { min-height: 100dvh; }
-  .long-grid, .settings-grid, .settings-layout, .onboarding-flow, .options, .question-followup, .usage-dashboard, .context-setting-row { grid-template-columns: 1fr; }
+  .long-grid, .settings-grid, .settings-layout, .onboarding-flow, .options, .question-followup, .usage-dashboard, .context-setting-row, .data-path-grid, .toggle-grid { grid-template-columns: 1fr; }
   .settings-tabs { border-right: 0; border-bottom: var(--border-thick); flex-direction: row; overflow-x: auto; }
   .settings-tabs button { flex: 0 0 auto; }
   .score-stack { grid-template-columns: repeat(2, minmax(0, 1fr)); }

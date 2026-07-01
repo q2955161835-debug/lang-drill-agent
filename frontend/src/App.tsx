@@ -7,6 +7,7 @@ import {
   ChatCircleText,
   CheckCircle,
   CircleNotch,
+  Database,
   GearSix,
   GitBranch,
   ImageSquare,
@@ -29,6 +30,7 @@ import { MarkdownText } from "./components/MarkdownText";
 import { RightWorkbench, type WorkbenchTab } from "./components/RightWorkbench";
 import type {
   AnsweredQuestion,
+  DataPathsStatus,
   DailyPanel,
   ExamOption,
   LearningStats,
@@ -324,6 +326,29 @@ const DEFAULT_TOKEN_USAGE: TokenUsage = {
   daily_activity: []
 };
 
+const DEFAULT_DATA_PATHS: DataPathsStatus = {
+  user_data_dir: "",
+  question_database_dir: "",
+  db_path: "",
+  log_dir: "",
+  project_data_dir: "",
+  test_data_dir: "",
+  db_exists: false,
+  db_size: 0,
+  counts: {
+    study_sessions: 0,
+    messages: 0,
+    questions: 0,
+    attempts: 0,
+    knowledge_items: 0,
+    branch_conversations: 0,
+    branch_messages: 0,
+    model_calls: 0,
+    syllabus_sources: 0,
+    exam_assets: 0
+  }
+};
+
 function isOptionAnswer(content: string) {
   return /^(?:选择?\s*)?[A-D]$/i.test(content.trim()) || /^答案是\s*[A-D]$/i.test(content.trim());
 }
@@ -374,6 +399,13 @@ function formatCompactNumber(value: number | undefined) {
   if (amount >= 100_000_000) return `${(amount / 100_000_000).toFixed(1)}亿`;
   if (amount >= 10_000) return `${(amount / 10_000).toFixed(1)}万`;
   return formatNumber(amount);
+}
+
+function formatBytes(value: number | undefined) {
+  const amount = value || 0;
+  if (amount >= 1024 * 1024) return `${(amount / 1024 / 1024).toFixed(1)} MB`;
+  if (amount >= 1024) return `${(amount / 1024).toFixed(1)} KB`;
+  return `${amount} B`;
 }
 
 function cleanQuestionPrompt(question: Question) {
@@ -545,6 +577,7 @@ export default function App() {
   const [learningStats, setLearningStats] = useState<LearningStats>(DEFAULT_LEARNING_STATS);
   const [activeQuestion, setActiveQuestion] = useState<Question | null>(null);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage>(DEFAULT_TOKEN_USAGE);
+  const [dataPaths, setDataPaths] = useState<DataPathsStatus>(DEFAULT_DATA_PATHS);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [loadingLabel, setLoadingLabel] = useState("模型正在思考");
@@ -672,6 +705,7 @@ export default function App() {
       profile: Profile;
       sessions: SessionItem[];
       token_usage: TokenUsage;
+      data_paths?: DataPathsStatus;
       learning_stats?: LearningStats;
       providers: ProviderOption[];
       model_config: ModelConfig;
@@ -688,6 +722,7 @@ export default function App() {
         setPastPaperStatus(data.past_paper_status || DEFAULT_PAST_PAPER_STATUS);
         setSessions(data.sessions);
         setTokenUsage({ ...DEFAULT_TOKEN_USAGE, ...data.token_usage });
+        setDataPaths(data.data_paths || DEFAULT_DATA_PATHS);
         setLearningStats(data.learning_stats || DEFAULT_LEARNING_STATS);
         setOnboardingOpen(data.profile.exam_id === "unassigned");
       })
@@ -1228,6 +1263,7 @@ export default function App() {
           themeMode={themeMode}
           fontSize={fontSize}
           tokenUsage={tokenUsage}
+          dataPaths={dataPaths}
           sessions={sessions}
           examOptions={examOptions}
           syllabusStatus={syllabusStatus}
@@ -1245,6 +1281,7 @@ export default function App() {
           onProvidersChange={setProviders}
           onLearningStatsChange={setLearningStats}
           onTokenUsageChange={(nextUsage) => setTokenUsage({ ...DEFAULT_TOKEN_USAGE, ...nextUsage })}
+          onDataPathsChange={(nextPaths) => setDataPaths({ ...DEFAULT_DATA_PATHS, ...nextPaths })}
           onOpenOnboarding={() => {
             setSettingsOpen(false);
             setOnboardingOpen(true);
@@ -1520,6 +1557,7 @@ function SettingsDialog({
   themeMode,
   fontSize,
   tokenUsage,
+  dataPaths,
   sessions,
   examOptions,
   syllabusStatus,
@@ -1534,6 +1572,7 @@ function SettingsDialog({
   onProvidersChange,
   onLearningStatsChange,
   onTokenUsageChange,
+  onDataPathsChange,
   onOpenOnboarding
 }: {
   profile: Profile;
@@ -1542,6 +1581,7 @@ function SettingsDialog({
   themeMode: ThemeMode;
   fontSize: number;
   tokenUsage: TokenUsage;
+  dataPaths: DataPathsStatus;
   sessions: SessionItem[];
   examOptions: ExamOption[];
   syllabusStatus: SyllabusStatus;
@@ -1556,6 +1596,7 @@ function SettingsDialog({
   onProvidersChange: (providers: ProviderOption[]) => void;
   onLearningStatsChange: (stats: LearningStats) => void;
   onTokenUsageChange: (usage: TokenUsage) => void;
+  onDataPathsChange: (paths: DataPathsStatus) => void;
   onOpenOnboarding: () => void;
 }) {
   const [draft, setDraft] = useState(profile);
@@ -1572,6 +1613,11 @@ function SettingsDialog({
   const [reviewIntensity, setReviewIntensity] = useState(3);
   const [saveState, setSaveState] = useState("");
   const [contextLimit, setContextLimit] = useState(tokenUsage.context_limit || DEFAULT_CONTEXT_LIMIT);
+  const [dataPathDraft, setDataPathDraft] = useState<DataPathsStatus>(dataPaths);
+  const [questionDbFolder, setQuestionDbFolder] = useState(dataPaths.user_data_dir || "");
+  const [migrateQuestionDb, setMigrateQuestionDb] = useState(true);
+  const [overwriteQuestionDb, setOverwriteQuestionDb] = useState(false);
+  const [dataPathMessage, setDataPathMessage] = useState("");
   const [activeSettingsTab, setActiveSettingsTab] = useState("model");
   const [syllabusDraft, setSyllabusDraft] = useState(syllabusStatus);
   const [syllabusMessage, setSyllabusMessage] = useState("");
@@ -1776,7 +1822,7 @@ function SettingsDialog({
       setPastPaperMessage(err instanceof Error ? err.message : "联网搜索导入失败");
     }
   };
-  const saveModelConfig = async () => {
+  const saveModelConfig = async (successMessage = "模型配置已保存。如有自定义 URL/模型将永久应用于此提供商。") => {
     const finalModel = customModel.trim() || modelDraft.model;
     const data = await apiPost<{ model_config: ModelConfig; providers?: ProviderOption[] }>("/api/model-config", {
       ...modelDraft,
@@ -1787,7 +1833,20 @@ function SettingsDialog({
     if (data.providers) {
       onProvidersChange(normalizeProviders(data.providers));
     }
-    setSaveState("模型配置已保存。如有自定义 URL/模型将永久应用于此提供商。");
+    setSaveState(successMessage);
+  };
+  const saveDefaultModelConfig = async () => {
+    const finalModel = customModel.trim() || modelDraft.model;
+    const data = await apiPost<{ model_config: ModelConfig; providers?: ProviderOption[] }>("/api/model-config/default", {
+      ...modelDraft,
+      model: finalModel,
+      thinking_level_options: modelDraft.thinking_level_options || []
+    });
+    onModelConfigChange(data.model_config);
+    if (data.providers) {
+      onProvidersChange(normalizeProviders(data.providers));
+    }
+    setSaveState(`默认模型已切换为 ${data.model_config.model}。`);
   };
   const saveSettings = async () => {
     // 持久化 profile 到后端
@@ -1918,11 +1977,29 @@ function SettingsDialog({
     onTokenUsageChange(data.token_usage);
     setSaveState("上下文容量已保存。");
   };
+  const migrateQuestionDatabaseFolder = async () => {
+    setDataPathMessage("正在更新题目数据库目录...");
+    try {
+      const data = await apiPost<{ data_paths: DataPathsStatus; message?: string }>("/api/data-paths/question-db-folder", {
+        folder: questionDbFolder,
+        migrate: migrateQuestionDb,
+        overwrite: overwriteQuestionDb
+      });
+      const nextPaths = { ...DEFAULT_DATA_PATHS, ...data.data_paths };
+      setDataPathDraft(nextPaths);
+      setQuestionDbFolder(nextPaths.user_data_dir || questionDbFolder);
+      onDataPathsChange(nextPaths);
+      setDataPathMessage(data.message || "题目数据库目录已更新。");
+    } catch (err) {
+      setDataPathMessage(err instanceof Error ? err.message : "题目数据库目录更新失败");
+    }
+  };
   const settingTabs = [
     { id: "model", label: "模型", icon: GearSix },
     { id: "exam", label: "考试", icon: Target },
     { id: "syllabus", label: "考纲", icon: ListBullets },
     { id: "tokens", label: "令牌", icon: Brain },
+    { id: "data", label: "数据", icon: Database },
     { id: "study", label: "学习", icon: ShieldCheck },
     { id: "appearance", label: "外观", icon: Moon }
   ];
@@ -2042,7 +2119,10 @@ function SettingsDialog({
                   onChange={(event) => setCustomModel(event.target.value)}
                   placeholder="自定义模型名称，填写后优先使用"
                 />
-                <button className="inline-action" onClick={() => void saveModelConfig()}>保存模型配置</button>
+                <div className="inline-row wrap-row">
+                  <button className="inline-action" onClick={() => void saveModelConfig()}>保存模型配置</button>
+                  <button className="inline-action primary-inline" onClick={() => void saveDefaultModelConfig()}>设为默认模型</button>
+                </div>
                 {saveState && <p className="hint">{saveState}</p>}
               </SettingSection>
             )}
@@ -2239,6 +2319,91 @@ function SettingsDialog({
                   ))}
                   {!(tokenUsage.model_breakdown || []).length && <p className="hint">暂无模型调用记录。</p>}
                 </div>
+              </SettingSection>
+            )}
+            {activeSettingsTab === "data" && (
+              <SettingSection title="题目数据库">
+                <div className="data-path-grid">
+                  <div>
+                    <span>当前数据库</span>
+                    <strong>{dataPathDraft.db_path || "未初始化"}</strong>
+                  </div>
+                  <div>
+                    <span>用户数据目录</span>
+                    <strong>{dataPathDraft.user_data_dir || "默认目录"}</strong>
+                  </div>
+                  <div>
+                    <span>测试数据目录</span>
+                    <strong>{dataPathDraft.test_data_dir || "测试数据"}</strong>
+                  </div>
+                  <div>
+                    <span>数据库大小</span>
+                    <strong>{formatBytes(dataPathDraft.db_size)}</strong>
+                  </div>
+                </div>
+                <div className="usage-dashboard compact-dashboard">
+                  {[
+                    ["题目", dataPathDraft.counts.questions],
+                    ["作答", dataPathDraft.counts.attempts],
+                    ["会话", dataPathDraft.counts.study_sessions],
+                    ["知识项", dataPathDraft.counts.knowledge_items],
+                    ["考纲", dataPathDraft.counts.syllabus_sources],
+                    ["真题索引", dataPathDraft.counts.exam_assets]
+                  ].map(([label, value]) => (
+                    <div className="usage-card compact-card" key={label}>
+                      <span>{label}</span>
+                      <strong>{formatNumber(Number(value))}</strong>
+                    </div>
+                  ))}
+                </div>
+                <label className="field-label">
+                  <span>题目数据库文件夹</span>
+                  <input
+                    value={questionDbFolder}
+                    onChange={(event) => setQuestionDbFolder(event.target.value)}
+                    placeholder="例如：D:\\LangDrill\\user-data"
+                  />
+                  <small>数据库文件会写入该文件夹下的 data\\langdrill_agent.db。</small>
+                </label>
+                <div className="toggle-grid">
+                  <label className="check-row">
+                    <input
+                      type="checkbox"
+                      checked={migrateQuestionDb}
+                      onChange={(event) => setMigrateQuestionDb(event.target.checked)}
+                    />
+                    <span>
+                      <strong>迁移当前数据库</strong>
+                      <small>关闭后会在目标文件夹初始化空库。</small>
+                    </span>
+                  </label>
+                  <label className="check-row">
+                    <input
+                      type="checkbox"
+                      checked={overwriteQuestionDb}
+                      onChange={(event) => setOverwriteQuestionDb(event.target.checked)}
+                    />
+                    <span>
+                      <strong>允许覆盖目标库</strong>
+                      <small>覆盖前保留 pre-migration 备份。</small>
+                    </span>
+                  </label>
+                </div>
+                <div className="inline-row wrap-row">
+                  <button className="inline-action primary-inline" onClick={() => void migrateQuestionDatabaseFolder()}>
+                    迁移并使用此文件夹
+                  </button>
+                  <button
+                    className="inline-action"
+                    onClick={() => {
+                      setQuestionDbFolder(dataPathDraft.user_data_dir || "");
+                      setDataPathMessage("");
+                    }}
+                  >
+                    恢复当前路径
+                  </button>
+                </div>
+                {dataPathMessage && <p className="hint strong-hint">{dataPathMessage}</p>}
               </SettingSection>
             )}
             {activeSettingsTab === "study" && (

@@ -131,6 +131,43 @@ def test_add_custom_provider_api_returns_provider_and_refreshed_list(tmp_path, m
     assert any(item["id"] == provider["id"] for item in providers)
 
 
+def test_default_model_config_api_saves_selected_model(tmp_path, monkeypatch):
+    monkeypatch.setenv("LANGDRILL_USER_DATA_DIR", str(tmp_path / "user"))
+    monkeypatch.setenv("LANGDRILL_DB_PATH", str(tmp_path / "user" / "data" / "langdrill_agent.db"))
+    monkeypatch.delenv("LANGDRILL_DEFAULT_PROVIDER", raising=False)
+    monkeypatch.delenv("LANGDRILL_DEFAULT_MODEL", raising=False)
+    monkeypatch.delenv("LANGDRILL_PROVIDER_BASE_URL", raising=False)
+    monkeypatch.delenv("LANGDRILL_PROVIDER_API_KEY", raising=False)
+    monkeypatch.delenv("LANGDRILL_PROVIDER_API_KEY_DEEPSEEK", raising=False)
+    monkeypatch.setattr(services_module, "PROJECT_ROOT", tmp_path)
+
+    client = TestClient(app)
+    response = client.post(
+        "/api/model-config/default",
+        json={
+            "provider_id": "deepseek",
+            "base_url": "https://api.deepseek.com",
+            "model": "deepseek-chat",
+            "api_key": "deepseek-key",
+            "thinking_level": "off",
+            "thinking_level_options": [
+                {"id": "off", "label": "关闭", "api_value": ""},
+                {"id": "max", "label": "最高", "api_value": "max"},
+            ],
+            "api_format": "openai-chat-completions",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["model_config"]["provider_id"] == "deepseek"
+    assert data["model_config"]["model"] == "deepseek-chat"
+    env_text = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert "LANGDRILL_DEFAULT_PROVIDER=deepseek" in env_text
+    assert "LANGDRILL_DEFAULT_MODEL=deepseek-chat" in env_text
+    assert "LANGDRILL_PROVIDER_API_KEY_DEEPSEEK=deepseek-key" in env_text
+
+
 def test_provider_visibility_requires_configured_api_key(tmp_path, monkeypatch):
     monkeypatch.setattr(services_module, "PROJECT_ROOT", tmp_path)
     monkeypatch.delenv("LANGDRILL_PROVIDER_API_KEY", raising=False)

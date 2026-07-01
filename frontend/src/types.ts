@@ -168,6 +168,33 @@ export type TokenUsage = {
   }>;
 };
 
+export type DataPathsStatus = {
+  user_data_dir: string;
+  question_database_dir: string;
+  db_path: string;
+  log_dir: string;
+  project_data_dir: string;
+  test_data_dir: string;
+  db_exists: boolean;
+  db_size: number;
+  previous_db_path?: string;
+  migrated?: boolean;
+  message?: string;
+  counts: {
+    study_sessions: number;
+    messages: number;
+    questions: number;
+    attempts: number;
+    knowledge_items: number;
+    branch_conversations: number;
+    branch_messages: number;
+    model_calls: number;
+    syllabus_sources: number;
+    exam_assets: number;
+    [key: string]: number;
+  };
+};
+
 export type ExamOption = {
   id: string;
   name: string;

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import shutil
+import os
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
@@ -19,7 +20,14 @@ def prepare_user_database_path(db_path: Path | None = None) -> Path:
     target = db_path or settings.db_path
     target.parent.mkdir(parents=True, exist_ok=True)
     legacy_default = PROJECT_ROOT / "data" / "langdrill_agent.db"
-    if db_path is None and target == settings.db_path and legacy_default.exists() and not target.exists():
+    should_migrate_legacy = (
+        db_path is None
+        and target == settings.db_path
+        and legacy_default.exists()
+        and not target.exists()
+        and os.getenv("LANGDRILL_MIGRATE_LEGACY_DB", "").strip() == "1"
+    )
+    if should_migrate_legacy:
         shutil.copy2(legacy_default, target)
         logger.info("copied legacy project database to user data directory", extra={"target": str(target)})
     return target

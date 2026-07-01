@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from .agents import EvaluatorTutorAgent, OrchestratorAgent, QuestionAuthorAgent, token_totals
 from .config import load_settings
 from .context import ContextService
+from .data_paths import DataPathService
 from .db import init_db, transaction
 from .logging_config import configure_logging
 from .learning_stats import LearningStatsService
@@ -32,6 +33,7 @@ from .models import (
     PhoneMirrorStartRequest,
     ProfileUpdateRequest,
     PromptPack,
+    QuestionDatabaseFolderRequest,
     QuestionTypeSelectRequest,
     ScreenshotImportRequest,
     SyllabusCheckRequest,
@@ -433,6 +435,7 @@ def bootstrap() -> dict:
             "syllabus_status": SyllabusService(conn).status(profile.exam_id),
             "past_paper_status": PastPaperService(conn).status(profile.exam_id),
             "learning_stats": LearningStatsService(conn).overview(),
+            "data_paths": DataPathService().status(),
         }
 
 
@@ -482,6 +485,12 @@ def save_model_config(request: ModelConfigRequest) -> dict:
         )
         return {"model_config": config, "providers": svc.providers()}
 
+
+@app.post("/api/model-config/default")
+def save_default_model_config(request: ModelConfigRequest) -> dict:
+    return save_model_config(request)
+
+
 @app.post("/api/config/providers/custom")
 def add_custom_provider(request: AddCustomProviderRequest) -> dict:
     init_db()
@@ -489,6 +498,21 @@ def add_custom_provider(request: AddCustomProviderRequest) -> dict:
         svc = ModelConfigService(conn)
         provider = svc.add_custom_provider(request.name, request.base_url, request.default_model)
         return {"status": "ok", "provider": provider, "providers": svc.providers()}
+
+
+@app.get("/api/data-paths")
+def data_paths_status() -> dict:
+    return DataPathService().status()
+
+
+@app.post("/api/data-paths/question-db-folder")
+def configure_question_database_folder(request: QuestionDatabaseFolderRequest) -> dict:
+    status = DataPathService().configure_question_database_folder(
+        request.folder,
+        migrate=request.migrate,
+        overwrite=request.overwrite,
+    )
+    return {"data_paths": status, "message": status.get("message", "题目数据库目录已更新。")}
 
 
 @app.post("/api/settings/defaults")

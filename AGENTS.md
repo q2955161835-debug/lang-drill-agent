@@ -21,6 +21,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - 聊天输入区需要展示当前上下文容量占用，默认上限 1,000,000 token（令牌），支持保存自定义上限和主动压缩上下文；LLMLingua（提示词压缩库）作为可选增强，默认使用本地抽取式摘要兜底。
 - 主聊天和右侧分支消息必须通过安全的 Markdown（标记语言）渲染组件展示基础格式，包括加粗、内联代码、列表、标题和代码块；禁止用不可信模型内容直接写入 HTML（超文本标记语言）。
 - 历年真题以 `exam_assets` 中的试卷记录和 `papers/<考试>/raw`、`papers/<考试>/parsed` 中的原始/解析资产为准，默认选择近 3 年真题；出题 Agent（智能体）必须参考当前选中的真题解析结果和已勾选题型，但不得复刻或长段引用完整真题原文。
+- 用户题目数据库支持自定义用户数据文件夹和迁移：模型生成给用户作答的题目、会话、作答、知识项和统计仍写入同一个 SQLite（轻量数据库）运行库；设置页“数据”页签和 CLI（命令行接口）可迁移当前库或初始化空库。
 
 ## GitHub（代码托管平台）
 
@@ -46,6 +47,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - `backend/langdrill_agent/paper_assets.py`：历年真题目录、原始文件保存、PDF（Portable Document Format，便携式文档格式）/DOCX（Word 文档格式）/Markdown（Markdown 文本格式）文本抽取、解析 JSON（JSON 数据交换格式）生成和短摘录提取。
 - `backend/langdrill_agent/learning_stats.py`：长期学习统计服务，按当前考试聚合题目完成、词汇掌握和整体正确率。
 - `backend/langdrill_agent/context.py`：上下文容量、会话上下文快照、主动压缩、使用统计和 token（令牌）统计口径。
+- `backend/langdrill_agent/data_paths.py`：用户数据目录、题目 SQLite（轻量数据库）路径状态、迁移、空库初始化和 `.env` 路径账本更新。
 - `backend/langdrill_agent/agents.py`：Orchestrator（调度器）、Question Author（出题 Agent）和 Evaluator Tutor（判题讲解 Agent）的实现。
 - `backend/langdrill_agent/task_router.py`：用户意图识别与任务路由。
 - `backend/langdrill_agent/providers.py`：模型供应商配置、API Key（接口密钥）读取和模型调用适配。
@@ -61,9 +63,11 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - `doc/`：项目地图、验收标准、人工验收清单、桌面打包说明和进展记录。
 - `doc/进展记录/`：阶段性工作记录，包含完成内容、文件清单、错误汇报、验证结果和回退方案。
 - `try/`：自动测试、调试脚本和临时验证文件；该目录内文件必须只服务于测试/调试，可清理后不影响项目运行。
+- `测试数据/`：从正式运行路径迁出的开发/联调/污染数据，按时间戳分类保存；该目录禁止提交，可清理但清理前应确认不再需要回溯。
 - `archive/optimized-out/`：已从运行路径移除的旧功能归档，只作历史参考。
 - `logs/`：本地运行日志，禁止提交。
 - `data/`、`data_backups/`：历史项目内数据库位置和用户数据备份目录，数据库与备份禁止提交。
+- 运行时不再默认从项目内 `data/langdrill_agent.db` 自动复制旧库；只有显式设置 `LANGDRILL_MIGRATE_LEGACY_DB=1` 才执行旧库迁移，避免污染新用户库。
 
 ## 核心数据流
 
@@ -122,6 +126,7 @@ py -m venv .venv
 pip install -e .[dev]
 py -m langdrill_agent.cli status
 py -m langdrill_agent.cli data-paths
+py -m langdrill_agent.cli set-question-db-folder "D:\LangDrill\user-data" --migrate
 py -m langdrill_agent.cli backup-user-data
 cd frontend
 npm install
@@ -168,6 +173,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\dev\start-dev.ps
 - 默认真实供应商密钥变量：`LANGDRILL_PROVIDER_API_KEY_OPENAI`、`LANGDRILL_PROVIDER_API_KEY_CLAUDE`、`LANGDRILL_PROVIDER_API_KEY_DEEPSEEK`、`LANGDRILL_PROVIDER_API_KEY_MIMO`；自定义供应商使用同规则生成的动态变量名。
 - `LANGDRILL_ENABLE_LLMLINGUA=1` 时，主动压缩上下文可尝试使用可选依赖 LLMLingua；未启用或不可用时使用本地抽取式摘要兜底。
 - `LANGDRILL_PAPER_ROOT` 控制历年真题原始文件和解析 JSON（JSON 数据交换格式）根目录，默认 `./papers`；真实完整试卷建议保存在本地私有目录或保持 `.gitignore` 排除。
+- `LANGDRILL_MIGRATE_LEGACY_DB=1` 时才允许从项目内历史 `data/langdrill_agent.db` 复制旧库到当前用户点目录；默认不迁移，避免污染无数据测试库。
 - API Key（接口密钥）应保存纯密钥值；后端会清理常见粘贴前缀 `apikey:` / `Bearer:`，但发现换行或非 ASCII（非英文半角）字符时必须返回可读错误，不能让 `httpx` 请求头编码异常直接暴露给前端。
 - 如怀疑敏感信息已经提交到 GitHub（代码托管平台），必须提醒用户撤销旧密钥、创建新密钥并清理 Git 历史。
 

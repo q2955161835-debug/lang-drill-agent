@@ -8,6 +8,7 @@ from pathlib import Path
 import typer
 import uvicorn
 from .config import load_settings
+from .data_paths import DataPathService
 from .db import init_db, transaction
 from .logging_config import configure_logging
 from .services import ProfileService, SessionService, SourceService
@@ -104,18 +105,22 @@ def chat(message: str, session_id: str | None = None) -> None:
 @app.command("data-paths")
 def data_paths() -> None:
     """查看用户状态目录、数据库和日志位置。"""
-    settings = load_settings()
-    typer.echo(
-        json.dumps(
-            {
-                "user_data_dir": str(settings.user_data_dir),
-                "db_path": str(settings.db_path),
-                "log_dir": str(settings.log_dir),
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
+    typer.echo(json.dumps(DataPathService().status(), ensure_ascii=False, indent=2))
+
+
+@app.command("set-question-db-folder")
+def set_question_db_folder(
+    folder: Path = typer.Argument(..., help="新的题目数据库文件夹"),
+    migrate: bool = typer.Option(True, help="迁移当前数据库到新文件夹"),
+    overwrite: bool = typer.Option(False, help="允许覆盖目标已有数据库；覆盖前会保留一份 pre-migration 备份"),
+) -> None:
+    """设置题目数据库文件夹，可选择迁移当前 SQLite（轻量数据库）。"""
+    result = DataPathService().configure_question_database_folder(
+        str(folder),
+        migrate=migrate,
+        overwrite=overwrite,
     )
+    typer.echo(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 @app.command("backup-user-data")

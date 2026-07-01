@@ -15,6 +15,7 @@ def test_default_settings_use_home_dot_directory(tmp_path: Path, monkeypatch) ->
     monkeypatch.setattr(config_module, "PROJECT_ROOT", project_root)
     monkeypatch.setenv("USERPROFILE", str(home_dir))
     monkeypatch.setenv("HOME", str(home_dir))
+    monkeypatch.delenv("LANGDRILL_USER_DATA_DIR", raising=False)
     monkeypatch.delenv("LANGDRILL_DB_PATH", raising=False)
 
     settings = config_module.load_settings()
@@ -24,7 +25,7 @@ def test_default_settings_use_home_dot_directory(tmp_path: Path, monkeypatch) ->
     assert settings.log_dir == home_dir / ".langdrill-agent" / "logs"
 
 
-def test_legacy_project_db_is_copied_to_default_dot_directory(tmp_path: Path, monkeypatch) -> None:
+def test_legacy_project_db_is_not_copied_without_opt_in(tmp_path: Path, monkeypatch) -> None:
     import langdrill_agent.config as config_module
     import langdrill_agent.db as db_module
 
@@ -38,7 +39,34 @@ def test_legacy_project_db_is_copied_to_default_dot_directory(tmp_path: Path, mo
     monkeypatch.setattr(db_module, "PROJECT_ROOT", project_root)
     monkeypatch.setenv("USERPROFILE", str(home_dir))
     monkeypatch.setenv("HOME", str(home_dir))
+    monkeypatch.delenv("LANGDRILL_USER_DATA_DIR", raising=False)
     monkeypatch.setenv("LANGDRILL_DB_PATH", "./data/langdrill_agent.db")
+    monkeypatch.delenv("LANGDRILL_MIGRATE_LEGACY_DB", raising=False)
+
+    target = db_module.prepare_user_database_path()
+
+    assert target == home_dir / ".langdrill-agent" / "data" / "langdrill_agent.db"
+    assert not target.exists()
+    assert legacy_db.exists()
+
+
+def test_legacy_project_db_is_copied_when_opted_in(tmp_path: Path, monkeypatch) -> None:
+    import langdrill_agent.config as config_module
+    import langdrill_agent.db as db_module
+
+    project_root = tmp_path / "project"
+    home_dir = tmp_path / "home"
+    legacy_db = project_root / "data" / "langdrill_agent.db"
+    legacy_db.parent.mkdir(parents=True)
+    legacy_db.write_bytes(b"legacy-db")
+    home_dir.mkdir()
+    monkeypatch.setattr(config_module, "PROJECT_ROOT", project_root)
+    monkeypatch.setattr(db_module, "PROJECT_ROOT", project_root)
+    monkeypatch.setenv("USERPROFILE", str(home_dir))
+    monkeypatch.setenv("HOME", str(home_dir))
+    monkeypatch.delenv("LANGDRILL_USER_DATA_DIR", raising=False)
+    monkeypatch.setenv("LANGDRILL_DB_PATH", "./data/langdrill_agent.db")
+    monkeypatch.setenv("LANGDRILL_MIGRATE_LEGACY_DB", "1")
 
     target = db_module.prepare_user_database_path()
 
@@ -57,6 +85,7 @@ def test_configured_logging_writes_to_user_log_dir(tmp_path: Path, monkeypatch) 
     monkeypatch.setattr(config_module, "PROJECT_ROOT", project_root)
     monkeypatch.setenv("USERPROFILE", str(home_dir))
     monkeypatch.setenv("HOME", str(home_dir))
+    monkeypatch.delenv("LANGDRILL_USER_DATA_DIR", raising=False)
     monkeypatch.delenv("LANGDRILL_DB_PATH", raising=False)
     logging_module = importlib.import_module("langdrill_agent.logging_config")
 

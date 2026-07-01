@@ -29,8 +29,9 @@ Lang Drill Agent（语言学习训练 Agent）不是单一巨型 prompt（提示
 - 快速开始：长期学习总面板底部提供“当日导入 / 快速开始”。当前查看的会话或当日面板没有导入/题组时打开右侧截图导入并给出本地提示；当前面板已有内容时自动发送“继续当前题组”。
 - 主聊天截图导入：用户把 3 个以上截图词条直接粘贴到主聊天栏时，后端复用侧边栏截图导入流程，自动创建截图练习会话、导入词表并生成题组；支持“单词独占一行 + 下一行释义”、`word n. 释义` 和 `word: 释义` 等常见格式。
 - 上下文与压缩：聊天输入框发送按钮左侧显示上下文容量圆圈，默认上限 1,000,000 token（令牌）；设置页可修改上限，圆圈弹窗可主动压缩上下文。LLMLingua（提示词压缩库）作为可选增强，默认使用本地抽取式摘要兜底。
+- 题目数据库目录：设置页“数据”页签可查看当前 SQLite（轻量数据库）运行库路径、题目/作答/会话计数、数据库大小，并把题目数据库迁移到自定义文件夹或初始化新的空库。
 - 题目吸附显示：当前正在回答的题目在聊天滚动时保持可见，避免题目被滑走。
-- 模型供应商配置：支持 Mock（本地模拟）、OpenAI-compatible（OpenAI 兼容）、国内常见供应商、本地模型和自定义 Base URL（基础网址）/API Key（接口密钥）/模型名称。
+- 模型供应商配置：支持 Mock（本地模拟）、OpenAI-compatible（OpenAI 兼容）、国内常见供应商、本地模型和自定义 Base URL（基础网址）/API Key（接口密钥）/模型名称；设置页可明确把当前供应商和模型设为默认模型。
 - 学习算法基础：内置 `mastery_score V1`（掌握度 V1），预留 FSRS（Free Spaced Repetition Scheduler，免费间隔重复调度器）接入点。
 
 ## 三 Agent（智能体）架构
@@ -85,6 +86,7 @@ Web（网页）前端包含三个主区域：
 
 - 模型提供商、Base URL（基础网址）、API Key（接口密钥）、模型名称和自定义模型入口。
 - 使用统计，展示累计 token（令牌）、会话数、消息数、活跃天数、连续天数、最常用模型、近 30 天活动热力、模型用量分布和上下文容量上限。
+- 数据，展示当前用户数据目录、题目数据库路径、测试数据目录、数据库大小和核心表计数；支持迁移当前数据库到自定义文件夹或初始化空库。
 - 当前考试、目标语言、考试时间、学习目标和学习背景。
 - 考纲与历年真题：展示当前考纲、当前参考的历年真题试卷、来源网站、原始试卷路径、解析 JSON（JSON 数据交换格式）路径、手动导入/重新解析入口、联网搜索导入入口和从考纲/试卷提炼出的题型勾选项。
 - 个性化设置、全局提示词、Agent（智能体）性格选择和自定义人格提示词。
@@ -98,6 +100,7 @@ CLI（命令行接口）适合脚本化、终端工作流和快速调试：
 ```powershell
 py -m langdrill_agent.cli status
 py -m langdrill_agent.cli data-paths
+py -m langdrill_agent.cli set-question-db-folder "D:\LangDrill\user-data" --migrate
 py -m langdrill_agent.cli backup-user-data
 py -m langdrill_agent.cli chat "今天学习まで、から和に的区别"
 py -m langdrill_agent.cli import-skill --source "D:\1Folder\语言学习-lang-drill\语言学习-lang-drill-skill"
@@ -173,6 +176,7 @@ npm run dev
 - `LANGDRILL_PROVIDER_API_KEY_OPENAI`、`LANGDRILL_PROVIDER_API_KEY_CLAUDE`、`LANGDRILL_PROVIDER_API_KEY_DEEPSEEK`、`LANGDRILL_PROVIDER_API_KEY_MIMO`：默认真实供应商专属 API Key（接口密钥）。
 - `LANGDRILL_ENABLE_LLMLINGUA`：设为 `1` 后，主动压缩上下文会尝试使用可选依赖 LLMLingua；未启用时使用本地抽取式摘要。
 - `LANGDRILL_PAPER_ROOT`：历年真题原始文件和解析 JSON（JSON 数据交换格式）的根目录；默认 `./papers`。
+- `LANGDRILL_MIGRATE_LEGACY_DB`：设为 `1` 才从项目内历史 `data/langdrill_agent.db` 复制旧库；默认不复制，避免无污染测试库被旧数据污染。
 
 可选安装上下文压缩增强：
 
@@ -203,6 +207,8 @@ npm install -g mineru-open-api
 - 安全规则总是注入；个性化人格仅在聊天和总结任务中注入。
 - 长期学习记录只以摘要、统计和相关检索片段形式进入 prompt（提示词）。
 - 默认用户状态写入当前系统用户主目录下的 `.langdrill-agent` 点目录；历史 `data/langdrill_agent.db` 只作为迁移来源，不再是默认正式状态库。
+- 当前用户运行库可通过设置页“数据”页签或 `set-question-db-folder` 迁移到自定义文件夹；迁移会复制当前 SQLite（轻量数据库），切换 `.env` 中的 `LANGDRILL_USER_DATA_DIR` 和 `LANGDRILL_DB_PATH`。
+- 开发/联调/污染数据统一放入项目内 `测试数据/开发数据/<时间戳>/`，该目录被 `.gitignore` 排除，不提交。
 - 清空重测前可运行 `py -m langdrill_agent.cli backup-user-data`，把点目录数据备份到项目内 `data_backups/`；该目录不提交。
 - 后端日志默认写入 `~/.langdrill-agent/logs/langdrill-agent.log`，用于定位 API（接口）、模型、截图导入和数据库问题。
 - 真题和考纲必须保留来源、年份、可信等级和版权边界。
@@ -214,12 +220,14 @@ npm install -g mineru-open-api
 ```text
 backend/langdrill_agent/        共享后端内核、API（接口）、CLI（命令行接口）、服务层和 Agent（智能体）
 backend/langdrill_agent/migrations/ SQLite（轻量数据库）schema（结构定义）
+backend/langdrill_agent/data_paths.py 用户数据目录、题目数据库迁移和空库初始化
 frontend/                       React（前端框架）+ Vite（前端构建工具）网页前端
 papers/                         按考试类型分开的真题 raw（原始文件）和 parsed（解析结果）目录骨架
 scripts/dev/                    开发期启动与维护脚本
 src-tauri/                      Tauri（桌面壳）Windows 桌面封装骨架
 doc/                            架构说明、项目地图、进展记录和 README（说明文档）资源
 try/                            测试和调试文件，可清理
+测试数据/                       开发/联调/污染数据归档目录，不提交
 archive/optimized-out/          已下线旧功能模块归档
 logs/                           本地运行日志，不提交
 ```
