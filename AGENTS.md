@@ -61,6 +61,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - `backend/langdrill_agent/phone_mirror.py`：adb（安卓调试桥）/scrcpy（手机映像工具）环境检测和启动准备。
 - `backend/langdrill_agent/migrations/`：SQLite（轻量数据库）schema（数据库结构）初始化脚本。
 - `frontend/`：React（前端框架）+ TypeScript（类型化 JavaScript）+ Vite（前端构建工具）网页前端。
+- `frontend/public/assets/`：前端静态资源目录，当前保存深色主题生成背景图等无需打包导入的公开资产。
 - `frontend/src/App.tsx`：前端主入口，负责可拖拽三栏布局、聊天、设置、初始化、当前题吸附显示、已答题回顾卡片、上下文容量圆环、Agent 设置权限和右侧工作台接入。
 - `frontend/src/components/`：前端可复用组件，当前重点是 `RightWorkbench.tsx`、`ContextMenu.tsx` 和 `MarkdownText.tsx`；`RightWorkbench.tsx` 折叠和页签切换必须隐藏但不卸载内部面板状态。
 - `papers/`：按考试类型分开的历年真题资产目录骨架；`raw/` 存原始试卷或粘贴文本，`parsed/` 存解析 JSON（JSON 数据交换格式），实际导入内容默认不提交。
@@ -158,7 +159,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\dev\start-dev.ps
 
 ## 允许修改范围
 
-- 任务相关的 `backend/langdrill_agent/`、`frontend/src/`、`scripts/`、`doc/`、`try/`。
+- 任务相关的 `backend/langdrill_agent/`、`frontend/src/`、`frontend/public/assets/`、`scripts/`、`doc/`、`try/`。
 - 新增测试必须放入 `try/`。
 - 新增开发脚本优先放入 `scripts/dev/`，并同步更新 `AGENTS.md` 与验收标准。
 - 文档更新优先修改 `AGENTS.md`、`doc/项目地图.md`、`doc/验收标准.md`、`README.md` 和当天进展记录。

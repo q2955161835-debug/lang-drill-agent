@@ -26,13 +26,20 @@
   --radius: 18px;
   --radius-sm: 12px;
   --radius-xs: 8px;
+  --app-background:
+    radial-gradient(circle at 16% 0%, rgba(37, 99, 235, 0.12), transparent 32rem),
+    linear-gradient(135deg, rgba(15, 23, 42, 0.035) 25%, transparent 25%),
+    var(--bg);
+  --app-background-size: auto, 18px 18px, auto;
+  --app-background-position: center, center, center;
+  --app-background-repeat: no-repeat, repeat, no-repeat;
   font-family: 'Inter', 'Microsoft YaHei UI', 'PingFang SC', system-ui, sans-serif;
   font-size: 16px;
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #080b10;
+  --bg: #0b1018;
   --surface: #10141d;
   --surface-strong: #171d29;
   --surface-glass: rgba(16, 20, 29, 0.78);
@@ -51,17 +58,23 @@
   --shadow-cartoon: 0 22px 70px rgba(0, 0, 0, 0.36);
   --shadow-cartoon-hover: 0 18px 58px rgba(0, 0, 0, 0.42);
   --shadow-cartoon-active: 0 10px 32px rgba(0, 0, 0, 0.32);
+  --app-background:
+    linear-gradient(rgba(8, 11, 16, 0.16), rgba(8, 11, 16, 0.16)),
+    url("/assets/dark-theme-bg.jpg"),
+    var(--bg);
+  --app-background-size: auto, cover, auto;
+  --app-background-position: center, center, center;
+  --app-background-repeat: no-repeat, no-repeat, no-repeat;
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  background:
-    radial-gradient(circle at 16% 0%, rgba(37, 99, 235, 0.12), transparent 32rem),
-    linear-gradient(135deg, rgba(15, 23, 42, 0.035) 25%, transparent 25%),
-    var(--bg);
-  background-size: auto, 18px 18px, auto;
+  background: var(--app-background);
+  background-size: var(--app-background-size);
+  background-position: var(--app-background-position);
+  background-repeat: var(--app-background-repeat);
   color: var(--text);
 }
 
