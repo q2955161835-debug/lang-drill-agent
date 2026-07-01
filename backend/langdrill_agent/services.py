@@ -2100,6 +2100,70 @@ class ModelConfigService:
         )
         return self.current()
 
+    def refresh_provider_models(
+        self,
+        provider_id: str,
+        base_url: str = "",
+        api_key: str = "",
+        *,
+        api_format: str = "",
+    ) -> dict[str, Any]:
+        provider = self.provider_by_id(provider_id)
+        if provider.get("id") == "mock":
+            raise ValueError("Mock Provider 不支持从 API 获取模型列表。")
+        clean_base_url = (base_url or provider.get("base_url", "")).strip()
+        clean_api_format = (api_format or provider.get("api_format", "openai-chat-completions")).strip()
+        env_values = {**self._read_env(), **self._read_process_env()}
+        clean_api_key = normalize_api_key(api_key) or self._provider_api_key(provider_id, env_values, self._current_provider_id(env_values))
+        if provider.get("api_key_required", True) and not clean_api_key:
+            raise ValueError("获取模型列表需要先填写或保存 API Key（接口密钥）。")
+
+        fetched_models = self._fetch_provider_models(clean_base_url, clean_api_key, clean_api_format)
+        if not fetched_models:
+            raise ValueError("供应商 API 没有返回可用模型。")
+
+        row_ov = self.conn.execute("SELECT value_json FROM app_settings WHERE key='model.provider_overrides'").fetchone()
+        overrides = loads(row_ov["value_json"], {}) if row_ov else {}
+        ov = overrides.setdefault(provider_id, {"added_models": [], "model_reasoning_overrides": {}})
+        visibility_overrides = dict(ov.get("model_visibility_overrides", {}))
+        normalized_models: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for item in fetched_models:
+            model_id = self._model_id(item)
+            if not model_id or model_id in seen:
+                continue
+            seen.add(model_id)
+            normalized = self._merge_model_metadata(provider_id, item)
+            normalized["visible"] = bool(visibility_overrides.get(model_id, normalized.get("visible", True)))
+            normalized_models.append(normalized)
+
+        ov["base_url"] = clean_base_url
+        ov["api_format"] = clean_api_format
+        ov["fetched_models"] = normalized_models
+        self._save_provider_overrides(overrides)
+        return {
+            "provider": self.provider_by_id(provider_id),
+            "providers": self.providers(),
+            "models": normalized_models,
+            "message": f"已从供应商 API 获取 {len(normalized_models)} 个可调用模型。",
+        }
+
+    def set_model_visibility(self, provider_id: str, model: str, visible: bool) -> dict[str, Any]:
+        clean_model = model.strip()
+        if not clean_model:
+            raise ValueError("模型名称不能为空。")
+        row_ov = self.conn.execute("SELECT value_json FROM app_settings WHERE key='model.provider_overrides'").fetchone()
+        overrides = loads(row_ov["value_json"], {}) if row_ov else {}
+        ov = overrides.setdefault(provider_id, {"added_models": [], "model_reasoning_overrides": {}})
+        ov.setdefault("model_visibility_overrides", {})[clean_model] = bool(visible)
+        self._save_provider_overrides(overrides)
+        return {
+            "provider": self.provider_by_id(provider_id),
+            "providers": self.providers(),
+            "model_config": self.current(),
+            "message": f"模型 {clean_model} 已{'显示' if visible else '隐藏'}。",
+        }
+
     def reset_defaults(self) -> dict[str, Any]:
         self.conn.execute(
             "DELETE FROM app_settings WHERE key IN ('model.default', 'model.provider_overrides', 'model.custom_providers')"
@@ -2139,6 +2203,12 @@ class ModelConfigService:
         )
         return self._normalize_custom_provider(provider)
 
+    def _save_provider_overrides(self, overrides: dict[str, Any]) -> None:
+        self.conn.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value_json, updated_at) VALUES ('model.provider_overrides', ?, CURRENT_TIMESTAMP)",
+            (dumps(overrides),),
+        )
+
     def _normalize_custom_provider(self, provider: dict[str, Any]) -> dict[str, Any]:
         item = deepcopy(provider)
         item.setdefault("kind", "openai-compatible")
@@ -2167,13 +2237,14 @@ class ModelConfigService:
                 for item in model_options
             }
             existing = {self._model_id(item) for item in model_options}
-            for model in ov.get("added_models", []):
+            for model in [*ov.get("fetched_models", []), *ov.get("added_models", [])]:
                 normalized = self._normalize_model_option(model)
                 if normalized["id"] and normalized["id"] not in existing:
                     model_options.append(normalized)
                     existing.add(normalized["id"])
             reasoning_overrides = ov.get("model_reasoning_overrides", {})
             capability_overrides = ov.get("model_capability_overrides", {})
+            visibility_overrides = ov.get("model_visibility_overrides", {})
             for model_item in model_options:
                 model_id = self._model_id(model_item)
                 if model_id in reasoning_overrides:
@@ -2187,6 +2258,8 @@ class ModelConfigService:
                         model_item["vision"] = bool(override_item.get("vision", model_item.get("vision", False)))
                     else:
                         model_item["vision"] = bool(override_item)
+                if model_id in visibility_overrides:
+                    model_item["visible"] = bool(visibility_overrides[model_id])
             provider["model_options"] = model_options
         else:
             provider["model_options"] = [self._normalize_model_option(item) for item in provider.get("model_options", [])]
@@ -2227,6 +2300,7 @@ class ModelConfigService:
                 "label": value,
                 "context_tokens": 0,
                 "vision": False,
+                "visible": True,
                 "reasoning": {"default_level": "", "parameter": self._default_reasoning_parameter(""), "levels": []},
             }
         item = dict(value or {})
@@ -2234,10 +2308,104 @@ class ModelConfigService:
         item.setdefault("label", item.get("id", ""))
         item.setdefault("context_tokens", 0)
         item["vision"] = bool(item.get("vision", False))
+        item["visible"] = bool(item.get("visible", True))
         item.setdefault("reasoning", {"default_level": "", "parameter": self._default_reasoning_parameter(""), "levels": []})
         if item["reasoning"]:
             item["reasoning"]["levels"] = self._normalize_thinking_options(item["reasoning"].get("levels", []))
         return item
+
+    def _merge_model_metadata(self, provider_id: str, model: dict[str, Any]) -> dict[str, Any]:
+        normalized = self._normalize_model_option(model)
+        native = self._model_config(provider_id, normalized["id"])
+        if native:
+            merged = {
+                **normalized,
+                "context_tokens": native.get("context_tokens", normalized.get("context_tokens", 0)),
+                "vision": bool(native.get("vision", normalized.get("vision", False))),
+                "reasoning": deepcopy(native.get("reasoning", normalized.get("reasoning", {}))),
+            }
+            if normalized.get("label") and normalized["label"] != normalized["id"]:
+                merged["label"] = normalized["label"]
+            return self._normalize_model_option(merged)
+        return normalized
+
+    def _fetch_provider_models(self, base_url: str, api_key: str, api_format: str) -> list[dict[str, Any]]:
+        clean_key = validate_http_header_value(normalize_api_key(api_key), "API Key") if api_key else ""
+        attempts: list[str] = []
+        last_error = ""
+        for endpoint, headers in self._model_list_candidates(base_url, clean_key, api_format):
+            attempts.append(endpoint)
+            try:
+                response = httpx.get(endpoint, headers=headers, timeout=30)
+                response.raise_for_status()
+                return self._extract_model_options(response.json())
+            except httpx.HTTPStatusError as exc:
+                last_error = f"{exc.response.status_code}: {exc.response.text[:160]}"
+            except Exception as exc:
+                last_error = str(exc)
+        tried = "、".join(attempts)
+        raise ValueError(f"获取模型列表失败。已尝试：{tried}。最后错误：{last_error}")
+
+    def _model_list_candidates(self, base_url: str, api_key: str, api_format: str) -> list[tuple[str, dict[str, str]]]:
+        clean_base = (base_url or "").strip().rstrip("/")
+        if not clean_base:
+            raise ValueError("Base URL（基础网址）不能为空。")
+        bearer_headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        anthropic_headers = {
+            **({"x-api-key": api_key, "Authorization": f"Bearer {api_key}"} if api_key else {}),
+            "anthropic-version": "2023-06-01",
+        }
+        if api_format == "anthropic-messages":
+            return [
+                (self._endpoint(clean_base, "/v1/models"), anthropic_headers),
+                (self._endpoint(clean_base, "/models"), bearer_headers or anthropic_headers),
+            ]
+        return [
+            (self._endpoint(clean_base, "/models"), bearer_headers),
+            (self._endpoint(clean_base, "/v1/models"), bearer_headers),
+        ]
+
+    def _extract_model_options(self, data: Any) -> list[dict[str, Any]]:
+        candidates: Any = data
+        if isinstance(data, dict):
+            for key in ("data", "models", "model_options"):
+                if isinstance(data.get(key), list):
+                    candidates = data[key]
+                    break
+            else:
+                candidates = [data] if (data.get("id") or data.get("model") or data.get("name")) else []
+        if not isinstance(candidates, list):
+            return []
+        models: list[dict[str, Any]] = []
+        for item in candidates:
+            if isinstance(item, str):
+                model_id = item.strip()
+                label = model_id
+            elif isinstance(item, dict):
+                model_id = str(item.get("id") or item.get("model") or item.get("name") or "").strip()
+                label = str(item.get("display_name") or item.get("label") or item.get("name") or model_id).strip()
+            else:
+                continue
+            if not model_id:
+                continue
+            models.append(
+                {
+                    "id": model_id,
+                    "label": label or model_id,
+                    "context_tokens": 0,
+                    "vision": False,
+                    "visible": True,
+                    "reasoning": {"default_level": "", "parameter": self._default_reasoning_parameter(""), "levels": []},
+                }
+            )
+        return models
+
+    def _endpoint(self, base_url: str, suffix: str) -> str:
+        clean_base = base_url.rstrip("/")
+        clean_suffix = suffix if suffix.startswith("/") else f"/{suffix}"
+        if clean_base.endswith("/v1") and clean_suffix.startswith("/v1/"):
+            clean_suffix = clean_suffix[3:]
+        return f"{clean_base}{clean_suffix}"
 
     def _normalize_thinking_options(self, options: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
         normalized: list[dict[str, Any]] = []

@@ -40,6 +40,7 @@ export type ModelOption = string | {
   label?: string;
   context_tokens?: number;
   vision?: boolean;
+  visible?: boolean;
   reasoning?: {
     default_level?: string;
     parameter?: string;
@@ -191,6 +192,9 @@ export type TokenUsage = {
   input: number;
   output: number;
   total: number;
+  total_calls?: number;
+  average_tokens_per_call?: number;
+  average_latency_ms?: number;
   estimated_current_context: number;
   context_limit?: number;
   context_percent?: number;
@@ -206,18 +210,67 @@ export type TokenUsage = {
   current_streak_days?: number;
   most_used_model?: string;
   most_used_model_percent?: number;
+  today?: UsageWindow;
+  yesterday?: UsageWindow;
+  last_7_days?: UsageWindow;
+  last_30_days?: UsageWindow;
+  current_month?: UsageWindow;
   model_breakdown?: Array<{
     provider_id: string;
     model: string;
+    input?: number;
+    output?: number;
+    tokens: number;
+    calls: number;
+    percent: number;
+  }>;
+  provider_breakdown?: Array<{
+    provider_id: string;
+    input: number;
+    output: number;
+    tokens: number;
+    calls: number;
+    percent: number;
+  }>;
+  task_breakdown?: Array<{
+    task_type: string;
+    input: number;
+    output: number;
     tokens: number;
     calls: number;
     percent: number;
   }>;
   daily_activity?: Array<{
     date: string;
+    input?: number;
+    output?: number;
     tokens: number;
     calls: number;
   }>;
+  recent_calls?: TokenUsageCall[];
+};
+
+export type UsageWindow = {
+  input: number;
+  output: number;
+  total: number;
+  calls: number;
+  average_tokens_per_call?: number;
+  average_latency_ms?: number;
+};
+
+export type TokenUsageCall = {
+  id: string;
+  agent_name: string;
+  task_type: string;
+  provider_id: string;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  latency_ms: number;
+  validation_status: string;
+  created_at: string;
 };
 
 export type DataPathsStatus = {

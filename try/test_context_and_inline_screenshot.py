@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -137,3 +138,41 @@ def test_chat_response_reports_current_session_context(tmp_path: Path, monkeypat
     assert payload["session_id"]
     assert payload["token_usage"]["context_messages"] == 2
     assert payload["token_usage"]["estimated_current_context"] > 0
+
+
+def test_token_usage_reports_daily_windows_and_recent_calls(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "token_usage.db"
+    monkeypatch.setenv("LANGDRILL_DB_PATH", str(db_path))
+    init_db(db_path)
+    today = datetime.now().replace(hour=10, minute=0, second=0, microsecond=0)
+    rows = [
+        ("call_today", "general_chat", "general_chat", "mimo", "mimo-v2.5", 120, 80, 900, "not_required", today),
+        ("call_yesterday", "question_author", "daily_drill", "deepseek", "deepseek-v4-pro", 300, 120, 1500, "valid", today - timedelta(days=1)),
+        ("call_old", "branch_assistant", "branch_chat", "mimo", "mimo-v2.5-pro", 40, 60, 700, "not_required", today - timedelta(days=10)),
+    ]
+    with transaction(db_path) as conn:
+        for row in rows:
+            conn.execute(
+                """
+                INSERT INTO model_calls
+                (id, agent_name, task_type, provider_id, model, prompt_modules_json,
+                 input_tokens, output_tokens, latency_ms, validation_status, created_at)
+                VALUES (?, ?, ?, ?, ?, '[]', ?, ?, ?, ?, ?)
+                """,
+                (*row[:-1], row[-1].strftime("%Y-%m-%d %H:%M:%S")),
+            )
+
+    client = TestClient(app)
+    response = client.get("/api/context")
+
+    assert response.status_code == 200
+    usage = response.json()["token_usage"]
+    assert usage["today"]["total"] == 200
+    assert usage["today"]["calls"] == 1
+    assert usage["last_7_days"]["total"] == 620
+    assert usage["last_30_days"]["total"] == 720
+    assert usage["total_calls"] == 3
+    assert usage["provider_breakdown"][0]["provider_id"] in {"deepseek", "mimo"}
+    assert usage["task_breakdown"][0]["tokens"] >= 200
+    assert usage["recent_calls"][0]["id"] == "call_today"
+    assert usage["recent_calls"][0]["total_tokens"] == 200

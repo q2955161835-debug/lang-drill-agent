@@ -2,12 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import {
+  ArrowClockwise,
   Brain,
   CaretDown,
   ChatCircleText,
   CheckCircle,
   CircleNotch,
   Database,
+  Eye,
+  EyeSlash,
   FolderOpen,
   GearSix,
   GitBranch,
@@ -367,6 +370,9 @@ const DEFAULT_TOKEN_USAGE: TokenUsage = {
   input: 0,
   output: 0,
   total: 0,
+  total_calls: 0,
+  average_tokens_per_call: 0,
+  average_latency_ms: 0,
   estimated_current_context: 0,
   context_limit: DEFAULT_CONTEXT_LIMIT,
   context_percent: 0,
@@ -378,9 +384,23 @@ const DEFAULT_TOKEN_USAGE: TokenUsage = {
   current_streak_days: 0,
   most_used_model: "",
   most_used_model_percent: 0,
+  today: { input: 0, output: 0, total: 0, calls: 0 },
+  yesterday: { input: 0, output: 0, total: 0, calls: 0 },
+  last_7_days: { input: 0, output: 0, total: 0, calls: 0 },
+  last_30_days: { input: 0, output: 0, total: 0, calls: 0 },
+  current_month: { input: 0, output: 0, total: 0, calls: 0 },
   model_breakdown: [],
-  daily_activity: []
+  provider_breakdown: [],
+  task_breakdown: [],
+  daily_activity: [],
+  recent_calls: []
 };
+
+const API_FORMAT_OPTIONS = [
+  { id: "anthropic-messages", label: "Anthropic Messages (/v1/messages)" },
+  { id: "openai-chat-completions", label: "Chat Completions (/chat/completions)" },
+  { id: "openai-responses", label: "Responses (/responses)", disabled: true, note: "预留，当前调用层暂未启用" }
+];
 
 const DEFAULT_DATA_PATHS: DataPathsStatus = {
   user_data_dir: "",
@@ -668,17 +688,23 @@ function modelOptionLabel(option: ModelOption) {
 
 function normalizedModelOption(option: ModelOption): Exclude<ModelOption, string> {
   if (typeof option === "string") {
-    return { id: option, label: option, vision: false };
+    return { id: option, label: option, vision: false, visible: true };
   }
-  return { ...option, vision: Boolean(option.vision) };
+  return { ...option, vision: Boolean(option.vision), visible: option.visible !== false };
 }
 
-function modelOptionsFor(provider: ProviderOption, currentModel: string) {
-  const options = [...(provider.model_options || [])].map(normalizedModelOption);
+function modelOptionsFor(provider: ProviderOption, currentModel: string, optionsConfig: { visibleOnly?: boolean } = {}) {
+  const allOptions = [...(provider.model_options || [])].map(normalizedModelOption);
+  const options = optionsConfig.visibleOnly
+    ? allOptions.filter((option) => option.visible !== false || option.id === currentModel)
+    : allOptions;
   const seen = new Set(options.map((option) => option.id));
   for (const model of [provider.model, currentModel]) {
     if (model && !seen.has(model)) {
-      options.push({ id: model, label: model });
+      const known = allOptions.find((option) => option.id === model);
+      if (!optionsConfig.visibleOnly || known?.visible !== false || model === currentModel) {
+        options.push(known || { id: model, label: model, visible: true });
+      }
       seen.add(model);
     }
   }
@@ -866,7 +892,7 @@ export default function App() {
     : quickProviders[0]?.id || modelConfig.provider_id;
   const quickProvider = selectedProvider(quickProviders, quickProviderId);
   const quickCurrentModel = quickProvider.id === modelConfig.provider_id ? modelConfig.model : quickProvider.model;
-  const quickModelOptions = modelOptionsFor(quickProvider, quickCurrentModel);
+  const quickModelOptions = modelOptionsFor(quickProvider, quickCurrentModel, { visibleOnly: true });
   const quickThinkingSelection = modelThinkingSelection(
     quickProvider,
     quickCurrentModel,
@@ -1611,7 +1637,7 @@ export default function App() {
               value={quickProviderId}
               onChange={(event) => {
                 const nextProvider = selectedProvider(quickProviders, event.target.value);
-                const nextModel = modelOptionsFor(nextProvider, nextProvider.model)[0]?.id || nextProvider.model || "";
+                const nextModel = modelOptionsFor(nextProvider, nextProvider.model, { visibleOnly: true })[0]?.id || nextProvider.model || "";
                 void saveQuickModelConfig({
                   ...modelConfig,
                   provider_id: nextProvider.id,
@@ -2109,7 +2135,8 @@ function SettingsDialog({
 }) {
   const [draft, setDraft] = useState(profile);
   const [modelDraft, setModelDraft] = useState<ModelConfig>({ ...modelConfig, api_key: "" });
-  const [customModel, setCustomModel] = useState("");
+  const [modelRefreshing, setModelRefreshing] = useState(false);
+  const [modelRefreshMessage, setModelRefreshMessage] = useState("");
   const [customProviderOpen, setCustomProviderOpen] = useState(false);
   const [customProviderSaving, setCustomProviderSaving] = useState(false);
   const [customProviderDraft, setCustomProviderDraft] = useState({
@@ -2208,7 +2235,6 @@ function SettingsDialog({
       thinking_level_options: nextThinkingOptions,
       vision: modelSupportsVision(nextProvider, nextModel)
     });
-    setCustomModel("");
     setThinkingLevelFormOpen(false);
     setThinkingLevelDraft({ label: "", api_value: "" });
     setThinkingLevelError("");
@@ -2445,8 +2471,66 @@ function SettingsDialog({
     if (file) selectPastPaperFile(file);
     event.target.value = "";
   };
-  const saveModelConfig = async (successMessage = "模型配置已保存。如有自定义 URL/模型将永久应用于此提供商。") => {
-    const finalModel = customModel.trim() || modelDraft.model;
+  const refreshProviderModels = async () => {
+    setModelRefreshing(true);
+    setModelRefreshMessage("正在从供应商 API 获取可调用模型...");
+    try {
+      const data = await apiPost<{ provider: ProviderOption; providers: ProviderOption[]; model_config?: ModelConfig; message?: string }>("/api/model-config/models/refresh", {
+        provider_id: modelDraft.provider_id,
+        base_url: modelDraft.base_url,
+        api_key: modelDraft.api_key || "",
+        api_format: modelDraft.api_format
+      });
+      const nextProviders = normalizeProviders(data.providers);
+      const nextProvider = selectedProvider(nextProviders, modelDraft.provider_id);
+      const selectableModels = modelOptionsFor(nextProvider, modelDraft.model, { visibleOnly: true });
+      const nextModel = selectableModels.some((item) => item.id === modelDraft.model)
+        ? modelDraft.model
+        : selectableModels[0]?.id || nextProvider.model || "";
+      const nextThinkingOptions = thinkingOptionsForModel(nextProvider, nextModel);
+      onProvidersChange(nextProviders);
+      if (data.model_config) onModelConfigChange(normalizeModelConfig(data.model_config));
+      setModelDraft({
+        ...modelDraft,
+        provider_id: nextProvider.id,
+        base_url: nextProvider.base_url,
+        api_format: nextProvider.api_format,
+        model: nextModel,
+        thinking_level: defaultThinkingLevelForModel(nextProvider, nextModel),
+        thinking_level_options: nextThinkingOptions,
+        vision: modelSupportsVision(nextProvider, nextModel)
+      });
+      setModelRefreshMessage(data.message || `已获取 ${selectableModels.length} 个可调用模型。`);
+    } catch (err) {
+      setModelRefreshMessage(err instanceof Error ? err.message : "获取模型列表失败。");
+    } finally {
+      setModelRefreshing(false);
+    }
+  };
+  const toggleModelVisibility = async (modelId: string, visible: boolean) => {
+    setModelRefreshMessage(`正在${visible ? "显示" : "隐藏"}模型 ${modelId}...`);
+    try {
+      const data = await apiPost<{ provider: ProviderOption; providers: ProviderOption[]; model_config?: ModelConfig; message?: string }>("/api/model-config/models/visibility", {
+        provider_id: modelDraft.provider_id,
+        model: modelId,
+        visible
+      });
+      const nextProviders = normalizeProviders(data.providers);
+      onProvidersChange(nextProviders);
+      if (data.model_config) onModelConfigChange(normalizeModelConfig(data.model_config));
+      const nextProvider = selectedProvider(nextProviders, modelDraft.provider_id);
+      setModelDraft({
+        ...modelDraft,
+        thinking_level_options: thinkingOptionsForModel(nextProvider, modelDraft.model),
+        vision: modelSupportsVision(nextProvider, modelDraft.model)
+      });
+      setModelRefreshMessage(data.message || `模型 ${modelId} 已${visible ? "显示" : "隐藏"}。`);
+    } catch (err) {
+      setModelRefreshMessage(err instanceof Error ? err.message : "模型显示状态保存失败。");
+    }
+  };
+  const saveModelConfig = async (successMessage = "模型配置已保存，Base URL（基础网址）、API 格式和模型能力会应用于当前供应商。") => {
+    const finalModel = modelDraft.model;
     const finalThinkingOptions = finalModel === modelDraft.model ? modelThinkingOptions : thinkingOptionsForModel(provider, finalModel);
     const finalThinkingLevel = thinkingLevelForOptions(
       finalThinkingOptions,
@@ -2466,7 +2550,7 @@ function SettingsDialog({
     setSaveState(successMessage);
   };
   const saveDefaultModelConfig = async () => {
-    const finalModel = customModel.trim() || modelDraft.model;
+    const finalModel = modelDraft.model;
     const finalThinkingOptions = finalModel === modelDraft.model ? modelThinkingOptions : thinkingOptionsForModel(provider, finalModel);
     const finalThinkingLevel = thinkingLevelForOptions(
       finalThinkingOptions,
@@ -2517,6 +2601,9 @@ function SettingsDialog({
     onAppearanceChange(appearanceDraft.themeMode, appearanceDraft.fontSize);
     try {
       await saveModelConfig();
+      if (contextLimit !== (tokenUsage.context_limit || DEFAULT_CONTEXT_LIMIT)) {
+        await saveContextLimit();
+      }
     } finally {
       onClose();
     }
@@ -2558,7 +2645,6 @@ function SettingsDialog({
         thinking_level_options: thinkingOptionsForModel(nextProvider, nextProvider.model),
         vision: modelSupportsVision(nextProvider, nextProvider.model)
       });
-      setCustomModel("");
       setCustomProviderDraft({ name: "", base_url: "", default_model: "" });
       setCustomProviderOpen(false);
       setSaveState(`提供商 [${name}] 添加成功，已切换到该供应商。`);
@@ -2630,7 +2716,6 @@ function SettingsDialog({
     const nextProviders = normalizeProviders(data.providers);
     setDraft(nextProfile);
     setModelDraft({ ...nextModel, api_key: "" });
-    setCustomModel("");
     setReviewIntensity(3);
     setAppearanceDraft({ themeMode: "system", fontSize: 16 });
     setPastPaperDraft(DEFAULT_PAST_PAPER_STATUS);
@@ -2643,6 +2728,12 @@ function SettingsDialog({
   };
   const currentExamOption = examOptions.find((item) => item.id === draft.exam_id) || examOptions[0];
   const tokenMax = Math.max(tokenUsage.total || 0, 1);
+  const todayUsage = tokenUsage.today || { input: 0, output: 0, total: 0, calls: 0 };
+  const yesterdayUsage = tokenUsage.yesterday || { input: 0, output: 0, total: 0, calls: 0 };
+  const weekUsage = tokenUsage.last_7_days || { input: 0, output: 0, total: 0, calls: 0 };
+  const monthUsage = tokenUsage.current_month || { input: 0, output: 0, total: 0, calls: 0 };
+  const last30Usage = tokenUsage.last_30_days || { input: 0, output: 0, total: 0, calls: 0 };
+  const maxDailyTokens = Math.max(...(tokenUsage.daily_activity || []).map((day) => day.tokens), 1);
   const saveContextLimit = async () => {
     const data = await apiPost<{ token_usage: TokenUsage }>("/api/context/settings", {
       max_tokens: contextLimit
@@ -2826,6 +2917,20 @@ function SettingsDialog({
                   onChange={(event) => setModelDraft({ ...modelDraft, base_url: event.target.value })}
                   placeholder={provider.base_url || "供应商 Base URL（基础网址）"}
                 />
+                <label className="field-label">
+                  <span>API 格式</span>
+                  <select
+                    value={modelDraft.api_format || provider.api_format || "openai-chat-completions"}
+                    onChange={(event) => setModelDraft({ ...modelDraft, api_format: event.target.value })}
+                  >
+                    {API_FORMAT_OPTIONS.map((option) => (
+                      <option key={option.id} value={option.id} disabled={option.disabled}>
+                        {option.label}{option.note ? ` · ${option.note}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <small>模型调用与模型列表刷新会按这里的接口格式选择 endpoint（端点）。</small>
+                </label>
                 <input
                   value={modelDraft.api_key || ""}
                   onChange={(event) => setModelDraft({ ...modelDraft, api_key: event.target.value })}
@@ -2844,11 +2949,56 @@ function SettingsDialog({
                     <small>开启后，聊天栏拖入图片会直接发给当前模型；关闭时图片会先走 MinerU/本地 OCR 提取文本。</small>
                   </span>
                 </label>
-                <select value={modelDraft.model} onChange={(event) => chooseModel(event.target.value)}>
-                  {modelOptions.map((model) => (
-                    <option key={model.id} value={model.id}>{modelOptionLabel(model)}</option>
-                  ))}
-                </select>
+                <label className="field-label">
+                  <span>模型列表</span>
+                  <div className="field-with-button">
+                    <select value={modelDraft.model} onChange={(event) => chooseModel(event.target.value)}>
+                      {modelOptions.map((model) => (
+                        <option key={model.id} value={model.id}>{modelOptionLabel(model)}{model.visible === false ? "（已隐藏）" : ""}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="inline-action square-action"
+                      onClick={() => void refreshProviderModels()}
+                      disabled={modelRefreshing}
+                      title="从 API 获取可调用模型"
+                      aria-label="从 API 获取可调用模型"
+                    >
+                      <ArrowClockwise size={18} />
+                    </button>
+                  </div>
+                  <small>刷新会调用当前供应商的模型列表接口，把返回的可调用模型写入下拉。隐藏的模型不会出现在聊天栏快捷模型选择中。</small>
+                </label>
+                <div className="model-visibility-list" aria-label="模型栏显示设置">
+                  {modelOptions.map((model) => {
+                    const visible = model.visible !== false;
+                    return (
+                      <div className="model-visibility-row" key={model.id}>
+                        <div>
+                          <strong>{modelOptionLabel(model)}</strong>
+                          <span>
+                            {model.context_tokens ? `${formatCompactNumber(model.context_tokens)} 上下文` : "上下文未知"}
+                            {" · "}
+                            {model.vision ? "支持图片" : "文本模型"}
+                            {" · "}
+                            {model.reasoning?.levels?.length ? `${model.reasoning.levels.length} 个思考档位` : "无思考档位"}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          className="inline-action compact-action"
+                          onClick={() => void toggleModelVisibility(model.id, !visible)}
+                          title={visible ? "从聊天栏隐藏" : "显示到聊天栏"}
+                        >
+                          {visible ? <EyeSlash size={16} /> : <Eye size={16} />}
+                          {visible ? "隐藏" : "显示"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+                {modelRefreshMessage && <p className="hint strong-hint">{modelRefreshMessage}</p>}
                 <div className="settings-summary-line">图片解析：{modelDraft.vision ? "聊天栏图片直传当前模型；试卷、截图和文件抽取仍可走 MinerU。" : "聊天栏图片、试卷、截图和文件抽取优先走 MinerU，失败后按文件类型尝试本地兜底。"}</div>
                 <div className="mineru-config">
                   <label className="field-label">
@@ -2934,11 +3084,21 @@ function SettingsDialog({
                     </div>
                   )}
                 </div>
-                <input
-                  value={customModel}
-                  onChange={(event) => setCustomModel(event.target.value)}
-                  placeholder="自定义模型名称，填写后优先使用"
-                />
+                <div className="context-setting-row model-context-row">
+                  <label className="field-label">
+                    <span>上下文容量上限</span>
+                    <input
+                      type="number"
+                      min="1000"
+                      max="10000000"
+                      step="1000"
+                      value={contextLimit}
+                      onChange={(event) => setContextLimit(Number(event.target.value || DEFAULT_CONTEXT_LIMIT))}
+                    />
+                    <small>默认 1,000,000；聊天栏右下角圆圈会按这个上限显示占用。</small>
+                  </label>
+                  <button className="inline-action" onClick={() => void saveContextLimit()}>保存容量</button>
+                </div>
                 <div className="inline-row wrap-row">
                   <button className="inline-action" onClick={() => void saveModelConfig()}>保存模型配置</button>
                   <button className="inline-action primary-inline" onClick={() => void saveDefaultModelConfig()}>设为默认模型</button>
@@ -3109,11 +3269,11 @@ function SettingsDialog({
               <SettingSection title="使用统计">
                 <div className="usage-dashboard">
                   {[
-                    ["tokens 用量", formatCompactNumber(tokenUsage.total), `${formatNumber(tokenUsage.total)} tokens`],
-                    ["会话数量", formatNumber(tokenUsage.sessions_total), "已创建会话"],
-                    ["消息数量", formatNumber(tokenUsage.messages_total), "主会话消息"],
-                    ["活跃天数", formatNumber(tokenUsage.active_days), "有学习记录的日期"],
-                    ["当前连续天数", formatNumber(tokenUsage.current_streak_days), "按本地日期计算"],
+                    ["今日 token", formatCompactNumber(todayUsage.total), `${formatNumber(todayUsage.calls)} 次调用`],
+                    ["近 7 天", formatCompactNumber(weekUsage.total), `${formatNumber(weekUsage.calls)} 次调用`],
+                    ["近 30 天", formatCompactNumber(last30Usage.total), `${formatNumber(last30Usage.calls)} 次调用`],
+                    ["本月 token", formatCompactNumber(monthUsage.total), `${formatNumber(monthUsage.calls)} 次调用`],
+                    ["累计 token", formatCompactNumber(tokenUsage.total), `${formatNumber(tokenUsage.total_calls)} 次调用`],
                     ["最常用模型", tokenUsage.most_used_model || "暂无", `${Math.round((tokenUsage.most_used_model_percent || 0) * 100)}%`]
                   ].map(([label, value, detail]) => (
                     <div className="usage-card" key={label}>
@@ -3123,32 +3283,22 @@ function SettingsDialog({
                     </div>
                   ))}
                 </div>
-                <div className="context-setting-row">
-                  <label className="field-label">
-                    <span>上下文容量上限</span>
-                    <input
-                      type="number"
-                      min="1000"
-                      max="10000000"
-                      step="1000"
-                      value={contextLimit}
-                      onChange={(event) => setContextLimit(Number(event.target.value || DEFAULT_CONTEXT_LIMIT))}
-                    />
-                    <small>默认 1,000,000；聊天栏右下角圆圈会按这个上限显示占用。</small>
-                  </label>
-                  <button className="inline-action" onClick={() => void saveContextLimit()}>保存容量</button>
-                </div>
-                {saveState && <p className="hint">{saveState}</p>}
                 <div className="token-dashboard">
-                  <div className="token-hero"><strong>{formatCompactNumber(tokenUsage.total)}</strong><span>累计 token（令牌）</span></div>
+                  <div className="token-hero">
+                    <strong>{formatCompactNumber(todayUsage.total)}</strong>
+                    <span>今日 token（令牌）</span>
+                    <small>昨日 {formatCompactNumber(yesterdayUsage.total)} · 平均 {formatCompactNumber(tokenUsage.average_tokens_per_call)} / 调用</small>
+                  </div>
                   {[
-                    ["输入", tokenUsage.input],
-                    ["输出", tokenUsage.output],
-                    ["当前上下文估算", tokenUsage.estimated_current_context]
-                  ].map(([label, value]) => (
+                    ["今日输入", todayUsage.input, todayUsage.total || 1],
+                    ["今日输出", todayUsage.output, todayUsage.total || 1],
+                    ["累计输入", tokenUsage.input, tokenMax],
+                    ["累计输出", tokenUsage.output, tokenMax],
+                    ["当前上下文估算", tokenUsage.estimated_current_context, tokenUsage.context_limit || DEFAULT_CONTEXT_LIMIT]
+                  ].map(([label, value, maxValue]) => (
                     <div className="token-meter" key={label}>
                       <div><span>{label}</span><strong>{formatNumber(Number(value))}</strong></div>
-                      <div className="thin-progress compact"><span style={{ width: `${Math.max(8, (Number(value) / tokenMax) * 100)}%` }} /></div>
+                      <div className="thin-progress compact"><span style={{ width: `${Math.max(8, Math.min(100, (Number(value) / Number(maxValue || 1)) * 100))}%` }} /></div>
                     </div>
                   ))}
                 </div>
@@ -3161,23 +3311,88 @@ function SettingsDialog({
                   </div>
                   <div className="activity-grid">
                     {(tokenUsage.daily_activity || []).map((item) => {
-                      const maxTokens = Math.max(...(tokenUsage.daily_activity || []).map((day) => day.tokens), 1);
-                      const level = item.tokens ? Math.max(1, Math.ceil((item.tokens / maxTokens) * 5)) : 0;
-                      return <span key={item.date} className={`activity-cell level-${level}`} title={`${item.date}：${formatNumber(item.tokens)} tokens`} />;
+                      const level = item.tokens ? Math.max(1, Math.ceil((item.tokens / maxDailyTokens) * 5)) : 0;
+                      return <span key={item.date} className={`activity-cell level-${level}`} title={`${item.date}：${formatNumber(item.tokens)} tokens，${formatNumber(item.calls)} 次调用`} />;
                     })}
                   </div>
                 </div>
-                <div className="model-usage-panel">
-                  {(tokenUsage.model_breakdown || []).map((item) => (
-                    <div className="model-usage-row" key={`${item.provider_id}-${item.model}`}>
-                      <div>
-                        <strong>{item.model}</strong>
-                        <span>{formatCompactNumber(item.tokens)} tokens · {item.calls} 次调用</span>
+                <div className="usage-ledger-grid">
+                  <div className="model-usage-panel">
+                    <div className="ledger-head"><strong>模型排行</strong><span>按 token 排序</span></div>
+                    {(tokenUsage.model_breakdown || []).map((item) => (
+                      <div className="model-usage-row" key={`${item.provider_id}-${item.model}`}>
+                        <div>
+                          <strong>{item.model}</strong>
+                          <span>{item.provider_id} · 输入 {formatCompactNumber(item.input)} / 输出 {formatCompactNumber(item.output)} · {item.calls} 次</span>
+                        </div>
+                        <small>{Math.round(item.percent * 100)}%</small>
                       </div>
-                      <small>{Math.round(item.percent * 100)}%</small>
+                    ))}
+                    {!(tokenUsage.model_breakdown || []).length && <p className="hint">暂无模型调用记录。</p>}
+                  </div>
+                  <div className="model-usage-panel">
+                    <div className="ledger-head"><strong>Provider（供应商）</strong><span>调用来源</span></div>
+                    {(tokenUsage.provider_breakdown || []).map((item) => (
+                      <div className="model-usage-row" key={item.provider_id}>
+                        <div>
+                          <strong>{item.provider_id}</strong>
+                          <span>{formatCompactNumber(item.tokens)} tokens · {item.calls} 次调用</span>
+                        </div>
+                        <small>{Math.round(item.percent * 100)}%</small>
+                      </div>
+                    ))}
+                    {!(tokenUsage.provider_breakdown || []).length && <p className="hint">暂无供应商记录。</p>}
+                  </div>
+                </div>
+                <div className="usage-ledger-grid">
+                  <div className="model-usage-panel">
+                    <div className="ledger-head"><strong>任务类型</strong><span>Agent 调用分布</span></div>
+                    {(tokenUsage.task_breakdown || []).map((item) => (
+                      <div className="model-usage-row" key={item.task_type}>
+                        <div>
+                          <strong>{item.task_type}</strong>
+                          <span>{formatCompactNumber(item.tokens)} tokens · {item.calls} 次调用</span>
+                        </div>
+                        <small>{Math.round(item.percent * 100)}%</small>
+                      </div>
+                    ))}
+                    {!(tokenUsage.task_breakdown || []).length && <p className="hint">暂无任务记录。</p>}
+                  </div>
+                  <div className="model-usage-panel">
+                    <div className="ledger-head"><strong>账户概览</strong><span>本地统计</span></div>
+                    {[
+                      ["会话数量", tokenUsage.sessions_total, "已创建会话"],
+                      ["消息数量", tokenUsage.messages_total, "主会话消息"],
+                      ["活跃天数", tokenUsage.active_days, "有学习记录的日期"],
+                      ["连续天数", tokenUsage.current_streak_days, "按本地日期计算"],
+                      ["平均延迟", tokenUsage.average_latency_ms, "毫秒"]
+                    ].map(([label, value, detail]) => (
+                      <div className="model-usage-row" key={label}>
+                        <div>
+                          <strong>{label}</strong>
+                          <span>{detail}</span>
+                        </div>
+                        <small>{formatNumber(Number(value))}</small>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="recent-call-table">
+                  <div className="ledger-head"><strong>最近调用明细</strong><span>最近 24 条</span></div>
+                  <div className="recent-call-head">
+                    <span>时间</span><span>任务</span><span>模型</span><span>输入</span><span>输出</span><span>延迟</span>
+                  </div>
+                  {(tokenUsage.recent_calls || []).map((call) => (
+                    <div className="recent-call-row" key={call.id}>
+                      <span>{call.created_at}</span>
+                      <span>{call.agent_name} / {call.task_type}</span>
+                      <span>{call.provider_id}:{call.model}</span>
+                      <span>{formatNumber(call.input_tokens)}</span>
+                      <span>{formatNumber(call.output_tokens)}</span>
+                      <span>{formatNumber(call.latency_ms)} ms</span>
                     </div>
                   ))}
-                  {!(tokenUsage.model_breakdown || []).length && <p className="hint">暂无模型调用记录。</p>}
+                  {!(tokenUsage.recent_calls || []).length && <p className="hint">暂无调用明细。</p>}
                 </div>
               </SettingSection>
             )}
@@ -3411,7 +3626,6 @@ function OnboardingDialog({
     learning_background: profile.learning_background || "",
     search_years: 3
   });
-  const [customModel, setCustomModel] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const provider = selectedProvider(providers, draft.provider_id);
@@ -3425,7 +3639,6 @@ function OnboardingDialog({
       base_url: nextProvider.base_url,
       model: nextModel
     });
-    setCustomModel("");
   };
 
   const submit = async () => {
@@ -3434,8 +3647,7 @@ function OnboardingDialog({
     try {
       const data = await apiPost<{ profile: Profile }>("/api/initialize", {
         ...draft,
-        deadline: draft.deadline || null,
-        model: customModel.trim() || draft.model
+        deadline: draft.deadline || null
       });
       onDone(data.profile);
     } catch (err) {
@@ -3457,7 +3669,6 @@ function OnboardingDialog({
           <label>Base URL（基础网址）<input value={draft.base_url} onChange={(event) => setDraft({ ...draft, base_url: event.target.value })} placeholder={provider.base_url || "供应商 Base URL（基础网址）"} /></label>
           <label>API Key（接口密钥）<input value={draft.api_key} onChange={(event) => setDraft({ ...draft, api_key: event.target.value })} placeholder="留空则不覆盖已有密钥" type="password" autoComplete="off" /></label>
           <label>模型选项<select value={draft.model} onChange={(event) => setDraft({ ...draft, model: event.target.value })}>{modelOptions.map((model) => <option key={model.id} value={model.id}>{modelOptionLabel(model)}</option>)}</select></label>
-          <label>自定义模型<input value={customModel} onChange={(event) => setCustomModel(event.target.value)} placeholder="填写后优先使用，例如厂商新模型名" /></label>
           <label>称呼<input value={draft.display_name} onChange={(event) => setDraft({ ...draft, display_name: event.target.value })} /></label>
           <label>目标语言<input value={draft.target_language} onChange={(event) => setDraft({ ...draft, target_language: event.target.value })} /></label>
           <label>目标考试<input value={draft.exam_name} onChange={(event) => setDraft({ ...draft, exam_name: event.target.value })} /></label>

@@ -32,6 +32,8 @@ from .models import (
     InitRequest,
     MinerUConfigRequest,
     ModelConfigRequest,
+    ModelListRefreshRequest,
+    ModelVisibilityRequest,
     PastPaperDraftRequest,
     PastPaperImportRequest,
     PastPaperParseRequest,
@@ -263,8 +265,13 @@ def _general_chat_response(
             {
                 "id": "general.chat",
                 "content": (
-                    "你是 Lang Drill 的语言学习聊天助手。普通寒暄、学习建议、澄清问题只自然回复；"
-                    "不要生成正式题组，不要声称已经入库题目，不要输出 JSON。"
+                    "你是 Lang Drill Agent 的语言学习聊天助手，了解本程序能力：普通学习聊天、题组练习、答题讲解、"
+                    "右侧截图导入、主聊天粘贴词表或拖入文件/图片、分支对话、模型设置、上下文压缩、MinerU 配置、"
+                    "历年真题导入和本地数据库目录设置。普通寒暄、学习建议、澄清问题只自然回复；不要生成正式题组，"
+                    "不要声称已经入库题目，不要输出 JSON。如果用户问你是否能导入单词或截图，不要说没有后台题库权限；"
+                    "应说明可以通过右侧截图导入、主聊天粘贴词表，或拖入 TXT/Markdown/PDF/DOCX/图片触发程序流程。"
+                    "你不能直接读取或填写 API Key、MinerU token、cookie，也不能自行保存模型配置、迁移数据库或导入试卷；"
+                    "设置权限开启时也只能生成可确认草稿，最终保存必须由用户确认。"
                     "如果用户想练题，应提醒他明确发送词表、截图导入，或使用“出题/练习/刷题”等请求。"
                 ),
             }
@@ -712,6 +719,32 @@ def save_model_config(request: ModelConfigRequest) -> dict:
 @app.post("/api/model-config/default")
 def save_default_model_config(request: ModelConfigRequest) -> dict:
     return save_model_config(request)
+
+
+@app.post("/api/model-config/models/refresh")
+def refresh_provider_models(request: ModelListRefreshRequest) -> dict:
+    init_db()
+    with transaction() as conn:
+        svc = ModelConfigService(conn)
+        result = svc.refresh_provider_models(
+            request.provider_id,
+            request.base_url,
+            request.api_key,
+            api_format=request.api_format,
+        )
+        result["model_config"] = svc.current()
+        return result
+
+
+@app.post("/api/model-config/models/visibility")
+def set_model_visibility(request: ModelVisibilityRequest) -> dict:
+    init_db()
+    with transaction() as conn:
+        return ModelConfigService(conn).set_model_visibility(
+            request.provider_id,
+            request.model,
+            request.visible,
+        )
 
 
 @app.get("/api/mineru-config")

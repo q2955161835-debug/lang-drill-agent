@@ -1,10 +1,22 @@
 import sqlite3
+from typing import Any
 
 from fastapi.testclient import TestClient
 
 import langdrill_agent.services as services_module
 from langdrill_agent.api import app
 from langdrill_agent.services import MinerUConfigService, ModelConfigService
+
+
+class _FakeResponse:
+    def __init__(self, payload: dict[str, Any]):
+        self._payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict[str, Any]:
+        return self._payload
 
 
 def _settings_conn() -> sqlite3.Connection:
@@ -399,6 +411,66 @@ def test_model_vision_capability_is_saved_for_current_model(tmp_path, monkeypatc
     mimo_model = next(item for item in providers["mimo"]["model_options"] if item["id"] == "mimo-v2.5-pro")
     assert config["vision"] is True
     assert mimo_model["vision"] is True
+
+
+def test_refresh_provider_models_loads_api_models_and_keeps_native_reasoning(tmp_path, monkeypatch):
+    monkeypatch.setattr(services_module, "PROJECT_ROOT", tmp_path)
+    captured: dict[str, Any] = {}
+
+    def fake_get(url: str, **kwargs: Any) -> _FakeResponse:
+        captured["url"] = url
+        captured["headers"] = kwargs.get("headers", {})
+        return _FakeResponse(
+            {
+                "object": "list",
+                "data": [
+                    {"id": "deepseek-v4-pro", "object": "model"},
+                    {"id": "deepseek-v4-ultra", "object": "model"},
+                ],
+            }
+        )
+
+    monkeypatch.setattr("langdrill_agent.services.httpx.get", fake_get)
+    service = ModelConfigService(_settings_conn())
+
+    result = service.refresh_provider_models(
+        "deepseek",
+        "https://api.deepseek.com",
+        "deepseek-key",
+        api_format="openai-chat-completions",
+    )
+    provider = next(item for item in result["providers"] if item["id"] == "deepseek")
+    models = {item["id"]: item for item in provider["model_options"]}
+
+    assert captured["url"] == "https://api.deepseek.com/models"
+    assert captured["headers"]["Authorization"] == "Bearer deepseek-key"
+    assert "deepseek-v4-ultra" in models
+    assert models["deepseek-v4-ultra"]["visible"] is True
+    assert [item["id"] for item in models["deepseek-v4-pro"]["reasoning"]["levels"]] == ["off", "high", "max"]
+    assert result["message"].startswith("已从供应商 API 获取 2 个可调用模型")
+
+
+def test_model_visibility_hides_model_from_picker_metadata(tmp_path, monkeypatch):
+    monkeypatch.setattr(services_module, "PROJECT_ROOT", tmp_path)
+
+    def fake_get(url: str, **kwargs: Any) -> _FakeResponse:
+        return _FakeResponse({"data": [{"id": "mimo-v2.5"}, {"id": "mimo-v2.5-pro"}]})
+
+    monkeypatch.setattr("langdrill_agent.services.httpx.get", fake_get)
+    service = ModelConfigService(_settings_conn())
+
+    service.refresh_provider_models(
+        "mimo",
+        "https://api.xiaomimimo.com/anthropic",
+        "mimo-key",
+        api_format="anthropic-messages",
+    )
+    result = service.set_model_visibility("mimo", "mimo-v2.5-pro", False)
+    mimo = next(item for item in result["providers"] if item["id"] == "mimo")
+    model = next(item for item in mimo["model_options"] if item["id"] == "mimo-v2.5-pro")
+
+    assert model["visible"] is False
+    assert result["message"] == "模型 mimo-v2.5-pro 已隐藏。"
 
 
 def test_mineru_token_status_is_secret_safe(tmp_path, monkeypatch):
