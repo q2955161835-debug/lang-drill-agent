@@ -25,6 +25,11 @@ _SETTINGS_KEYWORDS = (
     "设置", "供应商", "模型", "更改目标", "修改背景",
     "配置", "调整人格", "切换供应商",
 )
+_PAST_PAPER_SETTINGS_PATTERN = re.compile(
+    r"(?:真题|试卷|样卷|past paper|paper).{0,24}(?:导入|填入|填写|填表|设置|保存|解析)"
+    r"|(?:导入|填入|填写|填表|设置|保存|解析).{0,24}(?:真题|试卷|样卷|past paper|paper)",
+    re.IGNORECASE,
+)
 
 _SUMMARY_KEYWORDS = ("总结", "复盘", "今天表现", "今日表现", "复习报告")
 _CONTINUE_KEYWORDS = ("下一题", "继续", "下一个", "next", "Next", "NEXT")
@@ -96,7 +101,7 @@ class TaskRouter:
             return TaskType.answer_question
 
         # 3. 设置：匹配设置关键词
-        if any(keyword in text for keyword in _SETTINGS_KEYWORDS):
+        if any(keyword in text for keyword in _SETTINGS_KEYWORDS) or _PAST_PAPER_SETTINGS_PATTERN.search(text):
             return TaskType.settings
 
         # 4. 总结：匹配总结关键词

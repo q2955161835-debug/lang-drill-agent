@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import { useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
   CaretLeft,
   CaretRight,
@@ -25,6 +25,8 @@ type RightWorkbenchProps = {
   onToggle: () => void;
   activeTab: WorkbenchTab;
   onTabChange: (tab: WorkbenchTab) => void;
+  onResizeStart?: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  onResizeKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void;
   onSendBranchMessage: (content: string) => void;
   onDailyPanelChange: (panel: DailyPanel) => void;
   onScreenshotImportComplete: (result: ScreenshotImportResult) => void;
@@ -66,62 +68,76 @@ export function RightWorkbench({
   onToggle,
   activeTab,
   onTabChange,
+  onResizeStart,
+  onResizeKeyDown,
   onSendBranchMessage,
   onDailyPanelChange,
   onScreenshotImportComplete,
 }: RightWorkbenchProps) {
   return (
     <aside className={`right-rail panel-motion ${open ? "open" : "closed"}`}>
+      {open && (
+        <button
+          type="button"
+          className="panel-resizer panel-resizer-right"
+          aria-label="拖拽调整右侧工作台宽度"
+          title="拖拽调整右侧工作台宽度"
+          onPointerDown={onResizeStart}
+          onKeyDown={onResizeKeyDown}
+        />
+      )}
       <button className="right-toggle" onClick={onToggle} title="展开右侧工作台">
         {open ? <CaretRight size={18} /> : <CaretLeft size={18} />}
       </button>
-      {open && (
-        <div className="workbench-panel">
-          <div className="workbench-head">
-            <div>
-              <span className="eyebrow">Workspace</span>
-              <h2>学习工作台</h2>
-            </div>
-            <ChatsCircle size={22} />
+      <div className="workbench-panel" hidden={!open} aria-hidden={!open}>
+        <div className="workbench-head">
+          <div>
+            <span className="eyebrow">Workspace</span>
+            <h2>学习工作台</h2>
           </div>
-          <div className="workbench-tabs" role="tablist" aria-label="右侧工作台">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  className={activeTab === tab.id ? "active" : ""}
-                  disabled={tab.disabled}
-                  onClick={() => onTabChange(tab.id)}
-                  role="tab"
-                  aria-selected={activeTab === tab.id}
-                >
-                  <Icon size={15} />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {activeTab === "branch" && (
-            <BranchPanel
-              branchId={branchId}
-              branchMessages={branchMessages}
-              branchSending={branchSending}
-              onSendBranchMessage={onSendBranchMessage}
-            />
-          )}
-          {activeTab === "mirror" && <PhoneMirrorPanel />}
-          {activeTab === "screenshot" && (
-            <ScreenshotImportPanel
-              sessionId={sessionId}
-              onDailyPanelChange={onDailyPanelChange}
-              onScreenshotImportComplete={onScreenshotImportComplete}
-            />
-          )}
-          {activeTab === "voice" && <ComingPanel title="语音与听力" body="本阶段只预留入口，后续可接入 Whisper 或 Web Speech API。" />}
+          <ChatsCircle size={22} />
         </div>
-      )}
+        <div className="workbench-tabs" role="tablist" aria-label="右侧工作台">
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                className={activeTab === tab.id ? "active" : ""}
+                disabled={tab.disabled}
+                onClick={() => onTabChange(tab.id)}
+                role="tab"
+                aria-selected={activeTab === tab.id}
+              >
+                <Icon size={15} />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="workbench-tab-panel" hidden={activeTab !== "branch"}>
+          <BranchPanel
+            branchId={branchId}
+            branchMessages={branchMessages}
+            branchSending={branchSending}
+            onSendBranchMessage={onSendBranchMessage}
+          />
+        </div>
+        <div className="workbench-tab-panel" hidden={activeTab !== "mirror"}>
+          <PhoneMirrorPanel />
+        </div>
+        <div className="workbench-tab-panel" hidden={activeTab !== "screenshot"}>
+          <ScreenshotImportPanel
+            sessionId={sessionId}
+            onDailyPanelChange={onDailyPanelChange}
+            onScreenshotImportComplete={onScreenshotImportComplete}
+          />
+        </div>
+        <div className="workbench-tab-panel" hidden={activeTab !== "voice"}>
+          <ComingPanel title="语音与听力" body="本阶段只预留入口，后续可接入 Whisper 或 Web Speech API。" />
+        </div>
+      </div>
     </aside>
   );
 }

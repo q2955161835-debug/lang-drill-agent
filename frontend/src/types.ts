@@ -76,6 +76,19 @@ export type MinerUConfig = {
   token_preview: string;
 };
 
+export type AgentSettingPermissionFeature = {
+  id: string;
+  label: string;
+  description: string;
+  enabled: boolean;
+  sensitive?: boolean;
+};
+
+export type AgentSettingsPermissionsStatus = {
+  features: AgentSettingPermissionFeature[];
+  enabled_feature_ids: string[];
+};
+
 export type SessionItem = {
   id: string;
   title: string;
@@ -138,9 +151,30 @@ export type AnsweredQuestion = Question & {
   is_correct?: boolean;
 };
 
+export type PastPaperDraft = {
+  exam_id?: string;
+  title: string;
+  year: number | null;
+  source_url: string;
+  local_path: string;
+  summary: string;
+  question_types: string[];
+  raw_text?: string;
+};
+
+export type SettingsAction = {
+  type: "past_paper_import_draft";
+  feature_id: string;
+  label: string;
+  draft: PastPaperDraft;
+  parser?: string;
+  confirmation_required?: boolean;
+};
+
 export type MessagePayload = {
   active_question?: Question | null;
   answered_question?: AnsweredQuestion;
+  settings_action?: SettingsAction;
   source?: string;
   [key: string]: unknown;
 };

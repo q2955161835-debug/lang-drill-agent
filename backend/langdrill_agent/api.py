@@ -5,6 +5,7 @@ import re
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi import HTTPException
@@ -21,6 +22,7 @@ from .logging_config import configure_logging
 from .learning_stats import LearningStatsService
 from .models import (
     AddCustomProviderRequest,
+    AgentSettingsPermissionRequest,
     BranchMessageRequest,
     BranchRequest,
     ChatRequest,
@@ -30,6 +32,7 @@ from .models import (
     InitRequest,
     MinerUConfigRequest,
     ModelConfigRequest,
+    PastPaperDraftRequest,
     PastPaperImportRequest,
     PastPaperParseRequest,
     PastPaperSearchImportRequest,
@@ -51,8 +54,10 @@ from .providers import ModelProvider
 from .phone_mirror import PhoneMirrorService
 from .screenshot_import import ScreenshotImportService
 from .services import (
+    AgentSettingsPermissionService,
     MinerUConfigService,
     ModelConfigService,
+    PastPaperDraftService,
     PastPaperService,
     ProfileService,
     QuestionService,
@@ -482,6 +487,156 @@ def _record_model_call(
     )
 
 
+def _json_object_from_model_text(text: str) -> dict[str, Any]:
+    parsed = loads(text.strip(), None)
+    if isinstance(parsed, dict):
+        return parsed
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        return {}
+    parsed = loads(match.group(0), None)
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _past_paper_model_hint(
+    conn,
+    *,
+    exam_id: str,
+    title: str,
+    year: int | None,
+    source_url: str,
+    local_path: str,
+    summary: str,
+    question_types: list[str],
+    raw_text: str,
+    filename: str,
+) -> dict[str, Any]:
+    provider = _current_model_provider(conn)
+    if provider.provider_id == "mock":
+        return {}
+    bounded_text = raw_text.strip()[:12000]
+    pack = PromptPack(
+        system_modules=[
+            {
+                "id": "settings.past_paper_draft",
+                "content": (
+                    "你是 Lang Drill Agent 的设置页导入助手。"
+                    "从用户提供的试卷文件名、文本和已有字段中抽取可编辑的试卷导入草稿。"
+                    "只返回 JSON 对象，不要解释；不要长段复制试卷原文。"
+                ),
+            }
+        ],
+        context_pack={
+            "task_type": "past_paper_draft",
+            "exam_id": exam_id,
+            "existing_fields": {
+                "title": title,
+                "year": year,
+                "source_url": source_url,
+                "local_path": local_path,
+                "summary": summary,
+                "question_types": question_types,
+                "filename": filename,
+            },
+            "schema": {
+                "title": "string",
+                "year": "number|null",
+                "source_url": "string",
+                "local_path": "string",
+                "summary": "string",
+                "question_types": ["string"],
+            },
+        },
+        user_content=(
+            "请抽取并补全以下试卷导入表单字段。summary 只概括题型结构、题量、分值或注意事项，"
+            "不要包含受版权限制的大段原文。\n\n"
+            f"试卷文本前 12000 字符：\n{bounded_text}"
+        ),
+        output_schema={
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "year": {"type": ["integer", "null"]},
+                "source_url": {"type": "string"},
+                "local_path": {"type": "string"},
+                "summary": {"type": "string"},
+                "question_types": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+    )
+    result = provider.complete(pack)
+    _record_model_call(
+        conn,
+        agent_name="settings_agent",
+        task_type="past_paper_draft",
+        provider=provider,
+        result=result,
+        prompt_modules=[module["id"] for module in pack.system_modules],
+        validation_status="model_draft",
+    )
+    return _json_object_from_model_text(result.content)
+
+
+def _past_paper_draft_response(
+    conn,
+    *,
+    exam_id: str,
+    title: str = "",
+    year: int | None = None,
+    source_url: str = "",
+    local_path: str = "",
+    summary: str = "",
+    question_types: list[str] | None = None,
+    raw_text: str = "",
+    filename: str = "",
+    include_raw_text: bool = True,
+) -> dict[str, Any]:
+    draft_service = PastPaperDraftService()
+    model_hint: dict[str, Any] = {}
+    parser = "heuristic"
+    message = "已使用本地规则解析并填入草稿。"
+    try:
+        model_hint = _past_paper_model_hint(
+            conn,
+            exam_id=exam_id,
+            title=title,
+            year=year,
+            source_url=source_url,
+            local_path=local_path,
+            summary=summary,
+            question_types=question_types or [],
+            raw_text=raw_text,
+            filename=filename,
+        )
+        if any(model_hint.get(key) for key in ("title", "year", "source_url", "local_path", "summary", "question_types")):
+            parser = "model"
+            message = "已由当前模型解析并填入草稿，保存前仍可修改。"
+    except RuntimeError as exc:
+        logger.info("past paper draft model fallback", exc_info=True)
+        message = f"当前模型不可用，已用本地规则填入草稿：{exc}"
+    draft = draft_service.draft(
+        exam_id=exam_id,
+        title=title,
+        year=year,
+        source_url=source_url,
+        local_path=local_path,
+        summary=summary,
+        question_types=question_types or [],
+        raw_text=raw_text,
+        filename=filename,
+        model_hint=model_hint,
+        include_raw_text=include_raw_text,
+    )
+    return {"draft": draft, "parser": parser, "message": message}
+
+
+def _looks_like_past_paper_settings_request(text: str) -> bool:
+    lower = text.lower()
+    paper_cue = any(token in lower for token in ("真题", "试卷", "样卷", "past paper", "paper", "cet", "ielts", "toefl"))
+    action_cue = any(token in lower for token in ("导入", "填写", "填入", "填表", "解析", "设置", "加入", "保存"))
+    return paper_cue and action_cue
+
+
 @app.get("/api/bootstrap")
 def bootstrap() -> dict:
     init_db()
@@ -502,6 +657,7 @@ def bootstrap() -> dict:
             "learning_stats": LearningStatsService(conn).overview(),
             "data_paths": DataPathService().status(),
             "mineru_config": MinerUConfigService(conn).status(),
+            "agent_permissions": AgentSettingsPermissionService(conn).status(),
         }
 
 
@@ -571,6 +727,20 @@ def save_mineru_config(request: MinerUConfigRequest) -> dict:
     with transaction() as conn:
         status = MinerUConfigService(conn).save(request.token, clear_token=request.clear_token)
         return {"mineru_config": status}
+
+
+@app.get("/api/settings/agent-permissions")
+def agent_settings_permissions() -> dict:
+    init_db()
+    with transaction() as conn:
+        return {"agent_permissions": AgentSettingsPermissionService(conn).status()}
+
+
+@app.post("/api/settings/agent-permissions")
+def save_agent_settings_permissions(request: AgentSettingsPermissionRequest) -> dict:
+    init_db()
+    with transaction() as conn:
+        return {"agent_permissions": AgentSettingsPermissionService(conn).save(request.enabled_feature_ids)}
 
 
 @app.post("/api/config/providers/custom")
@@ -705,6 +875,7 @@ def chat(request: ChatRequest) -> ChatResponse:
 
         active_question = active  # 默认保持当前题
         answered_question: dict | None = None
+        settings_action: dict[str, Any] | None = None
 
         if task.value == "answer_question" and active:
             # ── 答题：判题、回写，再自动推进到下一道库存题 ──
@@ -782,11 +953,45 @@ def chat(request: ChatRequest) -> ChatResponse:
             )
 
         elif task.value == "settings":
-            # ── 设置：引导用户去设置面板 ──
-            assistant_content = (
-                "请点击左侧栏底部的「设置」按钮来修改模型供应商、学习目标、"
-                "人格等配置。设置修改后会自动持久化到后端。"
-            )
+            # ── 设置：有授权的功能可生成可确认设置动作；无授权只引导用户打开设置页 ──
+            if _looks_like_past_paper_settings_request(request.content):
+                permission_service = AgentSettingsPermissionService(conn)
+                if not permission_service.is_enabled("past_paper_import"):
+                    assistant_content = (
+                        "我可以帮你解析试卷信息并填入「历年真题与题型」表单，但该功能还没有授权。\n\n"
+                        "请在设置里的「权限」页开启「历年真题导入与题型」，之后把试卷文本、文件内容或关键信息发给我，"
+                        "我会先整理标题、年份、来源、题型和摘要，再让你确认填入。"
+                    )
+                else:
+                    profile = ProfileService(conn).get()
+                    draft_result = _past_paper_draft_response(
+                        conn,
+                        exam_id=profile.exam_id,
+                        raw_text=request.content,
+                        filename="",
+                        include_raw_text=True,
+                    )
+                    draft = draft_result["draft"]
+                    settings_action = {
+                        "type": "past_paper_import_draft",
+                        "feature_id": "past_paper_import",
+                        "label": "填入历年真题导入表单",
+                        "draft": draft,
+                        "parser": draft_result["parser"],
+                        "confirmation_required": True,
+                    }
+                    assistant_content = (
+                        "我已整理出一份试卷导入草稿，请确认后填入设置页再修改保存。\n\n"
+                        f"- 标题：{draft.get('title') or '待补充'}\n"
+                        f"- 年份：{draft.get('year') or '待补充'}\n"
+                        f"- 题型：{'、'.join(draft.get('question_types') or []) or '待补充'}\n"
+                        f"- 解析方式：{draft_result['parser']}"
+                    )
+            else:
+                assistant_content = (
+                    "请点击左侧栏底部的「设置」按钮来修改模型供应商、学习目标、"
+                    "人格等配置。已授权的设置功能可以在会话中先让我整理草稿，再由你确认填入。"
+                )
 
         elif task.value == "summary":
             # ── 总结：生成当日学习总结 ──
@@ -854,6 +1059,8 @@ def chat(request: ChatRequest) -> ChatResponse:
         assistant_payload = {"active_question": active_question}
         if answered_question:
             assistant_payload["answered_question"] = answered_question
+        if settings_action:
+            assistant_payload["settings_action"] = settings_action
         msg_id = session_service.add_message(
             session_id,
             "assistant",
@@ -1085,6 +1292,25 @@ def past_paper_select(request: PastPaperSelectRequest) -> dict:
         return PastPaperService(conn).select_papers(request.exam_id, request.paper_ids)
 
 
+@app.post("/api/past-papers/draft")
+def past_paper_draft(request: PastPaperDraftRequest) -> dict:
+    init_db()
+    with transaction() as conn:
+        return _past_paper_draft_response(
+            conn,
+            exam_id=request.exam_id,
+            title=request.title,
+            year=request.year,
+            source_url=request.source_url,
+            local_path=request.local_path,
+            summary=request.summary,
+            question_types=request.question_types,
+            raw_text=request.raw_text,
+            filename=request.filename,
+            include_raw_text=True,
+        )
+
+
 @app.post("/api/past-papers/import")
 def past_paper_import(request: PastPaperImportRequest) -> dict:
     init_db()
@@ -1130,6 +1356,47 @@ async def past_paper_import_file(
                 raw_text="",
                 parse_now=parse_now,
             )
+    finally:
+        temp_dir.cleanup()
+
+
+@app.post("/api/past-papers/draft-file")
+async def past_paper_draft_file(
+    request: Request,
+    exam_id: str,
+    filename: str = "",
+    title: str = "",
+    year: int | None = None,
+    source_url: str = "",
+    summary: str = "",
+    question_types: str = "",
+) -> dict:
+    temp_dir, path, _size = await _uploaded_file_to_temp(request, filename=filename)
+    try:
+        init_db()
+        with transaction() as conn:
+            mineru_token = MinerUConfigService(conn).token_for_runtime()
+        try:
+            text, file_parser = extract_text_from_file(path, language="ch", mineru_token=mineru_token)
+        except (OSError, RuntimeError, UnicodeDecodeError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        clean_types = [item.strip() for item in re.split(r"[，,\n]", question_types) if item.strip()]
+        with transaction() as conn:
+            result = _past_paper_draft_response(
+                conn,
+                exam_id=exam_id,
+                title=title,
+                year=year,
+                source_url=source_url,
+                local_path=filename or path.name,
+                summary=summary,
+                question_types=clean_types,
+                raw_text=text,
+                filename=filename or path.name,
+                include_raw_text=False,
+            )
+            result["file_parser"] = file_parser
+            return result
     finally:
         temp_dir.cleanup()
 
