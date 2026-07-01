@@ -29,6 +29,52 @@ _SETTINGS_KEYWORDS = (
 _SUMMARY_KEYWORDS = ("总结", "复盘", "今天表现", "今日表现", "复习报告")
 _CONTINUE_KEYWORDS = ("下一题", "继续", "下一个", "next", "Next", "NEXT")
 
+_ADVICE_OR_CHAT_KEYWORDS = (
+    "怎么", "如何", "为什么", "为啥", "吗", "？", "?",
+    "是不是", "建议", "推荐", "计划", "规划", "应该",
+)
+_FORCE_DRILL_PATTERN = re.compile(
+    r"(?:出题|出.{0,16}题|生成题|生成.{0,16}题|刷题|做题|练题|考我|测验|小测)"
+    r"|(?:quiz|drill|practice|test me)",
+    re.IGNORECASE,
+)
+_DRILL_ACTION_PATTERN = re.compile(
+    r"(?:出题|出.{0,16}题|生成题|生成.{0,16}题)"
+    r"|(?:给我|帮我|请|来|开始|现在|我要|我想)?.{0,8}"
+    r"(?:刷题|做题|练题|"
+    r"练(?:习|单词|词汇|听力|阅读|写作)?|考我|测验|小测|训练)"
+    r"|(?:quiz|drill|practice|test me)",
+    re.IGNORECASE,
+)
+_START_LEARNING_PATTERN = re.compile(
+    r"(?:今天|今日|现在|开始|我要|我想).{0,12}"
+    r"(?:学习|复习|背单词|练习|练|训练|刷题)",
+    re.IGNORECASE,
+)
+_VOCAB_DEFINITION_PATTERN = re.compile(
+    r"^[A-Za-z][A-Za-z' -]{1,40}\s*[:：]\s*\S+"
+    r"|^[A-Za-z][A-Za-z' -]{1,40}\s+"
+    r"(?:n|v|vi|vt|adj|adv|prep|conj|pron|num|art|aux)\.\s*\S+",
+    re.IGNORECASE,
+)
+
+
+def _has_advice_or_chat_cue(text: str) -> bool:
+    return any(keyword in text for keyword in _ADVICE_OR_CHAT_KEYWORDS)
+
+
+def _looks_like_explicit_drill_request(text: str) -> bool:
+    if not text.strip():
+        return False
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if any(_VOCAB_DEFINITION_PATTERN.match(line) for line in lines):
+        return True
+    if _has_advice_or_chat_cue(text) and not _FORCE_DRILL_PATTERN.search(text):
+        return False
+    if _DRILL_ACTION_PATTERN.search(text):
+        return True
+    return bool(_START_LEARNING_PATTERN.search(text))
+
 
 class TaskRouter:
     def route(
@@ -69,5 +115,8 @@ class TaskRouter:
         if any(keyword == text or keyword in text for keyword in _CONTINUE_KEYWORDS):
             return TaskType.continue_drill
 
-        # 8. 默认：日常训练
-        return TaskType.daily_drill
+        # 8. 明确学习 / 练题意图才进入日常训练；普通寒暄和咨询只聊天。
+        if _looks_like_explicit_drill_request(text):
+            return TaskType.daily_drill
+
+        return TaskType.general_chat

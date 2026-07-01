@@ -14,6 +14,7 @@ class AgentName(str, Enum):
 
 class TaskType(str, Enum):
     onboarding = "onboarding"
+    general_chat = "general_chat"
     daily_drill = "daily_drill"
     continue_drill = "continue_drill"
     answer_question = "answer_question"

@@ -347,6 +347,23 @@ function looksLikeScreenshotVocabulary(content: string) {
   return terms >= 3;
 }
 
+const CHAT_ADVICE_RE = /怎么|如何|为什么|为啥|吗|？|\?|是不是|建议|推荐|计划|规划|应该/;
+const FORCE_DRILL_RE = /(?:出题|出.{0,16}题|生成题|生成.{0,16}题|刷题|做题|练题|考我|测验|小测)|(?:quiz|drill|practice|test me)/i;
+const DRILL_ACTION_RE = /(?:出题|出.{0,16}题|生成题|生成.{0,16}题)|(?:给我|帮我|请|来|开始|现在|我要|我想)?.{0,8}(?:刷题|做题|练题|练(?:习|单词|词汇|听力|阅读|写作)?|考我|测验|小测|训练)|(?:quiz|drill|practice|test me)/i;
+const START_LEARNING_RE = /(?:今天|今日|现在|开始|我要|我想).{0,12}(?:学习|复习|背单词|练习|练|训练|刷题)/i;
+
+function looksLikePracticeRequest(content: string) {
+  const text = content.trim();
+  if (!text) return false;
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (lines.some((line) => VOCAB_INLINE_POS_RE.test(line) || VOCAB_INLINE_SEPARATOR_RE.test(line))) {
+    return true;
+  }
+  if (CHAT_ADVICE_RE.test(text) && !FORCE_DRILL_RE.test(text)) return false;
+  if (DRILL_ACTION_RE.test(text)) return true;
+  return START_LEARNING_RE.test(text);
+}
+
 function formatNumber(value: number | undefined) {
   return Math.round(value || 0).toLocaleString("zh-CN");
 }
@@ -681,11 +698,12 @@ export default function App() {
     if (!cleanContent || sending) return;
     setQuickStartHint("");
     const likelyScreenshot = looksLikeScreenshotVocabulary(cleanContent);
+    const likelyPractice = looksLikePracticeRequest(cleanContent);
     const nextLabel = likelyScreenshot
       ? "截图解析中"
       : activeQuestion && isOptionAnswer(cleanContent)
         ? "模型正在判题"
-        : "题目生成中";
+        : likelyPractice ? "题目生成中" : "模型正在思考";
     setLoadingLabel(nextLabel);
     const generationTimer = likelyScreenshot
       ? window.setTimeout(() => setLoadingLabel("题目生成中"), 900)
