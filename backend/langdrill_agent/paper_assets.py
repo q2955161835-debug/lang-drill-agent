@@ -99,22 +99,22 @@ def source_manifest_text(
     )
 
 
-def extract_text_from_file(path: Path, *, language: str = "ch") -> tuple[str, str]:
+def extract_text_from_file(path: Path, *, language: str = "ch", mineru_token: str = "") -> tuple[str, str]:
     suffix = path.suffix.lower()
     if suffix in TEXT_SUFFIXES:
         return path.read_text(encoding="utf-8"), "text"
     if suffix == ".pdf":
-        return _extract_pdf_text(path, language=language)
+        return _extract_pdf_text(path, language=language, mineru_token=mineru_token)
     if suffix == ".docx":
         return _extract_docx_text(path)
     if suffix in IMAGE_SUFFIXES:
-        return _extract_image_text(path, language=language)
+        return _extract_image_text(path, language=language, mineru_token=mineru_token)
     if suffix in MINERU_FLASH_SUFFIXES:
-        return _extract_with_mineru_flash(path, language=language)
+        return _extract_with_mineru(path, language=language, mineru_token=mineru_token)
     raise RuntimeError(f"暂不支持解析 {suffix or '无扩展名'} 文件，请先转换为 Markdown/TXT/PDF/DOCX 或图片。")
 
 
-def _extract_pdf_text(path: Path, *, language: str) -> tuple[str, str]:
+def _extract_pdf_text(path: Path, *, language: str, mineru_token: str) -> tuple[str, str]:
     try:
         from pypdf import PdfReader  # type: ignore
 
@@ -126,15 +126,15 @@ def _extract_pdf_text(path: Path, *, language: str) -> tuple[str, str]:
         pass
 
     try:
-        return _extract_with_mineru_flash(path, language=language)
+        return _extract_with_mineru(path, language=language, mineru_token=mineru_token)
     except RuntimeError as exc:
         raise RuntimeError(f"PDF 解析失败：{exc}") from exc
 
 
-def _extract_image_text(path: Path, *, language: str) -> tuple[str, str]:
+def _extract_image_text(path: Path, *, language: str, mineru_token: str) -> tuple[str, str]:
     mineru_error = ""
     try:
-        return _extract_with_mineru_flash(path, language=language)
+        return _extract_with_mineru(path, language=language, mineru_token=mineru_token)
     except RuntimeError as exc:
         mineru_error = str(exc)
     try:
@@ -143,22 +143,27 @@ def _extract_image_text(path: Path, *, language: str) -> tuple[str, str]:
         raise RuntimeError(f"图片 OCR 失败：{mineru_error}；RapidOCR 失败：{exc}") from exc
 
 
-def _extract_with_mineru_flash(path: Path, *, language: str) -> tuple[str, str]:
+def _extract_with_mineru(path: Path, *, language: str, mineru_token: str = "") -> tuple[str, str]:
     mineru = shutil.which("mineru-open-api")
     if not mineru:
         raise RuntimeError("图片或复杂文档解析需要安装 MinerU CLI：npm install -g mineru-open-api。")
+    mode = "extract" if mineru_token.strip() else "flash-extract"
+    env = os.environ.copy()
+    if mineru_token.strip():
+        env["MINERU_TOKEN"] = mineru_token.strip()
     attempts = 2
     last_error = ""
     for attempt in range(1, attempts + 1):
         result = subprocess.run(
-            [mineru, "flash-extract", str(path), "--language", language],
+            [mineru, mode, str(path), "--language", language],
             capture_output=True,
             text=True,
             timeout=900,
             check=False,
+            env=env,
         )
         if result.returncode == 0:
-            return result.stdout, "mineru-open-api flash-extract"
+            return result.stdout, f"mineru-open-api {mode}"
         last_error = result.stderr.strip()[:300] or result.stdout.strip()[:300]
         if attempt < attempts and _should_retry_mineru_error(last_error):
             time.sleep(1.5)

@@ -24,7 +24,7 @@ from .paper_assets import (
     source_manifest_text,
     write_parsed_json,
 )
-from .utils import dumps, loads, new_id, normalize_api_key, today_str
+from .utils import dumps, loads, new_id, normalize_api_key, today_str, validate_http_header_value
 
 
 logger = logging.getLogger(__name__)
@@ -1300,7 +1300,11 @@ class PastPaperService:
                 shutil.copy2(source_path, raw_path)
             if parse_now:
                 try:
-                    extracted_text, parser = extract_text_from_file(raw_path, language=self._language_for_exam(exam_id))
+                    extracted_text, parser = extract_text_from_file(
+                        raw_path,
+                        language=self._language_for_exam(exam_id),
+                        mineru_token=MinerUConfigService(self.conn).token_for_runtime(),
+                    )
                 except RuntimeError as exc:
                     extracted_text = source_manifest_text(
                         exam_id=exam_id,
@@ -1465,6 +1469,7 @@ class ModelConfigService:
                 "id": "mock-tutor-v1",
                 "label": "mock-tutor-v1",
                 "context_tokens": 0,
+                "vision": False,
                 "reasoning": {
                     "default_level": "",
                     "parameter": "",
@@ -1488,6 +1493,7 @@ class ModelConfigService:
                     "id": "gpt-5.5",
                     "label": "gpt-5.5",
                     "context_tokens": 1000000,
+                    "vision": True,
                     "reasoning": {
                         "default_level": "auto",
                         "parameter": "openai_reasoning_effort",
@@ -1505,6 +1511,7 @@ class ModelConfigService:
                     "id": "gpt-5.4",
                     "label": "gpt-5.4",
                     "context_tokens": 1000000,
+                    "vision": True,
                     "reasoning": {
                         "default_level": "auto",
                         "parameter": "openai_reasoning_effort",
@@ -1534,6 +1541,7 @@ class ModelConfigService:
                     "id": "claude-sonnet-4.7",
                     "label": "claude-sonnet-4.7",
                     "context_tokens": 200000,
+                    "vision": True,
                     "reasoning": {
                         "default_level": "medium",
                         "parameter": "anthropic_adaptive_thinking",
@@ -1549,6 +1557,7 @@ class ModelConfigService:
                     "id": "claude-opus-4.7",
                     "label": "claude-opus-4.7",
                     "context_tokens": 200000,
+                    "vision": True,
                     "reasoning": {
                         "default_level": "medium",
                         "parameter": "anthropic_adaptive_thinking",
@@ -1576,6 +1585,7 @@ class ModelConfigService:
                     "id": "deepseek-v4-pro",
                     "label": "deepseek-v4-pro",
                     "context_tokens": 1000000,
+                    "vision": False,
                     "reasoning": {
                         "default_level": "max",
                         "parameter": "deepseek_thinking",
@@ -1590,6 +1600,7 @@ class ModelConfigService:
                     "id": "deepseek-v4-flash",
                     "label": "deepseek-v4-flash",
                     "context_tokens": 1000000,
+                    "vision": False,
                     "reasoning": {
                         "default_level": "high",
                         "parameter": "deepseek_thinking",
@@ -1616,6 +1627,7 @@ class ModelConfigService:
                     "id": "mimo-v2.5",
                     "label": "mimo-v2.5",
                     "context_tokens": 1000000,
+                    "vision": False,
                     "reasoning": {
                         "default_level": "enabled",
                         "parameter": "anthropic_thinking_switch",
@@ -1629,6 +1641,7 @@ class ModelConfigService:
                     "id": "mimo-v2.5-pro",
                     "label": "mimo-v2.5-pro",
                     "context_tokens": 1000000,
+                    "vision": False,
                     "reasoning": {
                         "default_level": "enabled",
                         "parameter": "anthropic_thinking_switch",
@@ -1719,6 +1732,7 @@ class ModelConfigService:
                 "thinking_api_value": "",
                 "reasoning_parameter": "",
                 "api_format": "mock",
+                "vision": False,
                 "has_api_key": False,
                 "visible_in_picker": False,
             }
@@ -1734,6 +1748,7 @@ class ModelConfigService:
             "thinking_api_value": api_value,
             "reasoning_parameter": reasoning.get("parameter", ""),
             "api_format": config.get("api_format") or provider.get("api_format", "openai-chat-completions"),
+            "vision": bool(config.get("vision", model_config.get("vision", False) if model_config else False)),
             "has_api_key": has_key,
             "visible_in_picker": bool(provider.get("enabled", True)) and (not provider.get("api_key_required", True) or has_key),
         }
@@ -1773,6 +1788,7 @@ class ModelConfigService:
         thinking_level: str = "auto",
         thinking_level_options: list[dict[str, str]] | None = None,
         api_format: str = "",
+        vision: bool | None = None,
     ) -> dict[str, Any]:
         provider = self.provider_by_id(provider_id)
         clean_base_url = (base_url or provider.get("base_url", "")).strip()
@@ -1781,6 +1797,7 @@ class ModelConfigService:
         clean_options = self._normalize_thinking_options(thinking_level_options or self.thinking_level_options(provider_id, clean_model))
         model_config = self._model_config(provider_id, clean_model)
         reasoning = dict(model_config.get("reasoning", {})) if model_config else {}
+        clean_vision = bool(vision) if vision is not None else bool(model_config.get("vision", False) if model_config else False)
         if clean_options:
             reasoning["levels"] = clean_options
             reasoning.setdefault("parameter", self._default_reasoning_parameter(provider_id))
@@ -1806,6 +1823,7 @@ class ModelConfigService:
                         "model": clean_model,
                         "thinking_level": clean_thinking_level,
                         "api_format": clean_api_format,
+                        "vision": clean_vision,
                     }
                 ),
             ),
@@ -1825,6 +1843,7 @@ class ModelConfigService:
                         "id": clean_model,
                         "label": clean_model,
                         "context_tokens": 0,
+                        "vision": clean_vision,
                         "reasoning": reasoning,
                     }
                 )
@@ -1832,6 +1851,7 @@ class ModelConfigService:
             reasoning["levels"] = clean_options
             reasoning["default_level"] = clean_thinking_level
             ov.setdefault("model_reasoning_overrides", {})[clean_model] = reasoning
+        ov.setdefault("model_capability_overrides", {})[clean_model] = {"vision": clean_vision}
 
         self.conn.execute(
             "INSERT OR REPLACE INTO app_settings (key, value_json, updated_at) VALUES ('model.provider_overrides', ?, CURRENT_TIMESTAMP)",
@@ -1880,7 +1900,9 @@ class ModelConfigService:
             "enabled": True,
             "base_url": base_url.strip(),
             "model": clean_model,
-            "model_options": [clean_model] if clean_model else [],
+            "model_options": [
+                {"id": clean_model, "label": clean_model, "context_tokens": 0, "vision": False}
+            ] if clean_model else [],
         }
         customs.append(provider)
         self.conn.execute(
@@ -1923,6 +1945,7 @@ class ModelConfigService:
                     model_options.append(normalized)
                     existing.add(normalized["id"])
             reasoning_overrides = ov.get("model_reasoning_overrides", {})
+            capability_overrides = ov.get("model_capability_overrides", {})
             for model_item in model_options:
                 model_id = self._model_id(model_item)
                 if model_id in reasoning_overrides:
@@ -1930,6 +1953,12 @@ class ModelConfigService:
                         reasoning_overrides[model_id],
                         default_reasoning.get(model_id, {}),
                     )
+                if model_id in capability_overrides:
+                    override_item = capability_overrides[model_id]
+                    if isinstance(override_item, dict):
+                        model_item["vision"] = bool(override_item.get("vision", model_item.get("vision", False)))
+                    else:
+                        model_item["vision"] = bool(override_item)
             provider["model_options"] = model_options
         else:
             provider["model_options"] = [self._normalize_model_option(item) for item in provider.get("model_options", [])]
@@ -1961,12 +1990,14 @@ class ModelConfigService:
                 "id": value,
                 "label": value,
                 "context_tokens": 0,
+                "vision": False,
                 "reasoning": {"default_level": "", "parameter": self._default_reasoning_parameter(""), "levels": []},
             }
         item = dict(value or {})
         item.setdefault("id", item.get("model", ""))
         item.setdefault("label", item.get("id", ""))
         item.setdefault("context_tokens", 0)
+        item["vision"] = bool(item.get("vision", False))
         item.setdefault("reasoning", {"default_level": "", "parameter": self._default_reasoning_parameter(""), "levels": []})
         if item["reasoning"]:
             item["reasoning"]["levels"] = self._normalize_thinking_options(item["reasoning"].get("levels", []))
@@ -2047,7 +2078,7 @@ class ModelConfigService:
             key, value = line.split("=", 1)
             clean_key = key.strip()
             clean_value = value.strip()
-            if "API_KEY" in clean_key.upper():
+            if "API_KEY" in clean_key.upper() or clean_key.upper() == "MINERU_TOKEN":
                 clean_value = normalize_api_key(clean_value)
             values[clean_key] = clean_value
         return values
@@ -2062,12 +2093,13 @@ class ModelConfigService:
             "LANGDRILL_PROVIDER_API_KEY_CLAUDE",
             "LANGDRILL_PROVIDER_API_KEY_DEEPSEEK",
             "LANGDRILL_PROVIDER_API_KEY_MIMO",
+            "MINERU_TOKEN",
         }
         values: dict[str, str] = {}
         for key in keys:
             value = os.environ.get(key)
             if value and value.strip():
-                values[key] = normalize_api_key(value) if "API_KEY" in key.upper() else value.strip()
+                values[key] = normalize_api_key(value) if "API_KEY" in key.upper() or key.upper() == "MINERU_TOKEN" else value.strip()
         for key, value in os.environ.items():
             if key.startswith("LANGDRILL_PROVIDER_API_KEY_") and value and value.strip():
                 values[key] = normalize_api_key(value)
@@ -2093,6 +2125,7 @@ class ModelConfigService:
             "LANGDRILL_PROVIDER_API_KEY_CLAUDE",
             "LANGDRILL_PROVIDER_API_KEY_DEEPSEEK",
             "LANGDRILL_PROVIDER_API_KEY_MIMO",
+            "MINERU_TOKEN",
             "OPENAI_API_KEY",
             "OPENAI_BASE_URL",
             "OPENAI_MODEL",
@@ -2117,3 +2150,45 @@ class ModelConfigService:
                 os.environ[key] = value
             elif clear_empty:
                 os.environ.pop(key, None)
+
+
+class MinerUConfigService:
+    ENV_KEY = "MINERU_TOKEN"
+    TOKEN_URL = "https://mineru.net/apiManage/token"
+    DOCS_URL = "https://mineru.net/apiManage/docs"
+
+    def __init__(self, conn: sqlite3.Connection):
+        self.conn = conn
+
+    def status(self) -> dict[str, Any]:
+        token = self.token_for_runtime()
+        return {
+            "token_url": self.TOKEN_URL,
+            "docs_url": self.DOCS_URL,
+            "env_key": self.ENV_KEY,
+            "has_token": bool(token),
+            "token_preview": self._preview(token),
+        }
+
+    def save(self, token: str, *, clear_token: bool = False) -> dict[str, Any]:
+        env_service = ModelConfigService(self.conn)
+        if clear_token:
+            env_service._write_env({self.ENV_KEY: ""}, clear_empty=True)
+            return self.status()
+        clean_token = normalize_api_key(token)
+        if clean_token:
+            validate_http_header_value(clean_token, "MinerU token")
+            env_service._write_env({self.ENV_KEY: clean_token})
+        return self.status()
+
+    def token_for_runtime(self) -> str:
+        env_service = ModelConfigService(self.conn)
+        values = {**env_service._read_env(), **env_service._read_process_env()}
+        return normalize_api_key(values.get(self.ENV_KEY, ""))
+
+    def _preview(self, token: str) -> str:
+        if not token:
+            return ""
+        if len(token) <= 8:
+            return "已配置"
+        return f"{token[:4]}...{token[-4:]}"

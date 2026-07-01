@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import os
 import time
 from dataclasses import dataclass
@@ -111,6 +113,55 @@ class ModelProvider:
             clean_suffix = clean_suffix[3:]
         return f"{clean_base}{clean_suffix}"
 
+    def _openai_user_content(self, text: str, pack: PromptPack) -> str | list[dict[str, Any]]:
+        image_items = [item for item in pack.attachments if item.type == "image" and item.data_url]
+        if not image_items:
+            return text
+        content: list[dict[str, Any]] = [
+            {"type": "text", "text": text or "请识别并说明这些图片内容。"}
+        ]
+        for item in image_items:
+            content.append({"type": "image_url", "image_url": {"url": item.data_url}})
+        return content
+
+    def _anthropic_user_content(self, text: str, pack: PromptPack) -> str | list[dict[str, Any]]:
+        image_items = [item for item in pack.attachments if item.type == "image" and item.data_url]
+        if not image_items:
+            return text
+        content: list[dict[str, Any]] = [
+            {"type": "text", "text": text or "请识别并说明这些图片内容。"}
+        ]
+        for item in image_items:
+            media_type, data = self._image_data_url_parts(item.data_url, item.mime_type)
+            content.append(
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": media_type,
+                        "data": data,
+                    },
+                }
+            )
+        return content
+
+    def _image_data_url_parts(self, data_url: str, fallback_mime: str = "") -> tuple[str, str]:
+        clean = data_url.strip()
+        media_type = (fallback_mime or "image/png").strip() or "image/png"
+        data = clean
+        if clean.startswith("data:"):
+            try:
+                header, data = clean.split(",", 1)
+            except ValueError as exc:
+                raise RuntimeError("图片附件 data URL 格式不正确。") from exc
+            header_mime = header.removeprefix("data:").split(";", 1)[0].strip()
+            media_type = header_mime or media_type
+        try:
+            base64.b64decode(data, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise RuntimeError("图片附件不是有效的 base64 数据。") from exc
+        return media_type, data
+
     def _openai_compatible(self, pack: PromptPack) -> ModelResult:
         started = time.perf_counter()
         base_url = (self.base_url or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")).rstrip("/")
@@ -130,7 +181,7 @@ class ModelProvider:
             messages.append({"role": "developer", "content": dumps(developer_context)})
         else:
             user_content = f"{dumps(developer_context)}\n\n{pack.user_content}"
-        messages.append({"role": "user", "content": user_content})
+        messages.append({"role": "user", "content": self._openai_user_content(user_content, pack)})
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
@@ -179,7 +230,7 @@ class ModelProvider:
             "max_tokens": 4096,
             "system": system,
             "messages": [
-                {"role": "user", "content": user_content},
+                {"role": "user", "content": self._anthropic_user_content(user_content, pack)},
             ],
         }
         self._apply_anthropic_reasoning(payload)

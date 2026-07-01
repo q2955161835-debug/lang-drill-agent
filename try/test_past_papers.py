@@ -202,7 +202,7 @@ def test_extract_text_endpoint_rejects_empty_upload() -> None:
 def test_extract_text_endpoint_reports_parser_error_without_500(monkeypatch) -> None:
     import langdrill_agent.api as api_module
 
-    def fail_extract(path: Path, *, language: str = "ch") -> tuple[str, str]:
+    def fail_extract(path: Path, *, language: str = "ch", mineru_token: str = "") -> tuple[str, str]:
         raise RuntimeError("MinerU 解析失败：download markdown EOF")
 
     monkeypatch.setattr(api_module, "extract_text_from_file", fail_extract)
@@ -242,7 +242,7 @@ def test_mineru_flash_retries_transient_download_errors(tmp_path: Path, monkeypa
     image_path = tmp_path / "words.png"
     image_path.write_bytes(b"fake-image")
 
-    text, parser = paper_assets._extract_with_mineru_flash(image_path, language="ch")
+    text, parser = paper_assets._extract_with_mineru(image_path, language="ch")
 
     assert calls["count"] == 2
     assert parser == "mineru-open-api flash-extract"
@@ -252,10 +252,10 @@ def test_mineru_flash_retries_transient_download_errors(tmp_path: Path, monkeypa
 def test_image_text_extract_falls_back_to_rapidocr(tmp_path: Path, monkeypatch) -> None:
     import langdrill_agent.paper_assets as paper_assets
 
-    def fail_mineru(path: Path, *, language: str) -> tuple[str, str]:
+    def fail_mineru(path: Path, *, language: str, mineru_token: str = "") -> tuple[str, str]:
         raise RuntimeError("MinerU 解析失败：download markdown EOF")
 
-    monkeypatch.setattr(paper_assets, "_extract_with_mineru_flash", fail_mineru)
+    monkeypatch.setattr(paper_assets, "_extract_with_mineru", fail_mineru)
     monkeypatch.setattr(
         paper_assets,
         "_extract_with_rapidocr_image",
@@ -268,6 +268,34 @@ def test_image_text_extract_falls_back_to_rapidocr(tmp_path: Path, monkeypatch) 
 
     assert parser == "rapidocr-onnxruntime"
     assert "collision" in text
+
+
+def test_mineru_extract_uses_token_mode_when_configured(tmp_path: Path, monkeypatch) -> None:
+    import langdrill_agent.paper_assets as paper_assets
+
+    class MineruResult:
+        returncode = 0
+        stderr = ""
+        stdout = "parsed by token"
+
+    captured: dict[str, object] = {}
+
+    def fake_run(command, **kwargs) -> MineruResult:
+        captured["command"] = command
+        captured["env"] = kwargs.get("env")
+        return MineruResult()
+
+    monkeypatch.setattr(paper_assets.shutil, "which", lambda name: "mineru-open-api")
+    monkeypatch.setattr(paper_assets.subprocess, "run", fake_run)
+    file_path = tmp_path / "paper.pdf"
+    file_path.write_bytes(b"%PDF")
+
+    text, parser = paper_assets._extract_with_mineru(file_path, language="ch", mineru_token="token-123")
+
+    assert text == "parsed by token"
+    assert parser == "mineru-open-api extract"
+    assert captured["command"][1] == "extract"
+    assert captured["env"]["MINERU_TOKEN"] == "token-123"
 
 
 def test_past_paper_file_upload_imports_and_parses_text_file(tmp_path: Path, monkeypatch) -> None:

@@ -644,6 +644,33 @@ h1, h2, h3, h4, .brand, .kicker { font-weight: 750; letter-spacing: -0.03em; }
   font-weight: 650;
 }
 .chat-config-bar span { padding: 7px 10px; border-radius: 999px; background: var(--surface-glass); }
+.composer-attachments {
+  width: min(920px, 100%);
+  margin: 0 auto 8px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.composer-attachments button {
+  display: inline-grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  max-width: min(260px, 100%);
+  min-height: 36px;
+  border: var(--border-thin);
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: var(--surface);
+  color: var(--muted-strong);
+  font-weight: 750;
+}
+.composer-attachments span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .composer {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
@@ -1007,6 +1034,14 @@ h1, h2, h3, h4, .brand, .kicker { font-weight: 750; letter-spacing: -0.03em; }
 }
 .custom-provider-form .form-actions .inline-action {
   min-width: 112px;
+}
+.mineru-config {
+  display: grid;
+  gap: 10px;
+  border: var(--border-thin);
+  border-radius: var(--radius-sm);
+  background: var(--surface-strong);
+  padding: 12px;
 }
 .inline-link {
   display: inline-flex;

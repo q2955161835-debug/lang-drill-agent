@@ -28,6 +28,20 @@ export function appendImportedText(current: string, addition: string) {
   return cleanCurrent ? `${cleanCurrent}\n\n${cleanAddition}` : cleanAddition;
 }
 
+export function isImageFile(file: File) {
+  return file.type.startsWith("image/")
+    || /\.(png|jpe?g|jp2|webp|gif|bmp)$/i.test(file.name);
+}
+
+export function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("图片读取失败。"));
+    reader.readAsDataURL(file);
+  });
+}
+
 export async function extractTextFromFile(file: File, language = "ch") {
   const params = new URLSearchParams({
     filename: file.name,

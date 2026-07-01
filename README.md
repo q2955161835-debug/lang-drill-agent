@@ -28,6 +28,7 @@ Lang Drill Agent（语言学习训练 Agent）不是单一巨型 prompt（提示
 - 手机映像与截图导入：右侧工作台预留 scrcpy（开源手机映像工具）/adb（安卓调试桥）手机操控链路，并支持把手机背词截图的 OCR（文字识别）文本导入为知识项后自动创建考试式练习题组；截图导入面板可拖入图片、PDF（Portable Document Format，便携式文档格式）、DOCX（Word 文档格式）或文本文件并抽取内容。
 - 快速开始：长期学习总面板底部提供“当日导入 / 快速开始”。当前查看的会话或当日面板没有导入/题组时打开右侧截图导入并给出本地提示；当前面板已有内容时自动发送“继续当前题组”。
 - 主聊天截图导入：用户把 3 个以上截图词条直接粘贴到主聊天栏时，后端复用侧边栏截图导入流程，自动创建截图练习会话、导入词表并生成题组；主聊天文本框也可拖入文件并把抽取文本追加到输入框；支持“单词独占一行 + 下一行释义”、`word n. 释义` 和 `word: 释义` 等常见格式。
+- 聊天图片分流：设置页可声明当前模型是否支持图片输入；支持视觉的模型会直接接收聊天栏拖入图片，不支持视觉的模型会先走 MinerU/RapidOCR（文档解析/本地文字识别）抽取文本。
 - 上下文与压缩：聊天输入框发送按钮左侧显示上下文容量圆圈，默认上限 1,000,000 token（令牌）；设置页可修改上限，圆圈弹窗可主动压缩上下文。LLMLingua（提示词压缩库）作为可选增强，默认使用本地抽取式摘要兜底。
 - 题目数据库目录：设置页“数据”页签可查看当前 SQLite（轻量数据库）运行库路径、题目/作答/会话计数、数据库大小，可通过本机文件夹选择器填写保存位置，并把题目数据库迁移到自定义文件夹或初始化新的空库。
 - 题目吸附显示：当前正在回答的题目在聊天滚动时保持可见，避免题目被滑走。
@@ -84,7 +85,7 @@ Web（网页）前端包含三个主区域：
 
 设置面板包含：
 
-- 模型提供商、Base URL（基础网址）、API Key（接口密钥）、模型名称和自定义模型入口。
+- 模型提供商、Base URL（基础网址）、API Key（接口密钥）、模型名称、自定义模型入口、当前模型视觉能力和 MinerU token（用户信息）配置。
 - 使用统计，展示累计 token（令牌）、会话数、消息数、活跃天数、连续天数、最常用模型、近 30 天活动热力、模型用量分布和上下文容量上限。
 - 数据，展示当前用户数据目录、题目数据库路径、测试数据目录、数据库大小和核心表计数；支持打开本机文件夹选择器、迁移当前数据库到自定义文件夹或初始化空库。
 - 当前考试、目标语言、考试时间、学习目标和学习背景。
@@ -177,6 +178,7 @@ npm run dev
 - `LANGDRILL_ENABLE_LLMLINGUA`：设为 `1` 后，主动压缩上下文会尝试使用可选依赖 LLMLingua；未启用时使用本地抽取式摘要。
 - `LANGDRILL_PAPER_ROOT`：历年真题原始文件和解析 JSON（JSON 数据交换格式）的根目录；默认 `./papers`。
 - `LANGDRILL_MIGRATE_LEGACY_DB`：设为 `1` 才从项目内历史 `data/langdrill_agent.db` 复制旧库；默认不复制，避免无污染测试库被旧数据污染。
+- `MINERU_TOKEN`：MinerU 精准解析 token，属于用户信息，只写入本地 `.env` 或进程环境；设置页只显示是否已配置和脱敏预览。官方 token 获取地址：[https://mineru.net/apiManage/token](https://mineru.net/apiManage/token)，API 文档：[https://mineru.net/apiManage/docs](https://mineru.net/apiManage/docs)。
 
 可选安装上下文压缩增强：
 
@@ -190,15 +192,15 @@ pip install -e .[context-compression]
 pip install -e .[paper-parsing]
 ```
 
-内置解析器优先处理 Markdown（Markdown 文本格式）/TXT（纯文本格式）；安装增强依赖后可解析 PDF（Portable Document Format，便携式文档格式）、DOCX（Word 文档格式）和图片本地 OCR（文字识别）。若本机安装 MinerU CLI（MinerU 命令行工具），PDF 文本抽取失败时会尝试 `mineru-open-api flash-extract`：
+内置解析器优先处理 Markdown（Markdown 文本格式）/TXT（纯文本格式）；安装增强依赖后可解析 PDF（Portable Document Format，便携式文档格式）、DOCX（Word 文档格式）和图片本地 OCR（文字识别）。若本机安装 MinerU CLI（MinerU 命令行工具），配置 `MINERU_TOKEN` 时会优先使用 `mineru-open-api extract` 精准解析；未配置 token 时使用 `mineru-open-api flash-extract` 轻量解析：
 
 ```powershell
 npm install -g mineru-open-api
 ```
 
-拖拽上传的试卷文件和截图文件会先走后端文本抽取；TXT（纯文本格式）/Markdown（Markdown 文本格式）直接读取，PDF（便携式文档格式）优先使用 `pypdf`，DOCX（Word 文档格式）使用 `python-docx`，图片优先使用 MinerU CLI（MinerU 命令行工具）并在失败时回退到 RapidOCR（本地文字识别），PPTX（PowerPoint 文档格式）和 XLSX（Excel 工作簿格式）仍依赖可选 MinerU CLI。解析结果只保留组卷需要的章节、题型、短摘录、摘要、来源和路径。
+拖拽上传的试卷文件、截图文件和非视觉模型下的聊天图片会先走后端文本抽取；TXT（纯文本格式）/Markdown（Markdown 文本格式）直接读取，PDF（便携式文档格式）优先使用 `pypdf`，DOCX（Word 文档格式）使用 `python-docx`，图片优先使用 MinerU CLI（MinerU 命令行工具）并在失败时回退到 RapidOCR（本地文字识别），PPTX（PowerPoint 文档格式）和 XLSX（Excel 工作簿格式）仍依赖可选 MinerU CLI。解析结果只保留组卷需要的章节、题型、短摘录、摘要、来源和路径。
 
-聊天栏快捷模型选择只显示已启用且已配置 API Key（接口密钥）的真实供应商；没有添加的自定义供应商不会暴露。模型名称在网页里同时提供供应商常见模型选项和自定义填写项。thinking level（思考等级）跟随当前模型配置，写入模型 API（接口）的原生 reasoning（推理）参数；没有原生档位且未自定义添加档位的模型不显示思考等级选择。
+聊天栏快捷模型选择只显示已启用且已配置 API Key（接口密钥）的真实供应商；没有添加的自定义供应商不会暴露。模型名称在网页里同时提供供应商常见模型选项和自定义填写项。thinking level（思考等级）跟随当前模型配置，写入模型 API（接口）的原生 reasoning（推理）参数；没有原生档位且未自定义添加档位的模型不显示思考等级选择。模型视觉能力由内置默认值或设置页手动开关决定，控制聊天栏图片是直传模型还是交给 MinerU/RapidOCR 抽取文本。
 
 ## 数据与安全边界
 

@@ -38,6 +38,7 @@ export type ModelOption = string | {
   id: string;
   label?: string;
   context_tokens?: number;
+  vision?: boolean;
   reasoning?: {
     default_level?: string;
     parameter?: string;
@@ -55,8 +56,24 @@ export type ModelConfig = {
   thinking_api_value?: string;
   reasoning_parameter?: string;
   api_format?: string;
+  vision?: boolean;
   has_api_key?: boolean;
   visible_in_picker?: boolean;
+};
+
+export type ChatImageAttachment = {
+  type: "image";
+  filename: string;
+  mime_type: string;
+  data_url: string;
+};
+
+export type MinerUConfig = {
+  token_url: string;
+  docs_url: string;
+  env_key: string;
+  has_token: boolean;
+  token_preview: string;
 };
 
 export type SessionItem = {

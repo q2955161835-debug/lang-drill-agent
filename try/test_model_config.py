@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 import langdrill_agent.services as services_module
 from langdrill_agent.api import app
-from langdrill_agent.services import ModelConfigService
+from langdrill_agent.services import MinerUConfigService, ModelConfigService
 
 
 def _settings_conn() -> sqlite3.Connection:
@@ -345,3 +345,54 @@ def test_custom_reasoning_level_is_saved_for_current_model(tmp_path, monkeypatch
 
     assert config["thinking_level"] == "extreme"
     assert config["thinking_level_options"][-1] == {"id": "extreme", "label": "极限", "api_value": "xhigh"}
+
+
+def test_model_vision_capability_is_saved_for_current_model(tmp_path, monkeypatch):
+    monkeypatch.setattr(services_module, "PROJECT_ROOT", tmp_path)
+    service = ModelConfigService(_settings_conn())
+
+    config = service.save(
+        "mimo",
+        "https://api.xiaomimimo.com/anthropic",
+        "mimo-v2.5-pro",
+        thinking_level="enabled",
+        api_format="anthropic-messages",
+        vision=True,
+    )
+
+    providers = {item["id"]: item for item in service.providers()}
+    mimo_model = next(item for item in providers["mimo"]["model_options"] if item["id"] == "mimo-v2.5-pro")
+    assert config["vision"] is True
+    assert mimo_model["vision"] is True
+
+
+def test_mineru_token_status_is_secret_safe(tmp_path, monkeypatch):
+    monkeypatch.setattr(services_module, "PROJECT_ROOT", tmp_path)
+    monkeypatch.delenv("MINERU_TOKEN", raising=False)
+    service = MinerUConfigService(_settings_conn())
+
+    status = service.save("Bearer: mineru-secret-token")
+
+    env_text = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert "MINERU_TOKEN=mineru-secret-token" in env_text
+    assert service.token_for_runtime() == "mineru-secret-token"
+    assert status["has_token"] is True
+    assert status["token_preview"] == "mine...oken"
+    assert "mineru-secret-token" not in str(status)
+    assert status["token_url"] == "https://mineru.net/apiManage/token"
+
+
+def test_mineru_config_api_saves_without_returning_token(tmp_path, monkeypatch):
+    monkeypatch.setenv("LANGDRILL_USER_DATA_DIR", str(tmp_path / "user"))
+    monkeypatch.setenv("LANGDRILL_DB_PATH", str(tmp_path / "user" / "data" / "langdrill_agent.db"))
+    monkeypatch.setattr(services_module, "PROJECT_ROOT", tmp_path)
+    monkeypatch.delenv("MINERU_TOKEN", raising=False)
+
+    client = TestClient(app)
+    response = client.post("/api/mineru-config", json={"token": "mineru-api-secret", "clear_token": False})
+
+    assert response.status_code == 200
+    config = response.json()["mineru_config"]
+    assert config["has_token"] is True
+    assert "mineru-api-secret" not in str(config)
+    assert "MINERU_TOKEN=mineru-api-secret" in (tmp_path / ".env").read_text(encoding="utf-8")

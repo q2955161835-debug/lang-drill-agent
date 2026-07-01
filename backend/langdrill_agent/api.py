@@ -28,6 +28,7 @@ from .models import (
     ContextCompressRequest,
     ContextSettingsRequest,
     InitRequest,
+    MinerUConfigRequest,
     ModelConfigRequest,
     PastPaperImportRequest,
     PastPaperParseRequest,
@@ -50,6 +51,7 @@ from .providers import ModelProvider
 from .phone_mirror import PhoneMirrorService
 from .screenshot_import import ScreenshotImportService
 from .services import (
+    MinerUConfigService,
     ModelConfigService,
     PastPaperService,
     ProfileService,
@@ -218,8 +220,11 @@ async def _extract_uploaded_file_text(
 ) -> dict:
     temp_dir, path, size = await _uploaded_file_to_temp(request, filename=filename)
     try:
+        init_db()
+        with transaction() as conn:
+            mineru_token = MinerUConfigService(conn).token_for_runtime()
         try:
-            text, parser = extract_text_from_file(path, language=language)
+            text, parser = extract_text_from_file(path, language=language, mineru_token=mineru_token)
         except (OSError, RuntimeError, UnicodeDecodeError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {
@@ -239,9 +244,11 @@ def _general_chat_response(
     session_id: str,
     content: str,
     active_question: dict | None,
+    attachments: list | None = None,
 ) -> str:
     text = content.strip()
-    if _SIMPLE_GREETING_PATTERN.match(text):
+    image_attachments = [item for item in attachments or [] if getattr(item, "type", "") == "image" and getattr(item, "data_url", "")]
+    if _SIMPLE_GREETING_PATTERN.match(text) and not image_attachments:
         if active_question:
             return "你好，boss。我在。当前题组还保留着；你可以继续答题，也可以问我这道题的提示或讲解。"
         return "你好，boss。我在。你可以发词表、说“继续当前题组”，或者先问我学习计划和题目思路。"
@@ -265,8 +272,17 @@ def _general_chat_response(
                 "sequence": active_question.get("sequence"),
                 "prompt": active_question.get("prompt"),
             } if active_question else None,
+            "attachments": [
+                {
+                    "type": item.type,
+                    "filename": item.filename,
+                    "mime_type": item.mime_type,
+                }
+                for item in image_attachments
+            ],
         },
-        user_content=text,
+        user_content=text or "请识别并说明这些图片内容。",
+        attachments=image_attachments,
     )
     try:
         result = provider.complete(pack)
@@ -485,6 +501,7 @@ def bootstrap() -> dict:
             "past_paper_status": PastPaperService(conn).status(profile.exam_id),
             "learning_stats": LearningStatsService(conn).overview(),
             "data_paths": DataPathService().status(),
+            "mineru_config": MinerUConfigService(conn).status(),
         }
 
 
@@ -531,6 +548,7 @@ def save_model_config(request: ModelConfigRequest) -> dict:
             thinking_level=request.thinking_level,
             thinking_level_options=request.thinking_level_options,
             api_format=request.api_format,
+            vision=request.vision,
         )
         return {"model_config": config, "providers": svc.providers()}
 
@@ -538,6 +556,21 @@ def save_model_config(request: ModelConfigRequest) -> dict:
 @app.post("/api/model-config/default")
 def save_default_model_config(request: ModelConfigRequest) -> dict:
     return save_model_config(request)
+
+
+@app.get("/api/mineru-config")
+def mineru_config() -> dict:
+    init_db()
+    with transaction() as conn:
+        return {"mineru_config": MinerUConfigService(conn).status()}
+
+
+@app.post("/api/mineru-config")
+def save_mineru_config(request: MinerUConfigRequest) -> dict:
+    init_db()
+    with transaction() as conn:
+        status = MinerUConfigService(conn).save(request.token, clear_token=request.clear_token)
+        return {"mineru_config": status}
 
 
 @app.post("/api/config/providers/custom")
@@ -600,7 +633,10 @@ def reset_settings_defaults() -> dict:
 def chat(request: ChatRequest) -> ChatResponse:
     init_db()
     with transaction() as conn:
-        if not request.selected_option and not request.question_id and not request.selected_text:
+        image_attachments = [item for item in request.attachments if item.type == "image" and item.data_url]
+        if image_attachments and not ModelConfigService(conn).current_for_ui().get("vision", False):
+            raise HTTPException(status_code=422, detail="当前模型未声明支持图片输入，请先在设置中开启视觉能力，或让文件导入走 MinerU 解析。")
+        if not image_attachments and not request.selected_option and not request.question_id and not request.selected_text:
             parsed = ScreenshotImportService().parse_text(request.content)
             if _looks_like_inline_screenshot_words(parsed):
                 imported = _screenshot_import_response(
@@ -628,6 +664,10 @@ def chat(request: ChatRequest) -> ChatResponse:
         selected_option = (request.selected_option or "").strip().upper()
         extra_prompt = (request.extra_prompt or "").strip()
         visible_content = request.content.strip()
+        attachment_names = [item.filename or "图片" for item in image_attachments]
+        if image_attachments:
+            attachment_line = f"[图片附件：{'、'.join(attachment_names)}]"
+            visible_content = f"{visible_content}\n\n{attachment_line}".strip() if visible_content else attachment_line
         if selected_option:
             visible_content = selected_option
             if extra_prompt:
@@ -644,13 +684,22 @@ def chat(request: ChatRequest) -> ChatResponse:
             else None
         )
         active = selected_question or question_service.active_question(session_id)
-        task = TaskRouter().route(
-            visible_content or request.content,
-            has_active_question=active is not None,
-            selected_text=request.selected_text,
-            selected_option=selected_option,
-        )
-        session_service.add_message(session_id, "user", visible_content or request.content, {"task": task.value})
+        if image_attachments:
+            task = TaskType.general_chat
+        else:
+            task = TaskRouter().route(
+                visible_content or request.content,
+                has_active_question=active is not None,
+                selected_text=request.selected_text,
+                selected_option=selected_option,
+            )
+        user_payload = {"task": task.value}
+        if image_attachments:
+            user_payload["attachments"] = [
+                {"type": item.type, "filename": item.filename, "mime_type": item.mime_type}
+                for item in image_attachments
+            ]
+        session_service.add_message(session_id, "user", visible_content or request.content or "图片输入", user_payload)
 
         provider = _current_model_provider(conn)
 
@@ -770,8 +819,9 @@ def chat(request: ChatRequest) -> ChatResponse:
                 conn,
                 provider,
                 session_id=session_id,
-                content=visible_content or request.content,
+                content=request.content or visible_content,
                 active_question=active_question,
+                attachments=image_attachments,
             )
 
         else:

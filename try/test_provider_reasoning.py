@@ -146,6 +146,85 @@ def test_non_ascii_api_key_is_rejected_before_http(monkeypatch):
         provider.complete(_pack())
 
 
+def test_openai_compatible_uses_image_url_for_vision_attachment(monkeypatch):
+    captured: dict[str, Any] = {}
+
+    def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
+        captured["json"] = kwargs["json"]
+        return _FakeResponse({"choices": [{"message": {"content": "ok"}}]})
+
+    monkeypatch.setattr("langdrill_agent.providers.httpx.post", fake_post)
+
+    pack = PromptPack(
+        system_modules=[{"id": "system.core", "content": "看图回答。"}],
+        context_pack={"task_type": "general_chat"},
+        user_content="这张图是什么？",
+        attachments=[
+            {
+                "type": "image",
+                "filename": "words.png",
+                "mime_type": "image/png",
+                "data_url": "data:image/png;base64,aGVsbG8=",
+            }
+        ],
+    )
+    provider = ModelProvider(
+        "openai",
+        "gpt-5.5",
+        "https://api.openai.com/v1",
+        "test-key",
+        api_format="openai-chat-completions",
+    )
+
+    provider.complete(pack)
+
+    user_content = captured["json"]["messages"][-1]["content"]
+    assert user_content[0] == {"type": "text", "text": "这张图是什么？"}
+    assert user_content[1]["image_url"]["url"] == "data:image/png;base64,aGVsbG8="
+
+
+def test_anthropic_messages_uses_base64_image_source(monkeypatch):
+    captured: dict[str, Any] = {}
+
+    def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
+        captured["json"] = kwargs["json"]
+        return _FakeResponse({"content": [{"type": "text", "text": "ok"}]})
+
+    monkeypatch.setattr("langdrill_agent.providers.httpx.post", fake_post)
+
+    pack = PromptPack(
+        system_modules=[{"id": "system.core", "content": "看图回答。"}],
+        context_pack={"task_type": "general_chat"},
+        user_content="识别图片文字。",
+        attachments=[
+            {
+                "type": "image",
+                "filename": "words.jpg",
+                "mime_type": "image/jpeg",
+                "data_url": "data:image/jpeg;base64,aGVsbG8=",
+            }
+        ],
+    )
+    provider = ModelProvider(
+        "claude",
+        "claude-sonnet-4.7",
+        "https://api.anthropic.com",
+        "test-key",
+        api_format="anthropic-messages",
+    )
+
+    provider.complete(pack)
+
+    user_content = captured["json"]["messages"][0]["content"]
+    assert user_content[0]["type"] == "text"
+    assert user_content[1]["type"] == "image"
+    assert user_content[1]["source"] == {
+        "type": "base64",
+        "media_type": "image/jpeg",
+        "data": "aGVsbG8=",
+    }
+
+
 def test_unknown_non_native_reasoning_parameter_is_rejected():
     with pytest.raises(ValueError, match="不支持的原生思考参数"):
         ModelProvider(

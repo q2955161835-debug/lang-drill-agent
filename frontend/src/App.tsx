@@ -27,16 +27,18 @@ import {
 } from "@phosphor-icons/react";
 import { apiDelete, apiGet, apiPost } from "./api";
 import { ContextMenu, type ContextMenuItem } from "./components/ContextMenu";
-import { appendImportedText, extractTextFromFiles, fileTitle, uploadPastPaperFile } from "./fileImport";
+import { appendImportedText, extractTextFromFiles, fileTitle, fileToDataUrl, isImageFile, uploadPastPaperFile } from "./fileImport";
 import { MarkdownText } from "./components/MarkdownText";
 import { RightWorkbench, type WorkbenchTab } from "./components/RightWorkbench";
 import type {
   AnsweredQuestion,
+  ChatImageAttachment,
   DataPathsStatus,
   DailyPanel,
   ExamOption,
   LearningStats,
   Message,
+  MinerUConfig,
   ModelConfig,
   ModelOption,
   PastPaperStatus,
@@ -182,11 +184,11 @@ const MOCK_PROFILE: Profile = {
 };
 
 const FALLBACK_PROVIDERS: ProviderOption[] = [
-  { id: "openai", label: "OpenAI GPT", kind: "openai-compatible", api_format: "openai-chat-completions", api_key_required: true, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "https://api.openai.com/v1", model: "gpt-5.5", model_options: ["gpt-5.5", "gpt-5.4"] },
-  { id: "claude", label: "Claude", kind: "anthropic", api_format: "anthropic-messages", api_key_required: true, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "https://api.anthropic.com", model: "claude-sonnet-4.7", model_options: ["claude-sonnet-4.7", "claude-opus-4.7"] },
-  { id: "deepseek", label: "DeepSeek", kind: "openai-compatible", api_format: "openai-chat-completions", api_key_required: true, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "https://api.deepseek.com", model: "deepseek-v4-pro", model_options: ["deepseek-v4-pro", "deepseek-v4-flash"] },
-  { id: "mimo", label: "Xiaomi MiMo", kind: "anthropic", api_format: "anthropic-messages", api_key_required: true, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "https://api.xiaomimimo.com/anthropic", model: "mimo-v2.5-pro", model_options: ["mimo-v2.5", "mimo-v2.5-pro"] },
-  { id: "mock", label: "Mock Provider", kind: "mock", api_format: "mock", api_key_required: false, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "", model: "mock-tutor-v1", model_options: ["mock-tutor-v1"] }
+  { id: "openai", label: "OpenAI GPT", kind: "openai-compatible", api_format: "openai-chat-completions", api_key_required: true, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "https://api.openai.com/v1", model: "gpt-5.5", model_options: [{ id: "gpt-5.5", label: "gpt-5.5", vision: true }, { id: "gpt-5.4", label: "gpt-5.4", vision: true }] },
+  { id: "claude", label: "Claude", kind: "anthropic", api_format: "anthropic-messages", api_key_required: true, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "https://api.anthropic.com", model: "claude-sonnet-4.7", model_options: [{ id: "claude-sonnet-4.7", label: "claude-sonnet-4.7", vision: true }, { id: "claude-opus-4.7", label: "claude-opus-4.7", vision: true }] },
+  { id: "deepseek", label: "DeepSeek", kind: "openai-compatible", api_format: "openai-chat-completions", api_key_required: true, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "https://api.deepseek.com", model: "deepseek-v4-pro", model_options: [{ id: "deepseek-v4-pro", label: "deepseek-v4-pro", vision: false }, { id: "deepseek-v4-flash", label: "deepseek-v4-flash", vision: false }] },
+  { id: "mimo", label: "Xiaomi MiMo", kind: "anthropic", api_format: "anthropic-messages", api_key_required: true, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "https://api.xiaomimimo.com/anthropic", model: "mimo-v2.5-pro", model_options: [{ id: "mimo-v2.5", label: "mimo-v2.5", vision: false }, { id: "mimo-v2.5-pro", label: "mimo-v2.5-pro", vision: false }] },
+  { id: "mock", label: "Mock Provider", kind: "mock", api_format: "mock", api_key_required: false, enabled: true, has_api_key: false, visible_in_picker: false, base_url: "", model: "mock-tutor-v1", model_options: [{ id: "mock-tutor-v1", label: "mock-tutor-v1", vision: false }] }
 ];
 
 const DEFAULT_MODEL_CONFIG: ModelConfig = {
@@ -199,6 +201,7 @@ const DEFAULT_MODEL_CONFIG: ModelConfig = {
     { id: "enabled", label: "开启", api_value: "enabled" }
   ],
   api_format: "anthropic-messages",
+  vision: false,
   has_api_key: false
 };
 
@@ -359,6 +362,14 @@ const DEFAULT_DATA_PATHS: DataPathsStatus = {
   }
 };
 
+const DEFAULT_MINERU_CONFIG: MinerUConfig = {
+  token_url: "https://mineru.net/apiManage/token",
+  docs_url: "https://mineru.net/apiManage/docs",
+  env_key: "MINERU_TOKEN",
+  has_token: false,
+  token_preview: ""
+};
+
 function isOptionAnswer(content: string) {
   return /^(?:选择?\s*)?[A-D]$/i.test(content.trim()) || /^答案是\s*[A-D]$/i.test(content.trim());
 }
@@ -478,9 +489,9 @@ function modelOptionLabel(option: ModelOption) {
 
 function normalizedModelOption(option: ModelOption): Exclude<ModelOption, string> {
   if (typeof option === "string") {
-    return { id: option, label: option };
+    return { id: option, label: option, vision: false };
   }
-  return option;
+  return { ...option, vision: Boolean(option.vision) };
 }
 
 function modelOptionsFor(provider: ProviderOption, currentModel: string) {
@@ -503,6 +514,11 @@ function thinkingOptionsForModel(provider: ProviderOption, modelId: string) {
 function defaultThinkingLevelForModel(provider: ProviderOption, modelId: string) {
   const model = modelOptionsFor(provider, modelId).find((option) => option.id === modelId);
   return model?.reasoning?.default_level || model?.reasoning?.levels?.[0]?.id || "";
+}
+
+function modelSupportsVision(provider: ProviderOption, modelId: string) {
+  const model = modelOptionsFor(provider, modelId).find((option) => option.id === modelId);
+  return Boolean(model?.vision);
 }
 
 function pickerProviders(providers: ProviderOption[], currentProviderId = "") {
@@ -544,7 +560,8 @@ function normalizeModelConfig(config: ModelConfig | undefined) {
     ...DEFAULT_MODEL_CONFIG,
     ...config,
     thinking_level: (config.thinking_level || "") as ThinkingLevel,
-    thinking_level_options: config.thinking_level_options || []
+    thinking_level_options: config.thinking_level_options || [],
+    vision: Boolean(config.vision)
   };
 }
 
@@ -588,7 +605,9 @@ export default function App() {
   const [activeQuestion, setActiveQuestion] = useState<Question | null>(null);
   const [tokenUsage, setTokenUsage] = useState<TokenUsage>(DEFAULT_TOKEN_USAGE);
   const [dataPaths, setDataPaths] = useState<DataPathsStatus>(DEFAULT_DATA_PATHS);
+  const [mineruConfig, setMineruConfig] = useState<MinerUConfig>(DEFAULT_MINERU_CONFIG);
   const [input, setInput] = useState("");
+  const [composerAttachments, setComposerAttachments] = useState<ChatImageAttachment[]>([]);
   const [composerDragActive, setComposerDragActive] = useState(false);
   const [composerFileStatus, setComposerFileStatus] = useState("");
   const [sending, setSending] = useState(false);
@@ -646,6 +665,7 @@ export default function App() {
   const quickThinkingLevel = quickProvider.id === modelConfig.provider_id
     ? modelConfig.thinking_level || ""
     : defaultThinkingLevelForModel(quickProvider, quickCurrentModel);
+  const currentModelVision = Boolean(modelConfig.vision);
 
   useGSAP(
     () => {
@@ -718,6 +738,7 @@ export default function App() {
       sessions: SessionItem[];
       token_usage: TokenUsage;
       data_paths?: DataPathsStatus;
+      mineru_config?: MinerUConfig;
       learning_stats?: LearningStats;
       providers: ProviderOption[];
       model_config: ModelConfig;
@@ -735,20 +756,27 @@ export default function App() {
         setSessions(data.sessions);
         setTokenUsage({ ...DEFAULT_TOKEN_USAGE, ...data.token_usage });
         setDataPaths(data.data_paths || DEFAULT_DATA_PATHS);
+        setMineruConfig({ ...DEFAULT_MINERU_CONFIG, ...data.mineru_config });
         setLearningStats(data.learning_stats || DEFAULT_LEARNING_STATS);
         setOnboardingOpen(data.profile.exam_id === "unassigned");
       })
       .catch(() => setOnboardingOpen(true));
   }, []);
 
-  const postChatContent = useCallback(async (content: string, forceNewSession = pendingNewSession) => {
+  const postChatContent = useCallback(async (
+    content: string,
+    forceNewSession = pendingNewSession,
+    attachments: ChatImageAttachment[] = []
+  ) => {
     const cleanContent = content.trim();
-    if (!cleanContent || sending) return;
+    if ((!cleanContent && !attachments.length) || sending) return;
     setQuickStartHint("");
     const likelyScreenshot = looksLikeScreenshotVocabulary(cleanContent);
     const likelyPractice = looksLikePracticeRequest(cleanContent);
     const nextLabel = likelyScreenshot
       ? "截图解析中"
+      : attachments.length
+        ? "模型正在识别图片"
       : activeQuestion && isOptionAnswer(cleanContent)
         ? "模型正在判题"
         : likelyPractice ? "题目生成中" : "模型正在思考";
@@ -756,7 +784,14 @@ export default function App() {
     const generationTimer = likelyScreenshot
       ? window.setTimeout(() => setLoadingLabel("题目生成中"), 900)
       : undefined;
-    const userMessage: Message = { id: `local-${Date.now()}`, role: "user", content: cleanContent };
+    const attachmentLine = attachments.length
+      ? `\n\n[图片附件：${attachments.map((item) => item.filename || "图片").join("、")}]`
+      : "";
+    const userMessage: Message = {
+      id: `local-${Date.now()}`,
+      role: "user",
+      content: `${cleanContent || "图片输入"}${attachmentLine}`
+    };
     setMessages((current) => [...current, userMessage]);
     if (activeQuestion && isOptionAnswer(cleanContent)) {
       setActiveQuestion(null);
@@ -770,7 +805,12 @@ export default function App() {
         active_question: Question | null;
         token_usage: TokenUsage;
         learning_stats?: LearningStats;
-      }>("/api/chat", { content: cleanContent, session_id: activeSessionId, force_new_session: forceNewSession });
+      }>("/api/chat", {
+        content: cleanContent,
+        session_id: activeSessionId,
+        force_new_session: forceNewSession,
+        attachments
+      });
       setActiveSessionId(data.session_id);
       setPendingNewSession(false);
       setMessages((current) => [...current, data.message]);
@@ -797,15 +837,39 @@ export default function App() {
     if (!files.length || sending) return;
     setComposerFileStatus("正在读取拖入文件...");
     try {
-      const extracted = await extractTextFromFiles(files);
-      setInput((current) => appendImportedText(current, extracted.text));
-      const names = extracted.results.map((result) => result.filename).join("、");
-      setComposerFileStatus(`已插入 ${names} 的文本。`);
+      const imageFiles = files.filter(isImageFile);
+      const extractFiles = files.filter((file) => !isImageFile(file));
+      const attachedNames: string[] = [];
+      if (currentModelVision && imageFiles.length) {
+        const nextAttachments = await Promise.all(
+          imageFiles.map(async (file) => ({
+            type: "image" as const,
+            filename: file.name,
+            mime_type: file.type || "image/png",
+            data_url: await fileToDataUrl(file)
+          }))
+        );
+        setComposerAttachments((current) => [...current, ...nextAttachments]);
+        attachedNames.push(...nextAttachments.map((item) => item.filename));
+      } else {
+        extractFiles.push(...imageFiles);
+      }
+      let extractedNames: string[] = [];
+      if (extractFiles.length) {
+        const extracted = await extractTextFromFiles(extractFiles);
+        setInput((current) => appendImportedText(current, extracted.text));
+        extractedNames = extracted.results.map((result) => result.filename);
+      }
+      const statusParts = [
+        attachedNames.length ? `已附加 ${attachedNames.join("、")}，将由当前模型视觉识别` : "",
+        extractedNames.length ? `已插入 ${extractedNames.join("、")} 的文本` : ""
+      ].filter(Boolean);
+      setComposerFileStatus(statusParts.join("；") || "未读取到可导入文件。");
       composerRef.current?.focus();
     } catch (err) {
       setComposerFileStatus(`文件读取失败：${err instanceof Error ? err.message : "未知错误"}`);
     }
-  }, [sending]);
+  }, [currentModelVision, sending]);
 
   const handleComposerDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -816,10 +880,13 @@ export default function App() {
 
   const sendMessage = useCallback(async () => {
     const content = input.trim();
-    if (!content || sending) return;
+    if ((!content && !composerAttachments.length) || sending) return;
+    const attachments = composerAttachments;
     setInput("");
-    await postChatContent(content, pendingNewSession);
-  }, [input, pendingNewSession, postChatContent, sending]);
+    setComposerAttachments([]);
+    setComposerFileStatus("");
+    await postChatContent(content, pendingNewSession, attachments);
+  }, [composerAttachments, input, pendingNewSession, postChatContent, sending]);
 
   const sendQuestionAnswer = useCallback(async (selectedOption: string, extraPrompt: string) => {
     if (!activeQuestion || sending) return;
@@ -888,7 +955,8 @@ export default function App() {
       model: nextConfig.model,
       thinking_level: nextConfig.thinking_level || "",
       thinking_level_options: nextConfig.thinking_level_options || [],
-      api_format: nextConfig.api_format || ""
+      api_format: nextConfig.api_format || "",
+      vision: Boolean(nextConfig.vision)
     });
     setModelConfig(normalizeModelConfig(data.model_config));
     if (data.providers) {
@@ -1197,7 +1265,8 @@ export default function App() {
                   base_url: nextProvider.base_url,
                   model: nextModel,
                   api_format: nextProvider.api_format,
-                  thinking_level: defaultThinkingLevelForModel(nextProvider, nextModel)
+                  thinking_level: defaultThinkingLevelForModel(nextProvider, nextModel),
+                  vision: modelSupportsVision(nextProvider, nextModel)
                 });
               }}
               title="模型供应商"
@@ -1214,7 +1283,8 @@ export default function App() {
                 base_url: quickProvider.base_url,
                 api_format: quickProvider.api_format,
                 model: event.target.value,
-                thinking_level: defaultThinkingLevelForModel(quickProvider, event.target.value)
+                thinking_level: defaultThinkingLevelForModel(quickProvider, event.target.value),
+                vision: modelSupportsVision(quickProvider, event.target.value)
               })}
               title="模型"
             >
@@ -1231,7 +1301,8 @@ export default function App() {
                   base_url: quickProvider.base_url,
                   api_format: quickProvider.api_format,
                   model: quickCurrentModel,
-                  thinking_level: event.target.value as ThinkingLevel
+                  thinking_level: event.target.value as ThinkingLevel,
+                  vision: modelSupportsVision(quickProvider, quickCurrentModel)
                 })}
                 title="思考等级"
               >
@@ -1241,7 +1312,24 @@ export default function App() {
               </select>
             )}
             <span title="按当前模型配置写入原生 API 参数">当前：{thinkingLevelLabel({ ...modelConfig, thinking_level: quickThinkingLevel, thinking_level_options: quickThinkingOptions })}</span>
+            <span title={currentModelVision ? "拖入图片会随消息发给当前模型" : "拖入图片会先调用 MinerU/本地 OCR 提取文本"}>图片：{currentModelVision ? "模型视觉" : "MinerU解析"}</span>
           </div>
+          {composerAttachments.length > 0 && (
+            <div className="composer-attachments" aria-label="待发送图片">
+              {composerAttachments.map((attachment, index) => (
+                <button
+                  key={`${attachment.filename}-${index}`}
+                  type="button"
+                  onClick={() => setComposerAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                  title="移除图片附件"
+                >
+                  <ImageSquare size={16} />
+                  <span>{attachment.filename || "图片附件"}</span>
+                  <X size={14} />
+                </button>
+              ))}
+            </div>
+          )}
           <div
             className={`composer ${composerDragActive ? "drag-over" : ""}`}
             onDragEnter={(event) => {
@@ -1312,6 +1400,7 @@ export default function App() {
           fontSize={fontSize}
           tokenUsage={tokenUsage}
           dataPaths={dataPaths}
+          mineruConfig={mineruConfig}
           sessions={sessions}
           examOptions={examOptions}
           syllabusStatus={syllabusStatus}
@@ -1330,6 +1419,7 @@ export default function App() {
           onLearningStatsChange={setLearningStats}
           onTokenUsageChange={(nextUsage) => setTokenUsage({ ...DEFAULT_TOKEN_USAGE, ...nextUsage })}
           onDataPathsChange={(nextPaths) => setDataPaths({ ...DEFAULT_DATA_PATHS, ...nextPaths })}
+          onMinerUConfigChange={(nextConfig) => setMineruConfig({ ...DEFAULT_MINERU_CONFIG, ...nextConfig })}
           onOpenOnboarding={() => {
             setSettingsOpen(false);
             setOnboardingOpen(true);
@@ -1606,6 +1696,7 @@ function SettingsDialog({
   fontSize,
   tokenUsage,
   dataPaths,
+  mineruConfig,
   sessions,
   examOptions,
   syllabusStatus,
@@ -1621,6 +1712,7 @@ function SettingsDialog({
   onLearningStatsChange,
   onTokenUsageChange,
   onDataPathsChange,
+  onMinerUConfigChange,
   onOpenOnboarding
 }: {
   profile: Profile;
@@ -1630,6 +1722,7 @@ function SettingsDialog({
   fontSize: number;
   tokenUsage: TokenUsage;
   dataPaths: DataPathsStatus;
+  mineruConfig: MinerUConfig;
   sessions: SessionItem[];
   examOptions: ExamOption[];
   syllabusStatus: SyllabusStatus;
@@ -1645,6 +1738,7 @@ function SettingsDialog({
   onLearningStatsChange: (stats: LearningStats) => void;
   onTokenUsageChange: (usage: TokenUsage) => void;
   onDataPathsChange: (paths: DataPathsStatus) => void;
+  onMinerUConfigChange: (config: MinerUConfig) => void;
   onOpenOnboarding: () => void;
 }) {
   const [draft, setDraft] = useState(profile);
@@ -1662,6 +1756,9 @@ function SettingsDialog({
   const [saveState, setSaveState] = useState("");
   const [contextLimit, setContextLimit] = useState(tokenUsage.context_limit || DEFAULT_CONTEXT_LIMIT);
   const [dataPathDraft, setDataPathDraft] = useState<DataPathsStatus>(dataPaths);
+  const [mineruDraft, setMineruDraft] = useState<MinerUConfig>({ ...DEFAULT_MINERU_CONFIG, ...mineruConfig });
+  const [mineruToken, setMineruToken] = useState("");
+  const [mineruMessage, setMineruMessage] = useState("");
   const [questionDbFolder, setQuestionDbFolder] = useState(dataPaths.user_data_dir || "");
   const [migrateQuestionDb, setMigrateQuestionDb] = useState(true);
   const [overwriteQuestionDb, setOverwriteQuestionDb] = useState(false);
@@ -1706,7 +1803,8 @@ function SettingsDialog({
       api_format: nextProvider.api_format,
       model: nextModel,
       thinking_level: defaultThinkingLevelForModel(nextProvider, nextModel),
-      thinking_level_options: nextThinkingOptions
+      thinking_level_options: nextThinkingOptions,
+      vision: modelSupportsVision(nextProvider, nextModel)
     });
     setCustomModel("");
   };
@@ -1716,7 +1814,8 @@ function SettingsDialog({
       ...modelDraft,
       model: modelId,
       thinking_level: defaultThinkingLevelForModel(provider, modelId),
-      thinking_level_options: nextThinkingOptions
+      thinking_level_options: nextThinkingOptions,
+      vision: modelSupportsVision(provider, modelId)
     });
   };
   const chooseExam = async (examId: string) => {
@@ -1994,7 +2093,8 @@ function SettingsDialog({
         api_format: nextProvider.api_format,
         model: nextProvider.model,
         thinking_level: defaultThinkingLevelForModel(nextProvider, nextProvider.model),
-        thinking_level_options: thinkingOptionsForModel(nextProvider, nextProvider.model)
+        thinking_level_options: thinkingOptionsForModel(nextProvider, nextProvider.model),
+        vision: modelSupportsVision(nextProvider, nextProvider.model)
       });
       setCustomModel("");
       setCustomProviderDraft({ name: "", base_url: "", default_model: "" });
@@ -2083,6 +2183,22 @@ function SettingsDialog({
       setDataPathMessage(data.message || (data.selected ? "已选择文件夹。" : "未选择文件夹。"));
     } catch (err) {
       setDataPathMessage(err instanceof Error ? err.message : "文件夹选择器打开失败");
+    }
+  };
+  const saveMinerUConfig = async (clearToken = false) => {
+    setMineruMessage(clearToken ? "正在清除 MinerU token..." : "正在保存 MinerU token...");
+    try {
+      const data = await apiPost<{ mineru_config: MinerUConfig }>("/api/mineru-config", {
+        token: clearToken ? "" : mineruToken,
+        clear_token: clearToken
+      });
+      const nextConfig = { ...DEFAULT_MINERU_CONFIG, ...data.mineru_config };
+      setMineruDraft(nextConfig);
+      onMinerUConfigChange(nextConfig);
+      setMineruToken("");
+      setMineruMessage(clearToken ? "MinerU token 已清除。" : "MinerU token 已保存。");
+    } catch (err) {
+      setMineruMessage(err instanceof Error ? err.message : "MinerU token 保存失败");
     }
   };
   const settingTabs = [
@@ -2187,11 +2303,45 @@ function SettingsDialog({
                   type="password"
                   autoComplete="off"
                 />
+                <label className="check-row">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(modelDraft.vision)}
+                    onChange={(event) => setModelDraft({ ...modelDraft, vision: event.target.checked })}
+                  />
+                  <span>
+                    <strong>当前模型支持图片输入</strong>
+                    <small>开启后，聊天栏拖入图片会直接发给当前模型；关闭时图片会先走 MinerU/本地 OCR 提取文本。</small>
+                  </span>
+                </label>
                 <select value={modelDraft.model} onChange={(event) => chooseModel(event.target.value)}>
                   {modelOptions.map((model) => (
                     <option key={model.id} value={model.id}>{modelOptionLabel(model)}</option>
                   ))}
                 </select>
+                <div className="settings-summary-line">图片解析：{modelDraft.vision ? "聊天栏图片直传当前模型；试卷、截图和文件抽取仍可走 MinerU。" : "聊天栏图片、试卷、截图和文件抽取优先走 MinerU，失败后按文件类型尝试本地兜底。"}</div>
+                <div className="mineru-config">
+                  <label className="field-label">
+                    <span>MinerU token（用户信息）</span>
+                    <input
+                      value={mineruToken}
+                      onChange={(event) => setMineruToken(event.target.value)}
+                      placeholder={mineruDraft.has_token ? `已配置：${mineruDraft.token_preview}` : "粘贴 MinerU 官方 token"}
+                      type="password"
+                      autoComplete="off"
+                    />
+                    <small>保存到本地 .env 的 {mineruDraft.env_key}；接口不会返回 token 明文。</small>
+                  </label>
+                  <div className="inline-row wrap-row">
+                    <a className="inline-link" href={mineruDraft.token_url} target="_blank" rel="noreferrer">获取官方 token</a>
+                    <a className="inline-link" href={mineruDraft.docs_url} target="_blank" rel="noreferrer">查看 API 文档</a>
+                    <button className="inline-action" type="button" onClick={() => void saveMinerUConfig(false)}>保存 MinerU token</button>
+                    {mineruDraft.has_token && (
+                      <button className="inline-action" type="button" onClick={() => void saveMinerUConfig(true)}>清除 token</button>
+                    )}
+                  </div>
+                  {mineruMessage && <p className="hint strong-hint">{mineruMessage}</p>}
+                </div>
                 <div className="inline-row">
                   {modelThinkingOptions.length > 0 && (
                     <select

@@ -37,6 +37,13 @@ class UserProfile(BaseModel):
     global_user_prompt: str = ""
 
 
+class ChatAttachment(BaseModel):
+    type: Literal["image"] = "image"
+    filename: str = ""
+    mime_type: str = ""
+    data_url: str = ""
+
+
 class ChatRequest(BaseModel):
     content: str
     session_id: str | None = None
@@ -45,6 +52,7 @@ class ChatRequest(BaseModel):
     question_id: str | None = None
     extra_prompt: str = ""
     force_new_session: bool = False
+    attachments: list[ChatAttachment] = Field(default_factory=list)
 
 
 class ChatResponse(BaseModel):
@@ -109,6 +117,7 @@ class PromptPack(BaseModel):
     context_pack: dict[str, Any]
     user_content: str
     output_schema: dict[str, Any] | None = None
+    attachments: list[ChatAttachment] = Field(default_factory=list)
 
 
 class InitRequest(BaseModel):
@@ -144,6 +153,12 @@ class ModelConfigRequest(BaseModel):
     thinking_level: str = "enabled"
     thinking_level_options: list[dict[str, str]] = Field(default_factory=list)
     api_format: str = ""
+    vision: bool | None = None
+
+
+class MinerUConfigRequest(BaseModel):
+    token: str = ""
+    clear_token: bool = False
 
 
 class AddCustomProviderRequest(BaseModel):

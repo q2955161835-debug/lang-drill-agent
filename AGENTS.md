@@ -9,6 +9,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - 正式刷题必须先生成完整题组并写入数据库，再逐题展示、逐题判分、自动推进下一题。
 - Web（网页）体验以三栏学习工作台为主：左侧学习状态，中间聊天与题目，右侧分支/手机映像/截图导入。
 - 模型配置支持默认四个真实供应商 OpenAI/GPT、Claude、DeepSeek（深度求索）、MiMo（小米米魔）和保存后才出现的自定义供应商；聊天栏模型选择只暴露已启用且已配置 API Key（接口密钥）的真实供应商，Mock Provider（本地模拟供应商）只保留给自动测试和离线调试。
+- 设置页模型配置可声明当前模型是否具备视觉能力；聊天栏拖入图片时，具备视觉能力的模型直接接收图片附件，不具备视觉能力时前端必须走文件抽取链路交给 MinerU/RapidOCR（文档解析/本地文字识别）提取文本。
 - 思考等级必须跟随当前模型的原生 reasoning（推理）配置；禁止把思考等级降级为提示词控制。没有原生档位或未自定义添加档位的模型，不在聊天栏暴露思考等级选择。
 - OpenAI/GPT 官方 provider（供应商）可使用 Chat Completions（聊天补全）中的 `developer` role（角色）承载上下文；DeepSeek（深度求索）、本地模型和自定义 OpenAI-compatible（OpenAI 兼容）供应商必须只发送兼容的 `system`/`user` 消息，把上下文合并进 user 内容，避免供应商拒收 `developer` role。
 - 长期学习总面板必须展示真实学习统计：题目完成/总数、单词掌握/总数、整体正确率、考试倒计时和 token（令牌）累计；新聊天在正式发送前只作为本地草稿，不写入数据库会话列表。
@@ -18,6 +19,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - 内置考试包含英语四级/六级（CET-4/CET-6，大学英语四级/六级）、法语四级（CFT-4，大学法语四级）、日语四级/六级（CJT4/CJT6，大学日语四级/六级）、雅思、托福、高考英语和自定义考试；同一 CET 官网考纲页必须按语种和级别匹配，不能把法语 2023 版误判为英语四/六级最新版。
 - 截图词表导入后必须自动创建独立练习会话并生成完整考试式题组；词表解析需支持“单词独占一行 + 下一行释义”、`word n. 释义` 和 `word: 释义` 等常见 OCR（文字识别）/主聊天粘贴格式；题型应使用英文语境句、完形空格、阅读问题或同义改写，禁止退化为“选择中文释义 / 最合适理解”的词卡题。
 - 主聊天栏粘贴 3 个以上截图词条时必须复用截图导入后台流程，自动创建截图练习会话、导入词表并生成题组；主聊天文本框支持拖入 TXT（纯文本格式）/Markdown（Markdown 文本格式）/PDF（Portable Document Format，便携式文档格式）/DOCX（Word 文档格式）/图片等文件并把抽取文本追加到输入框；前端等待状态需区分“截图解析中”和“题目生成中”。
+- MinerU token 属于用户信息，只能写入本地 `.env` 的 `MINERU_TOKEN`；设置页需要提供官方获取地址 `https://mineru.net/apiManage/token` 和 API 文档地址 `https://mineru.net/apiManage/docs`，后端接口只能返回是否已配置和脱敏预览，禁止返回明文 token。
 - 右侧“截图导入”和设置页“手动导入试卷”必须支持文件拖拽导入：截图导入拖入文件后抽取 OCR（文字识别）/文本并填入识别文本框；手动导入试卷拖入文件后上传到后端，保存到 `papers/<考试>/raw` 并生成 `papers/<考试>/parsed` 解析 JSON（JSON 数据交换格式）。
 - 答题提交后必须让 Evaluator Tutor（判题讲解 Agent）结合当前会话上下文、用户背景和程序判定生成个性化讲解；模型不可用时才回退基础判题，且不得丢失作答记录。刚答完的题目必须作为普通聊天回顾卡片保留，显示用户选择、正确答案和对错状态；只有当前待答题使用置顶/吸附题卡。
 - 聊天输入区需要展示当前上下文容量占用，默认上限 1,000,000 token（令牌），支持保存自定义上限和主动压缩上下文；LLMLingua（提示词压缩库）作为可选增强，默认使用本地抽取式摘要兜底。
@@ -42,11 +44,11 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 ## 目录结构与职责
 
 - `backend/langdrill_agent/`：共享后端核心。CLI（命令行接口）、API（接口）、服务层、Agent（智能体）、模型配置、学习算法和数据库访问都在这里。
-- `backend/langdrill_agent/api.py`：FastAPI（Web API 框架）入口，负责 bootstrap（初始化加载）、chat（聊天学习）、branch（分支）、profile（用户档案）、model-config（模型配置）、exam/syllabus（考试与考纲）、phone-mirror（手机映像）、screenshot（截图导入）、文件文本抽取和数据路径选择接口。
+- `backend/langdrill_agent/api.py`：FastAPI（Web API 框架）入口，负责 bootstrap（初始化加载）、chat（聊天学习）、branch（分支）、profile（用户档案）、model-config（模型配置）、MinerU 配置、exam/syllabus（考试与考纲）、phone-mirror（手机映像）、screenshot（截图导入）、文件文本抽取和数据路径选择接口。
 - `backend/langdrill_agent/cli.py`：命令行入口，提供 init（初始化）、serve（启动服务）、status（状态）、chat（终端聊天）、data-paths（数据路径）和 backup-user-data（备份用户数据）。
 - `backend/langdrill_agent/services.py`：学习状态机、题组推进、作答写入、掌握度更新、会话生命周期和业务编排。
 - `backend/langdrill_agent/services.py` 中的 `PastPaperService`：历年真题试卷资产、默认近三年选择、题型开关、手动导入、重新解析和联网搜索导入索引。
-- `backend/langdrill_agent/paper_assets.py`：历年真题目录、原始文件保存、PDF（Portable Document Format，便携式文档格式）/DOCX（Word 文档格式）/Markdown（Markdown 文本格式）/图片文件文本抽取、解析 JSON（JSON 数据交换格式）生成和短摘录提取；图片 OCR（文字识别）优先用可选 MinerU CLI（MinerU 命令行工具）并在失败时回退 RapidOCR（本地文字识别），复杂文档依赖可选 MinerU CLI。
+- `backend/langdrill_agent/paper_assets.py`：历年真题目录、原始文件保存、PDF（Portable Document Format，便携式文档格式）/DOCX（Word 文档格式）/Markdown（Markdown 文本格式）/图片文件文本抽取、解析 JSON（JSON 数据交换格式）生成和短摘录提取；配置 `MINERU_TOKEN` 时使用 MinerU 精准解析，否则使用 MinerU 轻量解析；图片 OCR（文字识别）失败时回退 RapidOCR（本地文字识别），复杂文档依赖可选 MinerU CLI。
 - `backend/langdrill_agent/learning_stats.py`：长期学习统计服务，按当前考试聚合题目完成、词汇掌握和整体正确率。
 - `backend/langdrill_agent/context.py`：上下文容量、会话上下文快照、主动压缩、使用统计和 token（令牌）统计口径。
 - `backend/langdrill_agent/data_paths.py`：用户数据目录、题目 SQLite（轻量数据库）路径状态、迁移、空库初始化、本机文件夹选择和 `.env` 路径账本更新。
@@ -78,11 +80,12 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 3. Orchestrator（调度器）判断任务类型，不把用户输入拼入 system prompt（系统提示词）。
 4. Question Author（出题 Agent）一次生成完整题组，Validator（校验器）通过后写入数据库；截图词表自动练习只使用本次截图词表作为优先内容池，避免旧会话词汇污染选项。
 5. 组卷阶段读取当前考试的考纲版本、已选择历年真题试卷、解析章节、短摘录和已勾选题型；提示词只携带来源、题型、解析摘要和必要短摘录，禁止把完整真题作为默认发布内容。
-6. 前端以吸附题卡展示当前待答题；用户作答后写入 attempts（作答记录），更新 questions（题目状态）和 mastery（掌握度），并把上一题结构化快照写入助手消息 payload（附加数据）供回顾。
-7. 简单题由程序判分，复杂题进入 Evaluator Tutor（判题讲解 Agent）。
-8. 答题讲解统一由 Evaluator Tutor（判题讲解 Agent）基于程序判定、当前题、用户背景和会话上下文生成；若模型不可用，回退基础讲解但仍保存作答；前端在讲解消息中渲染已答题回顾卡片，不把已答题继续置顶。
-9. 系统自动返回下一道待答题；显式“下一题 / 继续 / 下一个”只读取当前题组库存，不重新初始化学习面板。
-10. Bootstrap（初始化加载）、chat（聊天）、profile（用户档案）、session delete（会话删除）接口返回 `learning_stats`；chat/session/context 接口返回 `token_usage`，其中 chat/session/context 的上下文容量字段必须按当前会话计算，用于长期面板、设置页和上下文容量圆圈实时刷新。
+6. 聊天栏图片输入按当前模型 `vision` 能力分流：视觉模型走多模态模型调用；非视觉模型走 `/api/files/extract-text` 并由 MinerU/RapidOCR 提取文本后再进入普通聊天或截图词表流程。
+7. 前端以吸附题卡展示当前待答题；用户作答后写入 attempts（作答记录），更新 questions（题目状态）和 mastery（掌握度），并把上一题结构化快照写入助手消息 payload（附加数据）供回顾。
+8. 简单题由程序判分，复杂题进入 Evaluator Tutor（判题讲解 Agent）。
+9. 答题讲解统一由 Evaluator Tutor（判题讲解 Agent）基于程序判定、当前题、用户背景和会话上下文生成；若模型不可用，回退基础讲解但仍保存作答；前端在讲解消息中渲染已答题回顾卡片，不把已答题继续置顶。
+10. 系统自动返回下一道待答题；显式“下一题 / 继续 / 下一个”只读取当前题组库存，不重新初始化学习面板。
+11. Bootstrap（初始化加载）、chat（聊天）、profile（用户档案）、session delete（会话删除）接口返回 `learning_stats`；chat/session/context 接口返回 `token_usage`，其中 chat/session/context 的上下文容量字段必须按当前会话计算，用于长期面板、设置页和上下文容量圆圈实时刷新。
 
 ## 启动与停止
 
@@ -175,6 +178,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\dev\start-dev.ps
 - 默认真实供应商密钥变量：`LANGDRILL_PROVIDER_API_KEY_OPENAI`、`LANGDRILL_PROVIDER_API_KEY_CLAUDE`、`LANGDRILL_PROVIDER_API_KEY_DEEPSEEK`、`LANGDRILL_PROVIDER_API_KEY_MIMO`；自定义供应商使用同规则生成的动态变量名。
 - `LANGDRILL_ENABLE_LLMLINGUA=1` 时，主动压缩上下文可尝试使用可选依赖 LLMLingua；未启用或不可用时使用本地抽取式摘要兜底。
 - `LANGDRILL_PAPER_ROOT` 控制历年真题原始文件和解析 JSON（JSON 数据交换格式）根目录，默认 `./papers`；真实完整试卷建议保存在本地私有目录或保持 `.gitignore` 排除。
+- `MINERU_TOKEN` 是 MinerU 精准解析 token，属于用户信息；真实值只允许写入 `.env` 或进程环境，不得提交或写入文档、进展记录和聊天代码块。
 - `LANGDRILL_MIGRATE_LEGACY_DB=1` 时才允许从项目内历史 `data/langdrill_agent.db` 复制旧库到当前用户点目录；默认不迁移，避免污染无数据测试库。
 - API Key（接口密钥）应保存纯密钥值；后端会清理常见粘贴前缀 `apikey:` / `Bearer:`，但发现换行或非 ASCII（非英文半角）字符时必须返回可读错误，不能让 `httpx` 请求头编码异常直接暴露给前端。
 - 如怀疑敏感信息已经提交到 GitHub（代码托管平台），必须提醒用户撤销旧密钥、创建新密钥并清理 Git 历史。
