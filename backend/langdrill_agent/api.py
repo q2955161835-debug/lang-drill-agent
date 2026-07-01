@@ -73,6 +73,7 @@ from .services import (
 )
 from .task_router import TaskRouter
 from .utils import dumps, loads, new_id
+from .web_search import BuiltinWebSearchService
 
 
 app = FastAPI(title="Lang Drill Agent API")
@@ -197,6 +198,18 @@ _SIMPLE_GREETING_PATTERN = re.compile(
     r"^(?:你?好|您好|hello|hi|hey|早上好|中午好|晚上好|在吗|在不在)[!！。.\s]*$",
     re.IGNORECASE,
 )
+_WEB_SEARCH_EXPLICIT_PATTERN = re.compile(
+    r"(?:联网|上网|网上|搜索|搜一下|搜搜|查一下|查查|检索|浏览网页|打开网页|web search|search web|browse|look up)",
+    re.IGNORECASE,
+)
+_WEB_SEARCH_RECENCY_PATTERN = re.compile(
+    r"(?:最新|近期|最近|今天|现在|实时|新闻|动态|current|latest|recent|today|news)",
+    re.IGNORECASE,
+)
+_WEB_SEARCH_COMMAND_PATTERN = re.compile(
+    r"(?:请|帮我|麻烦|联网|上网|网上|搜索|搜一下|搜搜|查一下|查查|检索|浏览网页|打开网页|一下|相关|资料|web search|search web|browse|look up)",
+    re.IGNORECASE,
+)
 
 
 def _coerce_plain_model_text(content: str, fallback: str) -> str:
@@ -209,6 +222,57 @@ def _coerce_plain_model_text(content: str, fallback: str) -> str:
                 return value.strip()
         return fallback
     return text or fallback
+
+
+def _looks_like_web_search_request(text: str) -> bool:
+    clean = text.strip()
+    if not clean:
+        return False
+    if _WEB_SEARCH_EXPLICIT_PATTERN.search(clean):
+        return True
+    return bool(_WEB_SEARCH_RECENCY_PATTERN.search(clean))
+
+
+def _web_search_query_from_text(text: str) -> str:
+    query = _WEB_SEARCH_COMMAND_PATTERN.sub(" ", text.strip())
+    query = re.sub(r"\s+", " ", query).strip(" ：:，,。.!！?？；;")
+    return query or text.strip()
+
+
+def _web_search_context_text(search_context: dict) -> str:
+    lines = [
+        f"检索方式：{search_context.get('label', '内置联网检索')}",
+        f"检索时间：{search_context.get('retrieved_at', '')}",
+        f"查询词：{search_context.get('query', '')}",
+    ]
+    for index, item in enumerate(search_context.get("results", []), start=1):
+        lines.append(
+            "\n".join(
+                [
+                    f"{index}. {item.get('title', '未命名来源')}",
+                    f"URL: {item.get('url', '')}",
+                    f"摘要: {item.get('snippet', '')}",
+                ]
+            )
+        )
+    return "\n".join(line for line in lines if line.strip())
+
+
+def _append_web_search_sources(content: str, search_context: dict) -> str:
+    results = search_context.get("results", [])
+    if not results:
+        return content
+    source_lines = []
+    for item in results[:5]:
+        title = str(item.get("title") or item.get("source") or "来源").strip()
+        url = str(item.get("url") or "").strip()
+        if not url:
+            continue
+        source_lines.append(f"- [{title}]({url})")
+    if not source_lines:
+        return content
+    retrieved_at = search_context.get("retrieved_at", "")
+    return f"{content.strip()}\n\n联网来源（{retrieved_at}）：\n" + "\n".join(source_lines)
 
 
 def _safe_upload_filename(filename: str) -> str:
@@ -266,13 +330,49 @@ def _general_chat_response(
     content: str,
     active_question: dict | None,
     attachments: list | None = None,
-) -> str:
+) -> dict[str, Any]:
     text = content.strip()
     image_attachments = [item for item in attachments or [] if getattr(item, "type", "") == "image" and getattr(item, "data_url", "")]
     if _SIMPLE_GREETING_PATTERN.match(text) and not image_attachments:
         if active_question:
-            return "你好，boss。我在。当前题组还保留着；你可以继续答题，也可以问我这道题的提示或讲解。"
-        return "你好，boss。我在。你可以发词表、说“继续当前题组”，或者先问我学习计划和题目思路。"
+            return {"content": "你好，boss。我在。当前题组还保留着；你可以继续答题，也可以问我这道题的提示或讲解。"}
+        return {"content": "你好，boss。我在。你可以发词表、说“继续当前题组”，或者先问我学习计划和题目思路。"}
+
+    search_context: dict[str, Any] | None = None
+    if not image_attachments and _looks_like_web_search_request(text):
+        if not AgentSettingsPermissionService(conn).is_enabled("web_search_import"):
+            return {
+                "content": (
+                    "联网功能权限已关闭，所以我不能执行网页检索。\n\n"
+                    "请在设置里的「权限」页开启「联网功能」。该权限独立于 Skills；"
+                    "Multi Search Engine 这类本地 Skill 未启用不会阻止内置联网检索。"
+                ),
+                "web_search": {
+                    "id": "builtin-web-search",
+                    "enabled": False,
+                    "permission_feature_id": "web_search_import",
+                    "skill_dependency": False,
+                    "reason": "permission_disabled",
+                },
+            }
+        try:
+            search_context = BuiltinWebSearchService().search(_web_search_query_from_text(text), max_results=5)
+        except RuntimeError as exc:
+            logger.warning("builtin web search failed during general chat", exc_info=True)
+            return {
+                "content": (
+                    f"联网检索失败：{exc}\n\n"
+                    "这不是 Skills 开关冲突；内置联网检索只受「联网功能」权限控制。"
+                    "可以稍后重试，或到 Skills 页启用 Multi Search Engine 生成可手动核验的搜索入口。"
+                ),
+                "web_search": {
+                    "id": "builtin-web-search",
+                    "enabled": False,
+                    "permission_feature_id": "web_search_import",
+                    "skill_dependency": False,
+                    "error": str(exc),
+                },
+            }
 
     pack = PromptPack(
         system_modules=[
@@ -294,6 +394,7 @@ def _general_chat_response(
         context_pack={
             "task_type": TaskType.general_chat.value,
             "session_id": session_id,
+            "web_search": search_context,
             "active_question": {
                 "id": active_question.get("id"),
                 "sequence": active_question.get("sequence"),
@@ -308,9 +409,23 @@ def _general_chat_response(
                 for item in image_attachments
             ],
         },
-        user_content=text or "请识别并说明这些图片内容。",
+        user_content=(
+            f"{text}\n\n[内置联网检索结果]\n{_web_search_context_text(search_context)}"
+            if search_context
+            else text or "请识别并说明这些图片内容。"
+        ),
         attachments=image_attachments,
     )
+    if search_context:
+        pack.system_modules.append(
+            {
+                "id": "general.web_search",
+                "content": (
+                    "本轮已经执行内置联网检索。回答必须优先依据 context_pack.web_search 和用户消息中的检索结果；"
+                    "不要说只能截至知识更新时间。请用 Markdown 链接引用来源；如果来源不足，明确说明不足，不能编造未检索到的细节。"
+                ),
+            }
+        )
     try:
         result = provider.complete(pack)
         _record_model_call(
@@ -321,13 +436,16 @@ def _general_chat_response(
             result=result,
             prompt_modules=[module["id"] for module in pack.system_modules],
         )
-        return _coerce_plain_model_text(
+        assistant_text = _coerce_plain_model_text(
             result.content,
             "我收到了。你可以继续说明想聊学习计划、题目讲解，还是要开始一组练习。",
         )
+        if search_context:
+            assistant_text = _append_web_search_sources(assistant_text, search_context)
+        return {"content": assistant_text, "web_search": search_context}
     except RuntimeError as exc:
         logger.warning("model request failed during general chat", exc_info=True)
-        return _model_request_error_message(exc)
+        return {"content": _model_request_error_message(exc), "web_search": search_context}
 
 
 def _screenshot_session_title(parsed: dict) -> str:
@@ -1048,6 +1166,7 @@ def chat(request: ChatRequest) -> ChatResponse:
         active_question = active  # 默认保持当前题
         answered_question: dict | None = None
         settings_action: dict[str, Any] | None = None
+        web_search_context: dict[str, Any] | None = None
 
         if task.value == "answer_question" and active:
             # ── 答题：判题、回写，再自动推进到下一道库存题 ──
@@ -1217,7 +1336,7 @@ def chat(request: ChatRequest) -> ChatResponse:
         elif task.value == "general_chat":
             # ── 普通聊天：不触发组卷，不写 daily_plan，不新增题目 ──
             active_question = active
-            assistant_content = _general_chat_response(
+            general_result = _general_chat_response(
                 conn,
                 provider,
                 session_id=session_id,
@@ -1225,6 +1344,8 @@ def chat(request: ChatRequest) -> ChatResponse:
                 active_question=active_question,
                 attachments=image_attachments,
             )
+            assistant_content = str(general_result.get("content", ""))
+            web_search_context = general_result.get("web_search")
 
         else:
             # ── 默认：有库存题先继续；无库存时先生成完整题组入库，再展示第一题 ──
@@ -1256,6 +1377,8 @@ def chat(request: ChatRequest) -> ChatResponse:
         assistant_payload = {"active_question": active_question}
         if answered_question:
             assistant_payload["answered_question"] = answered_question
+        if web_search_context:
+            assistant_payload["web_search"] = web_search_context
         if settings_action:
             assistant_payload["settings_action"] = settings_action
         msg_id = session_service.add_message(

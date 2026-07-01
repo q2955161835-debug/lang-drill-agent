@@ -570,7 +570,7 @@ const DEFAULT_AGENT_PERMISSIONS: AgentSettingsPermissionsStatus = {
     {
       id: "sensitive",
       label: "敏感设置权限",
-      feature_ids: ["model_config", "data_paths", "mineru_config"]
+      feature_ids: ["model_config", "custom_models", "data_paths", "mineru_config"]
     }
   ]
 };
@@ -583,6 +583,18 @@ const DEFAULT_SKILLS_STATUS: SkillsStatus = {
   no_key_skill_ids: [],
   permission_feature_id: "skills",
   web_search_permission_feature_id: "web_search_import",
+  builtin_web_search: {
+    id: "builtin-web-search",
+    name: "builtin-web-search",
+    label: "内置联网检索",
+    description: "普通聊天中用户明确要求联网、搜索或最新信息时，由后端直接检索网页摘要；只受「联网功能」权限控制，不依赖本地 Skills 开关。",
+    homepage: "",
+    requires_api_key: false,
+    requires_token: false,
+    installed: true,
+    enabled: true,
+    permission_feature_id: "web_search_import"
+  },
   web_search_skill: {
     id: "multi-search-engine",
     name: "multi-search-engine",
@@ -596,6 +608,23 @@ const DEFAULT_SKILLS_STATUS: SkillsStatus = {
     permission_feature_id: "web_search_import"
   }
 };
+
+const normalizeSkillsStatus = (status?: Partial<SkillsStatus> | null): SkillsStatus => ({
+  ...DEFAULT_SKILLS_STATUS,
+  ...status,
+  builtin_web_search: {
+    ...DEFAULT_SKILLS_STATUS.builtin_web_search,
+    ...(status?.builtin_web_search || {})
+  },
+  web_search_skill: {
+    ...DEFAULT_SKILLS_STATUS.web_search_skill,
+    ...(status?.web_search_skill || {})
+  },
+  installed: status?.installed || [],
+  enabled_skill_ids: status?.enabled_skill_ids || [],
+  no_key_skill_ids: status?.no_key_skill_ids || [],
+  skills_roots: status?.skills_roots || DEFAULT_SKILLS_STATUS.skills_roots
+});
 
 const PANEL_SIZE_STORAGE_KEY = "langdrill.panelSizes";
 const PANEL_SIZE_LIMITS = {
@@ -1229,7 +1258,7 @@ export default function App() {
         setDataPaths(data.data_paths || DEFAULT_DATA_PATHS);
         setMineruConfig({ ...DEFAULT_MINERU_CONFIG, ...data.mineru_config });
         setAgentPermissions(data.agent_permissions || DEFAULT_AGENT_PERMISSIONS);
-        setSkillsStatus(data.skills_status || DEFAULT_SKILLS_STATUS);
+        setSkillsStatus(normalizeSkillsStatus(data.skills_status));
         setLearningStats(data.learning_stats || DEFAULT_LEARNING_STATS);
         setOnboardingOpen(data.profile.exam_id === "unassigned");
       })
@@ -2303,7 +2332,7 @@ function SettingsDialog({
   const [mineruMessage, setMineruMessage] = useState("");
   const [permissionDraft, setPermissionDraft] = useState<AgentSettingsPermissionsStatus>(agentPermissions);
   const [permissionMessage, setPermissionMessage] = useState("");
-  const [skillsDraft, setSkillsDraft] = useState<SkillsStatus>(skillsStatus);
+  const [skillsDraft, setSkillsDraft] = useState<SkillsStatus>(normalizeSkillsStatus(skillsStatus));
   const [skillsMessage, setSkillsMessage] = useState("");
   const [questionDbFolder, setQuestionDbFolder] = useState(dataPaths.user_data_dir || "");
   const [migrateQuestionDb, setMigrateQuestionDb] = useState(true);
@@ -2376,7 +2405,7 @@ function SettingsDialog({
     setPermissionDraft(agentPermissions);
   }, [agentPermissions]);
   useEffect(() => {
-    setSkillsDraft(skillsStatus);
+    setSkillsDraft(normalizeSkillsStatus(skillsStatus));
   }, [skillsStatus]);
   useEffect(() => {
     if (!pendingPaperDraft) return;
@@ -3044,8 +3073,9 @@ function SettingsDialog({
     setSkillsMessage("正在刷新 Skills 状态...");
     try {
       const data = await apiGet<{ skills_status: SkillsStatus }>("/api/skills");
-      setSkillsDraft(data.skills_status);
-      onSkillsStatusChange(data.skills_status);
+      const nextStatus = normalizeSkillsStatus(data.skills_status);
+      setSkillsDraft(nextStatus);
+      onSkillsStatusChange(nextStatus);
       setSkillsMessage("Skills 状态已刷新。");
     } catch (err) {
       setSkillsMessage(err instanceof Error ? err.message : "Skills 状态刷新失败。");
@@ -3058,8 +3088,9 @@ function SettingsDialog({
         skill_id: skillId,
         enabled
       });
-      setSkillsDraft(data.skills_status);
-      onSkillsStatusChange(data.skills_status);
+      const nextStatus = normalizeSkillsStatus(data.skills_status);
+      setSkillsDraft(nextStatus);
+      onSkillsStatusChange(nextStatus);
       setSkillsMessage(enabled ? "Skill 已启用。" : "Skill 已关闭。");
     } catch (err) {
       setSkillsMessage(err instanceof Error ? err.message : "Skill 状态保存失败。");
@@ -3897,6 +3928,20 @@ function SettingsDialog({
             {activeSettingsTab === "skills" && (
               <SettingSection title="Skills 功能">
                 <p className="hint">Skills 默认关闭；需要先在权限页开启「Skills 功能」，再在这里逐个启用具体 Skill。联网功能是独立权限，默认开启。</p>
+                <div className="skill-highlight">
+                  <div>
+                    <strong>{skillsDraft.builtin_web_search.label || "内置联网检索"}</strong>
+                    <span>{skillsDraft.builtin_web_search.description}</span>
+                    <small>普通聊天中明确要求联网、搜索或最新信息时生效；不依赖本地 Skills 是否开启。</small>
+                  </div>
+                  <div className="skill-badges">
+                    <span className={skillsDraft.builtin_web_search.enabled ? "skill-ok" : "skill-warn"}>
+                      {skillsDraft.builtin_web_search.enabled ? "联网功能已开启" : "联网功能已关闭"}
+                    </span>
+                    <span className="skill-ok">无需 API Key</span>
+                    <span className="skill-ok">无需 token</span>
+                  </div>
+                </div>
                 <div className="skill-highlight">
                   <div>
                     <strong>{skillsDraft.web_search_skill.label || skillsDraft.web_search_skill.name}</strong>

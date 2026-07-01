@@ -98,6 +98,10 @@ This skill does not require API keys.
     status = service.status()
 
     assert status["installed_count"] == 1
+    assert status["builtin_web_search"]["id"] == "builtin-web-search"
+    assert status["builtin_web_search"]["enabled"] is True
+    assert status["builtin_web_search"]["requires_api_key"] is False
+    assert status["builtin_web_search"]["requires_token"] is False
     assert status["web_search_skill"]["id"] == "multi-search-engine"
     assert status["web_search_skill"]["installed"] is True
     assert status["web_search_skill"]["enabled"] is False
@@ -106,10 +110,12 @@ This skill does not require API keys.
 
     enabled = service.save_enabled("multi-search-engine", True)
     assert enabled["enabled_skill_ids"] == ["multi-search-engine"]
+    assert enabled["builtin_web_search"]["enabled"] is True
     assert enabled["web_search_skill"]["enabled"] is True
 
     disabled = service.save_enabled("multi-search-engine", False)
     assert disabled["enabled_skill_ids"] == []
+    assert disabled["builtin_web_search"]["enabled"] is True
 
 
 def test_agent_permissions_api_round_trip(tmp_path: Path, monkeypatch) -> None:
@@ -140,6 +146,10 @@ def test_skills_status_api_reports_recommended_no_key_skill(tmp_path: Path, monk
 
     assert response.status_code == 200
     status = response.json()["skills_status"]
+    assert status["builtin_web_search"]["id"] == "builtin-web-search"
+    assert status["builtin_web_search"]["enabled"] is True
+    assert status["builtin_web_search"]["requires_api_key"] is False
+    assert status["builtin_web_search"]["requires_token"] is False
     assert status["web_search_skill"]["id"] == "multi-search-engine"
     assert status["web_search_skill"]["requires_api_key"] is False
     assert status["web_search_skill"]["requires_token"] is False
@@ -163,10 +173,12 @@ def test_skill_toggle_api_saves_enabled_state(tmp_path: Path, monkeypatch) -> No
     enabled = client.post("/api/skills/enabled", json={"skill_id": "multi-search-engine", "enabled": True})
     assert enabled.status_code == 200
     assert enabled.json()["skills_status"]["enabled_skill_ids"] == ["multi-search-engine"]
+    assert enabled.json()["skills_status"]["builtin_web_search"]["enabled"] is True
 
     disabled = client.post("/api/skills/enabled", json={"skill_id": "multi-search-engine", "enabled": False})
     assert disabled.status_code == 200
     assert disabled.json()["skills_status"]["enabled_skill_ids"] == []
+    assert disabled.json()["skills_status"]["builtin_web_search"]["enabled"] is True
 
 
 def test_chat_settings_requires_permission_then_returns_action(tmp_path: Path, monkeypatch) -> None:

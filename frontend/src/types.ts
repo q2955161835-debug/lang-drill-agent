@@ -122,6 +122,7 @@ export type SkillsStatus = {
   installed_count: number;
   enabled_skill_ids: string[];
   no_key_skill_ids: string[];
+  builtin_web_search: SkillInfo;
   web_search_skill: SkillInfo;
   permission_feature_id: string;
   web_search_permission_feature_id: string;

@@ -206,6 +206,18 @@ class AgentSettingsPermissionService:
 class SkillRegistryService:
     SETTINGS_KEY = "skills.enabled"
     DEFAULT_SEARCH_ROOT = Path("D:/2Folder/skills")
+    BUILTIN_WEB_SEARCH = {
+        "id": "builtin-web-search",
+        "name": "builtin-web-search",
+        "label": "内置联网检索",
+        "description": "普通聊天中用户明确要求联网、搜索或最新信息时，由后端直接检索网页摘要；只受「联网功能」权限控制，不依赖本地 Skills 开关。",
+        "homepage": "",
+        "requires_api_key": False,
+        "requires_token": False,
+        "installed": True,
+        "permission_feature_id": "web_search_import",
+        "reason": "这是 Lang Drill Agent 内置能力，用于给模型提供当前网页来源，避免模型只按静态知识回答。",
+    }
     RECOMMENDED_WEB_SEARCH_SKILL = {
         "id": "multi-search-engine",
         "name": "multi-search-engine",
@@ -266,6 +278,10 @@ class SkillRegistryService:
             for skill in installed
             if not bool(skill.get("requires_api_key")) and not bool(skill.get("requires_token"))
         ]
+        builtin_web_search = {
+            **self.BUILTIN_WEB_SEARCH,
+            "enabled": self._builtin_web_search_enabled(),
+        }
         return {
             "skills_roots": [str(path) for path in self.skills_roots],
             "installed": installed,
@@ -276,10 +292,11 @@ class SkillRegistryService:
                 if bool(skill.get("enabled"))
             ],
             "no_key_skill_ids": no_key_skill_ids,
+            "builtin_web_search": builtin_web_search,
             "web_search_skill": web_search_skill,
             "permission_feature_id": "skills",
             "web_search_permission_feature_id": "web_search_import",
-            "message": "已发现无需个人 API Key 或 token 的 multi-search-engine 搜索辅助技能；默认不启用，需用户单独开启。",
+            "message": "内置联网检索独立于 Skills；multi-search-engine 仅作为可选搜索 URL 辅助技能，默认不启用。",
         }
 
     def save_enabled(self, skill_id: str, enabled: bool) -> dict[str, Any]:
@@ -380,6 +397,11 @@ class SkillRegistryService:
         ).fetchone()
         data = loads(row["value_json"], {}) if row else {}
         return [str(item) for item in data.get("enabled_skill_ids", []) if str(item).strip()]
+
+    def _builtin_web_search_enabled(self) -> bool:
+        if self.conn is None:
+            return True
+        return AgentSettingsPermissionService(self.conn).is_enabled("web_search_import")
 
     def _dedupe_roots(self, roots: list[Path]) -> list[Path]:
         deduped: list[Path] = []
