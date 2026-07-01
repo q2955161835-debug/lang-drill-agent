@@ -91,6 +91,13 @@ class AgentSettingsPermissionService:
             "default_enabled": False,
         },
         {
+            "id": "custom_models",
+            "label": "配置自定义模型",
+            "description": "允许会话 Agent 帮助整理自定义模型草稿；添加、删除和保存仍需用户在设置页确认。",
+            "sensitive": True,
+            "default_enabled": False,
+        },
+        {
             "id": "data_paths",
             "label": "题目数据库目录",
             "description": "允许会话 Agent 帮助填写题目数据库目录迁移设置；迁移前仍需用户确认。",
@@ -2459,6 +2466,103 @@ class ModelConfigService:
             "message": f"模型 {clean_model} 已{'显示' if visible else '隐藏'}。",
         }
 
+    def add_custom_model(
+        self,
+        provider_id: str,
+        model: str,
+        *,
+        label: str = "",
+        context_tokens: int = 0,
+        vision: bool = False,
+    ) -> dict[str, Any]:
+        provider = self.provider_by_id(provider_id)
+        if provider.get("id") == "mock":
+            raise ValueError("Mock Provider 不支持添加自定义模型。")
+        clean_model = model.strip()
+        if not clean_model:
+            raise ValueError("模型名称不能为空。")
+        clean_label = label.strip() or clean_model
+        row_ov = self.conn.execute("SELECT value_json FROM app_settings WHERE key='model.provider_overrides'").fetchone()
+        overrides = loads(row_ov["value_json"], {}) if row_ov else {}
+        ov = overrides.setdefault(provider_id, {"added_models": [], "model_reasoning_overrides": {}})
+        added = [self._normalize_model_option(item) for item in ov.get("added_models", []) if self._model_id(item)]
+        added_ids = {self._model_id(item) for item in added}
+        native_or_fetched = {
+            self._model_id(item)
+            for item in [*provider.get("model_options", []), *ov.get("fetched_models", [])]
+            if self._model_id(item) and self._model_id(item) not in added_ids
+        }
+        if clean_model in native_or_fetched:
+            raise ValueError("该模型已存在，可直接使用显示/隐藏或能力设置。")
+        custom_model = {
+            "id": clean_model,
+            "label": clean_label,
+            "context_tokens": max(int(context_tokens or 0), 0),
+            "vision": bool(vision),
+            "visible": True,
+            "custom": True,
+            "reasoning": {
+                "default_level": "",
+                "parameter": self._default_reasoning_parameter(provider_id),
+                "levels": [],
+            },
+        }
+        replaced = False
+        for index, item in enumerate(added):
+            if self._model_id(item) == clean_model:
+                added[index] = custom_model
+                replaced = True
+                break
+        if not replaced:
+            added.append(custom_model)
+        ov["added_models"] = added
+        ov.setdefault("model_capability_overrides", {})[clean_model] = {"vision": bool(vision)}
+        self._save_provider_overrides(overrides)
+        return {
+            "provider": self.provider_by_id(provider_id),
+            "providers": self.providers(),
+            "model_config": self.current(),
+            "message": f"自定义模型 {clean_model} 已{'更新' if replaced else '添加'}。",
+        }
+
+    def delete_custom_model(self, provider_id: str, model: str) -> dict[str, Any]:
+        clean_model = model.strip()
+        if not clean_model:
+            raise ValueError("模型名称不能为空。")
+        row_ov = self.conn.execute("SELECT value_json FROM app_settings WHERE key='model.provider_overrides'").fetchone()
+        overrides = loads(row_ov["value_json"], {}) if row_ov else {}
+        ov = overrides.setdefault(provider_id, {"added_models": [], "model_reasoning_overrides": {}})
+        added = [self._normalize_model_option(item) for item in ov.get("added_models", []) if self._model_id(item)]
+        if clean_model not in {self._model_id(item) for item in added}:
+            raise ValueError("只能删除手动添加的自定义模型。")
+        ov["added_models"] = [item for item in added if self._model_id(item) != clean_model]
+        for key in ("model_reasoning_overrides", "model_capability_overrides", "model_visibility_overrides"):
+            if isinstance(ov.get(key), dict):
+                ov[key].pop(clean_model, None)
+        self._save_provider_overrides(overrides)
+
+        current = self.current()
+        if current.get("provider_id") == provider_id and current.get("model") == clean_model:
+            provider = self.provider_by_id(provider_id)
+            fallback_model = next(
+                (self._model_id(item) for item in provider.get("model_options", []) if self._model_id(item) != clean_model),
+                provider.get("model", ""),
+            )
+            if fallback_model and fallback_model != clean_model:
+                self.save(
+                    provider_id,
+                    provider.get("base_url", ""),
+                    fallback_model,
+                    api_format=provider.get("api_format", ""),
+                    vision=self._model_config(provider_id, fallback_model).get("vision", False),
+                )
+        return {
+            "provider": self.provider_by_id(provider_id),
+            "providers": self.providers(),
+            "model_config": self.current(),
+            "message": f"自定义模型 {clean_model} 已删除。",
+        }
+
     def reset_defaults(self) -> dict[str, Any]:
         self.conn.execute(
             "DELETE FROM app_settings WHERE key IN ('model.default', 'model.provider_overrides', 'model.custom_providers')"
@@ -2604,6 +2708,7 @@ class ModelConfigService:
         item.setdefault("context_tokens", 0)
         item["vision"] = bool(item.get("vision", False))
         item["visible"] = bool(item.get("visible", True))
+        item["custom"] = bool(item.get("custom", False))
         item.setdefault("reasoning", {"default_level": "", "parameter": self._default_reasoning_parameter(""), "levels": []})
         if item["reasoning"]:
             item["reasoning"]["levels"] = self._normalize_thinking_options(item["reasoning"].get("levels", []))

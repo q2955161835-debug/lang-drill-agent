@@ -1277,6 +1277,12 @@ body.panel-resize-active * {
   background: var(--surface-strong);
   padding: 12px;
 }
+.custom-model-form {
+  border: var(--border-thin);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  padding: 12px;
+}
 .mineru-config {
   display: grid;
   gap: 10px;
@@ -1307,6 +1313,16 @@ body.panel-resize-active * {
 .model-visibility-row div { display: grid; gap: 4px; min-width: 0; }
 .model-visibility-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .model-visibility-row span { color: var(--muted); font-size: 0.82rem; font-weight: 650; }
+.model-visibility-row .model-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.danger-action {
+  border-color: rgba(255, 110, 110, 0.42);
+  color: #ffb1b1;
+}
 .model-context-row {
   border: var(--border-thin);
   border-radius: var(--radius-sm);

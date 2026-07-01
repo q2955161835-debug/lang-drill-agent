@@ -169,6 +169,14 @@ class ModelVisibilityRequest(BaseModel):
     visible: bool = True
 
 
+class CustomModelRequest(BaseModel):
+    provider_id: str
+    model: str
+    label: str = ""
+    context_tokens: int = Field(default=0, ge=0)
+    vision: bool = False
+
+
 class MinerUConfigRequest(BaseModel):
     token: str = ""
     clear_token: bool = False

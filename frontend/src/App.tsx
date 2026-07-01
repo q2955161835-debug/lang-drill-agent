@@ -25,6 +25,7 @@ import {
   Sparkle,
   Sun,
   Target,
+  Trash,
   UserCircle,
   X
 } from "@phosphor-icons/react";
@@ -38,6 +39,7 @@ import type {
   AgentSettingPermissionFeature,
   AgentSettingsPermissionsStatus,
   ChatImageAttachment,
+  CustomModelDraft,
   DataPathsStatus,
   DailyPanel,
   ExamOption,
@@ -106,6 +108,33 @@ function MessageItem({
 
 function SettingsActionCard({ action, onConfirm }: { action: SettingsAction; onConfirm: (action: SettingsAction) => void }) {
   const draft = action.draft;
+  if (action.type === "custom_model_draft") {
+    return (
+      <div className="settings-action-card">
+        <div>
+          <strong>{action.label}</strong>
+          <span>{draft.model || "未识别模型名称"}</span>
+        </div>
+        <dl>
+          <div>
+            <dt>显示名</dt>
+            <dd>{draft.label || draft.model || "同模型名"}</dd>
+          </div>
+          <div>
+            <dt>上下文</dt>
+            <dd>{draft.context_tokens ? formatCompactNumber(draft.context_tokens) : "未知"}</dd>
+          </div>
+          <div>
+            <dt>图片</dt>
+            <dd>{draft.vision ? "支持" : "文本模型"}</dd>
+          </div>
+        </dl>
+        <button className="inline-action primary-inline" type="button" onClick={() => onConfirm(action)}>
+          确认填入设置
+        </button>
+      </div>
+    );
+  }
   return (
     <div className="settings-action-card">
       <div>
@@ -925,6 +954,7 @@ export default function App() {
   const [agentPermissions, setAgentPermissions] = useState<AgentSettingsPermissionsStatus>(DEFAULT_AGENT_PERMISSIONS);
   const [skillsStatus, setSkillsStatus] = useState<SkillsStatus>(DEFAULT_SKILLS_STATUS);
   const [pendingPaperDraft, setPendingPaperDraft] = useState<PastPaperDraft | null>(null);
+  const [pendingCustomModelDraft, setPendingCustomModelDraft] = useState<CustomModelDraft | null>(null);
   const [input, setInput] = useState("");
   const [composerAttachments, setComposerAttachments] = useState<ChatImageAttachment[]>([]);
   const [composerDragActive, setComposerDragActive] = useState(false);
@@ -1503,6 +1533,9 @@ export default function App() {
     if (action.type === "past_paper_import_draft") {
       setPendingPaperDraft(action.draft);
       setSettingsOpen(true);
+    } else if (action.type === "custom_model_draft") {
+      setPendingCustomModelDraft(action.draft);
+      setSettingsOpen(true);
     }
   }, []);
 
@@ -1876,6 +1909,7 @@ export default function App() {
           agentPermissions={agentPermissions}
           skillsStatus={skillsStatus}
           pendingPaperDraft={pendingPaperDraft}
+          pendingCustomModelDraft={pendingCustomModelDraft}
           sessions={sessions}
           examOptions={examOptions}
           syllabusStatus={syllabusStatus}
@@ -1898,6 +1932,7 @@ export default function App() {
           onAgentPermissionsChange={setAgentPermissions}
           onSkillsStatusChange={setSkillsStatus}
           onPaperDraftConsumed={() => setPendingPaperDraft(null)}
+          onCustomModelDraftConsumed={() => setPendingCustomModelDraft(null)}
           onOpenOnboarding={() => {
             setSettingsOpen(false);
             setOnboardingOpen(true);
@@ -2178,6 +2213,7 @@ function SettingsDialog({
   agentPermissions,
   skillsStatus,
   pendingPaperDraft,
+  pendingCustomModelDraft,
   sessions,
   examOptions,
   syllabusStatus,
@@ -2197,6 +2233,7 @@ function SettingsDialog({
   onAgentPermissionsChange,
   onSkillsStatusChange,
   onPaperDraftConsumed,
+  onCustomModelDraftConsumed,
   onOpenOnboarding
 }: {
   profile: Profile;
@@ -2210,6 +2247,7 @@ function SettingsDialog({
   agentPermissions: AgentSettingsPermissionsStatus;
   skillsStatus: SkillsStatus;
   pendingPaperDraft: PastPaperDraft | null;
+  pendingCustomModelDraft: CustomModelDraft | null;
   sessions: SessionItem[];
   examOptions: ExamOption[];
   syllabusStatus: SyllabusStatus;
@@ -2229,6 +2267,7 @@ function SettingsDialog({
   onAgentPermissionsChange: (permissions: AgentSettingsPermissionsStatus) => void;
   onSkillsStatusChange: (status: SkillsStatus) => void;
   onPaperDraftConsumed: () => void;
+  onCustomModelDraftConsumed: () => void;
   onOpenOnboarding: () => void;
 }) {
   const [draft, setDraft] = useState(profile);
@@ -2241,6 +2280,14 @@ function SettingsDialog({
     name: "",
     base_url: "",
     default_model: ""
+  });
+  const [customModelOpen, setCustomModelOpen] = useState(false);
+  const [customModelSaving, setCustomModelSaving] = useState(false);
+  const [customModelDraft, setCustomModelDraft] = useState({
+    model: "",
+    label: "",
+    context_tokens: "",
+    vision: false
   });
   const [thinkingLevelFormOpen, setThinkingLevelFormOpen] = useState(false);
   const [thinkingLevelDraft, setThinkingLevelDraft] = useState({ label: "", api_value: "" });
@@ -2313,6 +2360,17 @@ function SettingsDialog({
     }));
     setPastPaperMessage(message);
   }, []);
+  const applyCustomModelDraftToForm = useCallback((draft: CustomModelDraft, message: string) => {
+    setActiveSettingsTab("model");
+    setCustomModelOpen(true);
+    setCustomModelDraft({
+      model: draft.model || "",
+      label: draft.label || "",
+      context_tokens: draft.context_tokens ? String(draft.context_tokens) : "",
+      vision: Boolean(draft.vision)
+    });
+    setModelRefreshMessage(message);
+  }, []);
   useEffect(() => {
     setPermissionDraft(agentPermissions);
   }, [agentPermissions]);
@@ -2324,6 +2382,11 @@ function SettingsDialog({
     applyPaperDraftToForm(pendingPaperDraft, "已由会话 Agent 填入试卷导入草稿，保存前可继续修改。");
     onPaperDraftConsumed();
   }, [applyPaperDraftToForm, onPaperDraftConsumed, pendingPaperDraft]);
+  useEffect(() => {
+    if (!pendingCustomModelDraft) return;
+    applyCustomModelDraftToForm(pendingCustomModelDraft, "已由会话 Agent 填入自定义模型草稿，保存前可继续修改。");
+    onCustomModelDraftConsumed();
+  }, [applyCustomModelDraftToForm, onCustomModelDraftConsumed, pendingCustomModelDraft]);
   const chooseProvider = (providerId: string) => {
     const nextProvider = selectedProvider(providers, providerId);
     const nextModel = modelOptionsFor(nextProvider, nextProvider.model)[0]?.id || nextProvider.model || "";
@@ -2616,6 +2679,71 @@ function SettingsDialog({
       setModelRefreshMessage(data.message || `模型 ${modelId} 已${visible ? "显示" : "隐藏"}。`);
     } catch (err) {
       setModelRefreshMessage(err instanceof Error ? err.message : "模型显示状态保存失败。");
+    }
+  };
+  const handleAddCustomModel = async () => {
+    const model = customModelDraft.model.trim();
+    if (!model) {
+      setModelRefreshMessage("请填写模型名称。");
+      return;
+    }
+    setCustomModelSaving(true);
+    try {
+      const data = await apiPost<{ provider: ProviderOption; providers: ProviderOption[]; model_config?: ModelConfig; message?: string }>("/api/model-config/models/custom", {
+        provider_id: modelDraft.provider_id,
+        model,
+        label: customModelDraft.label.trim(),
+        context_tokens: Number(customModelDraft.context_tokens || 0),
+        vision: customModelDraft.vision
+      });
+      const nextProviders = normalizeProviders(data.providers);
+      const nextProvider = selectedProvider(nextProviders, modelDraft.provider_id);
+      onProvidersChange(nextProviders);
+      if (data.model_config) onModelConfigChange(normalizeModelConfig(data.model_config));
+      setModelDraft({
+        ...modelDraft,
+        provider_id: nextProvider.id,
+        model,
+        thinking_level: defaultThinkingLevelForModel(nextProvider, model),
+        thinking_level_options: thinkingOptionsForModel(nextProvider, model),
+        vision: modelSupportsVision(nextProvider, model)
+      });
+      setCustomModelDraft({ model: "", label: "", context_tokens: "", vision: false });
+      setCustomModelOpen(false);
+      setModelRefreshMessage(data.message || `自定义模型 ${model} 已添加。`);
+    } catch (err) {
+      setModelRefreshMessage(err instanceof Error ? err.message : "自定义模型保存失败。");
+    } finally {
+      setCustomModelSaving(false);
+    }
+  };
+  const handleDeleteCustomModel = async (modelId: string) => {
+    if (!window.confirm(`确认删除自定义模型 ${modelId}？`)) return;
+    setModelRefreshMessage(`正在删除自定义模型 ${modelId}...`);
+    try {
+      const data = await apiPost<{ provider: ProviderOption; providers: ProviderOption[]; model_config?: ModelConfig; message?: string }>("/api/model-config/models/custom/delete", {
+        provider_id: modelDraft.provider_id,
+        model: modelId
+      });
+      const nextProviders = normalizeProviders(data.providers);
+      const nextConfig = normalizeModelConfig(data.model_config || modelDraft);
+      const nextProvider = selectedProvider(nextProviders, nextConfig.provider_id || modelDraft.provider_id);
+      const nextModel = nextConfig.model || nextProvider.model;
+      onProvidersChange(nextProviders);
+      onModelConfigChange(nextConfig);
+      setModelDraft({
+        ...modelDraft,
+        ...nextConfig,
+        api_key: "",
+        provider_id: nextProvider.id,
+        model: nextModel,
+        thinking_level: defaultThinkingLevelForModel(nextProvider, nextModel),
+        thinking_level_options: thinkingOptionsForModel(nextProvider, nextModel),
+        vision: modelSupportsVision(nextProvider, nextModel)
+      });
+      setModelRefreshMessage(data.message || `自定义模型 ${modelId} 已删除。`);
+    } catch (err) {
+      setModelRefreshMessage(err instanceof Error ? err.message : "自定义模型删除失败。");
     }
   };
   const saveModelConfig = async (successMessage = "模型配置已保存，Base URL（基础网址）、API 格式和模型能力会应用于当前供应商。") => {
@@ -3116,13 +3244,88 @@ function SettingsDialog({
                   </div>
                   <small>刷新会调用当前供应商的模型列表接口，把返回的可调用模型写入下拉。隐藏的模型不会出现在聊天栏快捷模型选择中。</small>
                 </label>
+                <div className="inline-row wrap-row">
+                  <button
+                    type="button"
+                    className="inline-action"
+                    onClick={() => {
+                      setCustomModelOpen((open) => !open);
+                      setModelRefreshMessage("");
+                    }}
+                  >
+                    <Plus size={16} /> {customModelOpen ? "收起自定义模型" : "添加自定义模型"}
+                  </button>
+                </div>
+                {customModelOpen && (
+                  <div className="custom-provider-form custom-model-form">
+                    <label className="field-label">
+                      <span>模型 ID（接口调用名）</span>
+                      <input
+                        value={customModelDraft.model}
+                        onChange={(event) => setCustomModelDraft({ ...customModelDraft, model: event.target.value })}
+                        placeholder="例如：mimo-v2.5-ultra"
+                      />
+                    </label>
+                    <label className="field-label">
+                      <span>显示名称</span>
+                      <input
+                        value={customModelDraft.label}
+                        onChange={(event) => setCustomModelDraft({ ...customModelDraft, label: event.target.value })}
+                        placeholder="可选，留空则同模型 ID"
+                      />
+                    </label>
+                    <label className="field-label">
+                      <span>上下文容量</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1000"
+                        value={customModelDraft.context_tokens}
+                        onChange={(event) => setCustomModelDraft({ ...customModelDraft, context_tokens: event.target.value })}
+                        placeholder="可选，例如 1000000"
+                      />
+                    </label>
+                    <label className="check-row">
+                      <input
+                        type="checkbox"
+                        checked={customModelDraft.vision}
+                        onChange={(event) => setCustomModelDraft({ ...customModelDraft, vision: event.target.checked })}
+                      />
+                      <span>
+                        <strong>该自定义模型支持图片输入</strong>
+                        <small>仅声明能力，不会验证供应商真实支持情况。</small>
+                      </span>
+                    </label>
+                    <div className="inline-row form-actions">
+                      <button
+                        type="button"
+                        className="inline-action"
+                        onClick={() => {
+                          setCustomModelOpen(false);
+                          setCustomModelDraft({ model: "", label: "", context_tokens: "", vision: false });
+                        }}
+                        disabled={customModelSaving}
+                      >
+                        取消
+                      </button>
+                      <button
+                        type="button"
+                        className="inline-action primary-inline"
+                        onClick={() => void handleAddCustomModel()}
+                        disabled={customModelSaving}
+                      >
+                        {customModelSaving ? "保存中..." : "保存自定义模型"}
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <div className="model-visibility-list" aria-label="模型栏显示设置">
                   {modelOptions.map((model) => {
                     const visible = model.visible !== false;
                     return (
                       <div className="model-visibility-row" key={model.id}>
                         <div>
-                          <strong>{modelOptionLabel(model)}</strong>
+                          <strong>{modelOptionLabel(model)}{model.custom ? " · 自定义" : ""}</strong>
                           <span>
                             {model.context_tokens ? `${formatCompactNumber(model.context_tokens)} 上下文` : "上下文未知"}
                             {" · "}
@@ -3131,15 +3334,28 @@ function SettingsDialog({
                             {model.reasoning?.levels?.length ? `${model.reasoning.levels.length} 个思考档位` : "无思考档位"}
                           </span>
                         </div>
-                        <button
-                          type="button"
-                          className="inline-action compact-action"
-                          onClick={() => void toggleModelVisibility(model.id, !visible)}
-                          title={visible ? "从聊天栏隐藏" : "显示到聊天栏"}
-                        >
-                          {visible ? <EyeSlash size={16} /> : <Eye size={16} />}
-                          {visible ? "隐藏" : "显示"}
-                        </button>
+                        <div className="model-row-actions">
+                          <button
+                            type="button"
+                            className="inline-action compact-action"
+                            onClick={() => void toggleModelVisibility(model.id, !visible)}
+                            title={visible ? "从聊天栏隐藏" : "显示到聊天栏"}
+                          >
+                            {visible ? <EyeSlash size={16} /> : <Eye size={16} />}
+                            {visible ? "隐藏" : "显示"}
+                          </button>
+                          {model.custom && (
+                            <button
+                              type="button"
+                              className="inline-action compact-action danger-action"
+                              onClick={() => void handleDeleteCustomModel(model.id)}
+                              title="删除自定义模型"
+                            >
+                              <Trash size={16} />
+                              删除
+                            </button>
+                          )}
+                        </div>
                       </div>
                     );
                   })}

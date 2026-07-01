@@ -41,6 +41,7 @@ export type ModelOption = string | {
   context_tokens?: number;
   vision?: boolean;
   visible?: boolean;
+  custom?: boolean;
   reasoning?: {
     default_level?: string;
     parameter?: string;
@@ -200,7 +201,15 @@ export type PastPaperDraft = {
   raw_text?: string;
 };
 
-export type SettingsAction = {
+export type CustomModelDraft = {
+  provider_id?: string;
+  model: string;
+  label?: string;
+  context_tokens?: number;
+  vision?: boolean;
+};
+
+export type PastPaperSettingsAction = {
   type: "past_paper_import_draft";
   feature_id: string;
   label: string;
@@ -208,6 +217,17 @@ export type SettingsAction = {
   parser?: string;
   confirmation_required?: boolean;
 };
+
+export type CustomModelSettingsAction = {
+  type: "custom_model_draft";
+  feature_id: string;
+  label: string;
+  draft: CustomModelDraft;
+  parser?: string;
+  confirmation_required?: boolean;
+};
+
+export type SettingsAction = PastPaperSettingsAction | CustomModelSettingsAction;
 
 export type MessagePayload = {
   active_question?: Question | null;

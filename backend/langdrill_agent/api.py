@@ -29,6 +29,7 @@ from .models import (
     ChatResponse,
     ContextCompressRequest,
     ContextSettingsRequest,
+    CustomModelRequest,
     InitRequest,
     MinerUConfigRequest,
     ModelConfigRequest,
@@ -764,6 +765,31 @@ def set_model_visibility(request: ModelVisibilityRequest) -> dict:
             request.model,
             request.visible,
         )
+
+
+@app.post("/api/model-config/models/custom")
+def add_custom_model(request: CustomModelRequest) -> dict:
+    init_db()
+    with transaction() as conn:
+        return ModelConfigService(conn).add_custom_model(
+            request.provider_id,
+            request.model,
+            label=request.label,
+            context_tokens=request.context_tokens,
+            vision=request.vision,
+        )
+
+
+@app.delete("/api/model-config/models/custom")
+def delete_custom_model(request: CustomModelRequest) -> dict:
+    init_db()
+    with transaction() as conn:
+        return ModelConfigService(conn).delete_custom_model(request.provider_id, request.model)
+
+
+@app.post("/api/model-config/models/custom/delete")
+def delete_custom_model_post(request: CustomModelRequest) -> dict:
+    return delete_custom_model(request)
 
 
 @app.get("/api/mineru-config")
