@@ -25,6 +25,7 @@ import {
 } from "@phosphor-icons/react";
 import { apiDelete, apiGet, apiPost } from "./api";
 import { ContextMenu, type ContextMenuItem } from "./components/ContextMenu";
+import { MarkdownText } from "./components/MarkdownText";
 import { RightWorkbench, type WorkbenchTab } from "./components/RightWorkbench";
 import type {
   AnsweredQuestion,
@@ -72,7 +73,7 @@ function MessageItem({ message, onContextMenu }: { message: Message; onContextMe
       <div className="avatar">{message.role === "user" ? <UserCircle size={18} /> : <Sparkle size={18} />}</div>
       <div className="message-stack">
         {answeredQuestion && <QuestionReviewCard question={answeredQuestion} />}
-        <div className="bubble">{message.content}</div>
+        <div className="bubble"><MarkdownText content={message.content} /></div>
       </div>
     </article>
   );

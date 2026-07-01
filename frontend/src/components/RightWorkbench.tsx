@@ -10,6 +10,7 @@ import {
 } from "@phosphor-icons/react";
 import type { DailyPanel, Message, ScreenshotImportResult } from "../types";
 import { apiGet, apiPost } from "../api";
+import { MarkdownText } from "./MarkdownText";
 
 export type WorkbenchTab = "branch" | "mirror" | "screenshot" | "voice";
 
@@ -146,7 +147,7 @@ function BranchPanel({
         ) : (
           branchMessages.map((message) => (
             <div className={`branch-message ${message.role}`} key={message.id}>
-              {message.content}
+              <MarkdownText content={message.content} />
             </div>
           ))
         )}

@@ -726,7 +726,7 @@ def chat(request: ChatRequest) -> ChatResponse:
             daily_panel=session_service.daily_panel(session_id),
             active_question=active_question,
             answered_question=answered_question,
-            token_usage=token_totals(conn),
+            token_usage=token_totals(conn, session_id),
             learning_stats=LearningStatsService(conn).overview(),
         )
 

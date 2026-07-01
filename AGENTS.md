@@ -19,6 +19,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - 主聊天栏粘贴 3 个以上截图词条时必须复用截图导入后台流程，自动创建截图练习会话、导入词表并生成题组；前端等待状态需区分“截图解析中”和“题目生成中”。
 - 答题提交后必须让 Evaluator Tutor（判题讲解 Agent）结合当前会话上下文、用户背景和程序判定生成个性化讲解；模型不可用时才回退基础判题，且不得丢失作答记录。刚答完的题目必须作为普通聊天回顾卡片保留，显示用户选择、正确答案和对错状态；只有当前待答题使用置顶/吸附题卡。
 - 聊天输入区需要展示当前上下文容量占用，默认上限 1,000,000 token（令牌），支持保存自定义上限和主动压缩上下文；LLMLingua（提示词压缩库）作为可选增强，默认使用本地抽取式摘要兜底。
+- 主聊天和右侧分支消息必须通过安全的 Markdown（标记语言）渲染组件展示基础格式，包括加粗、内联代码、列表、标题和代码块；禁止用不可信模型内容直接写入 HTML（超文本标记语言）。
 - 历年真题以 `exam_assets` 中的试卷记录和 `papers/<考试>/raw`、`papers/<考试>/parsed` 中的原始/解析资产为准，默认选择近 3 年真题；出题 Agent（智能体）必须参考当前选中的真题解析结果和已勾选题型，但不得复刻或长段引用完整真题原文。
 
 ## GitHub（代码托管平台）
@@ -53,7 +54,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - `backend/langdrill_agent/migrations/`：SQLite（轻量数据库）schema（数据库结构）初始化脚本。
 - `frontend/`：React（前端框架）+ TypeScript（类型化 JavaScript）+ Vite（前端构建工具）网页前端。
 - `frontend/src/App.tsx`：前端主入口，负责三栏布局、聊天、设置、初始化、当前题吸附显示、已答题回顾卡片和右侧工作台接入。
-- `frontend/src/components/`：前端可复用组件，当前重点是 `RightWorkbench.tsx` 和 `ContextMenu.tsx`。
+- `frontend/src/components/`：前端可复用组件，当前重点是 `RightWorkbench.tsx`、`ContextMenu.tsx` 和 `MarkdownText.tsx`。
 - `papers/`：按考试类型分开的历年真题资产目录骨架；`raw/` 存原始试卷或粘贴文本，`parsed/` 存解析 JSON（JSON 数据交换格式），实际导入内容默认不提交。
 - `scripts/dev/`：开发期启动与维护脚本。`start-dev.ps1` 是一键启动主逻辑，`start.bat` 只作为 Windows 双击入口。
 - `src-tauri/`：Tauri（桌面壳）Windows 桌面封装骨架。
@@ -75,7 +76,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 7. 简单题由程序判分，复杂题进入 Evaluator Tutor（判题讲解 Agent）。
 8. 答题讲解统一由 Evaluator Tutor（判题讲解 Agent）基于程序判定、当前题、用户背景和会话上下文生成；若模型不可用，回退基础讲解但仍保存作答；前端在讲解消息中渲染已答题回顾卡片，不把已答题继续置顶。
 9. 系统自动返回下一道待答题；显式“下一题 / 继续 / 下一个”只读取当前题组库存，不重新初始化学习面板。
-10. Bootstrap（初始化加载）、chat（聊天）、profile（用户档案）、session delete（会话删除）接口返回 `learning_stats`；chat/session/context 接口返回 `token_usage`，用于长期面板、设置页和上下文容量圆圈实时刷新。
+10. Bootstrap（初始化加载）、chat（聊天）、profile（用户档案）、session delete（会话删除）接口返回 `learning_stats`；chat/session/context 接口返回 `token_usage`，其中 chat/session/context 的上下文容量字段必须按当前会话计算，用于长期面板、设置页和上下文容量圆圈实时刷新。
 
 ## 启动与停止
 

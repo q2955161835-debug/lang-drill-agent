@@ -119,3 +119,21 @@ def test_context_settings_and_manual_compression(tmp_path: Path, monkeypatch) ->
         row = conn.execute("SELECT summary FROM study_sessions WHERE id=?", (session_id,)).fetchone()
 
     assert row["summary"]
+
+
+def test_chat_response_reports_current_session_context(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "chat_context.db"
+    monkeypatch.setenv("LANGDRILL_DB_PATH", str(db_path))
+    monkeypatch.setenv("LANGDRILL_DEFAULT_PROVIDER", "mock")
+    monkeypatch.setenv("LANGDRILL_DEFAULT_MODEL", "mock-tutor-v1")
+    init_db(db_path)
+    _use_mock_provider(db_path)
+
+    client = TestClient(app)
+    response = client.post("/api/chat", json={"content": "你好", "force_new_session": True})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["session_id"]
+    assert payload["token_usage"]["context_messages"] == 2
+    assert payload["token_usage"]["estimated_current_context"] > 0
