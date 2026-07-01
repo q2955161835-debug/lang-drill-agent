@@ -1,4 +1,4 @@
-import { useCallback, useState, type DragEvent } from "react";
+import { useState, type DragEvent } from "react";
 import {
   CaretLeft,
   CaretRight,
@@ -45,6 +45,16 @@ type PhoneMirrorStatus = {
   error?: string;
   recommended_project?: { name: string; url: string; reason: string };
 };
+
+function queuedFileSourceLabel(files: File[]) {
+  return files.map((file) => file.name).join("、");
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
 
 export function RightWorkbench({
   open,
@@ -233,24 +243,52 @@ function ScreenshotImportPanel({
   const [text, setText] = useState("");
   const [imagePath, setImagePath] = useState("");
   const [parsed, setParsed] = useState<ScreenshotImportResult | null>(null);
-  const [status, setStatus] = useState("粘贴 OCR（文字识别）文本后可解析；导入后会自动开始考试式练习。");
+  const [status, setStatus] = useState("粘贴 OCR（文字识别）文本，或先拖入多张文件后点击解析文本。导入后会自动开始考试式练习。");
   const [loading, setLoading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+  const [queuedFiles, setQueuedFiles] = useState<File[]>([]);
+  const canParse = Boolean(text.trim() || queuedFiles.length) && !loading;
+  const canImport = Boolean(text.trim() && !queuedFiles.length) && !loading;
   const parse = async (startDrill: boolean) => {
     if (loading) return;
+    if (!text.trim() && !queuedFiles.length) {
+      setStatus("请先拖入文件或粘贴 OCR（文字识别）文本。");
+      return;
+    }
     setLoading(true);
-    setStatus(startDrill ? "截图解析中，随后会生成题目..." : "截图解析中...");
-    const generationTimer = startDrill
-      ? window.setTimeout(() => setStatus("题目生成中，请稍等..."), 800)
-      : undefined;
+    setParsed(null);
+    let generationTimer: number | undefined;
+    let resolvedText = text;
+    let sourceImagePath = imagePath;
+    let extractedNames = "";
     try {
+      if (queuedFiles.length) {
+        setStatus(`正在读取 ${queuedFiles.length} 个已导入文件...`);
+        const extracted = await extractTextFromFiles(queuedFiles);
+        if (!extracted.text.trim()) {
+          throw new Error("没有从已导入文件中读取到可解析文本。");
+        }
+        resolvedText = appendImportedText(text, extracted.text);
+        extractedNames = extracted.results.map((result) => result.filename).join("、");
+        sourceImagePath = imagePath.trim() || extractedNames;
+        setText(resolvedText);
+        setImagePath(sourceImagePath);
+        setQueuedFiles([]);
+      }
+      if (!resolvedText.trim()) {
+        throw new Error("请先填写或解析出截图识别文本。");
+      }
+      setStatus(startDrill ? "截图解析中，随后会生成题目..." : "截图解析中...");
+      if (startDrill) {
+        generationTimer = window.setTimeout(() => setStatus("题目生成中，请稍等..."), 800);
+      }
       const data = await apiPost<ScreenshotImportResult>("/api/screenshot/parse", {
-        text,
+        text: resolvedText,
         session_id: sessionId,
         import_to_session: startDrill,
         auto_start_drill: startDrill,
         force_new_session: startDrill,
-        source_image_path: imagePath,
+        source_image_path: sourceImagePath,
       });
       setParsed(data);
       if (data.daily_panel) onDailyPanelChange(data.daily_panel);
@@ -258,7 +296,8 @@ function ScreenshotImportPanel({
         onScreenshotImportComplete(data);
         setStatus(data.auto_started ? `已导入 ${data.imported_count || 0} 个单词，并自动生成考试式题组。` : `已导入 ${data.imported_count || 0} 个单词，但题组生成失败。`);
       } else {
-        setStatus(`已解析 ${data.words?.length || 0} 个单词。`);
+        const prefix = extractedNames ? `已读取 ${extractedNames}，` : "";
+        setStatus(`${prefix}已解析 ${data.words?.length || 0} 个单词。`);
       }
     } catch (err) {
       setStatus(`截图处理失败：${err instanceof Error ? err.message : "未知错误"}`);
@@ -267,20 +306,42 @@ function ScreenshotImportPanel({
       setLoading(false);
     }
   };
-  const handleDropFiles = useCallback(async (files: File[]) => {
-    if (!files.length || loading) return;
+  const handleDropFiles = (files: File[]) => {
     setDragActive(false);
-    setStatus("正在读取拖入文件...");
-    try {
-      const extracted = await extractTextFromFiles(files);
-      setText((current) => appendImportedText(current, extracted.text));
-      setImagePath(files[0]?.name || "");
-      const names = extracted.results.map((result) => result.filename).join("、");
-      setStatus(`已读取 ${names}，可继续解析或导入练习。`);
-    } catch (err) {
-      setStatus(`文件读取失败：${err instanceof Error ? err.message : "未知错误"}`);
+    if (!files.length) return;
+    if (loading) {
+      setStatus("正在处理当前文件，请稍后再拖入。");
+      return;
     }
-  }, [loading]);
+    const currentSource = queuedFileSourceLabel(queuedFiles);
+    const nextFiles = [...queuedFiles, ...files];
+    const nextSource = queuedFileSourceLabel(nextFiles);
+    setQueuedFiles(nextFiles);
+    setParsed(null);
+    setImagePath((current) => {
+      const trimmed = current.trim();
+      return !trimmed || trimmed === currentSource ? nextSource : current;
+    });
+    setStatus(`已导入 ${files.length} 个文件，待解析共 ${nextFiles.length} 个。可继续拖入追加，点击“解析文本”开始识别。`);
+  };
+  const removeQueuedFile = (index: number) => {
+    if (loading) return;
+    const currentSource = queuedFileSourceLabel(queuedFiles);
+    const nextFiles = queuedFiles.filter((_, fileIndex) => fileIndex !== index);
+    const nextSource = queuedFileSourceLabel(nextFiles);
+    setQueuedFiles(nextFiles);
+    setParsed(null);
+    setImagePath((current) => current.trim() === currentSource ? nextSource : current);
+    setStatus(nextFiles.length ? `待解析文件还剩 ${nextFiles.length} 个。` : "已清空待解析文件，可重新拖入或粘贴文本。");
+  };
+  const clearQueuedFiles = () => {
+    if (loading) return;
+    const currentSource = queuedFileSourceLabel(queuedFiles);
+    setQueuedFiles([]);
+    setParsed(null);
+    setImagePath((current) => current.trim() === currentSource ? "" : current);
+    setStatus("已清空待解析文件，可重新拖入或粘贴文本。");
+  };
   return (
     <section className="coming-panel workbench-form">
       <span className="eyebrow">Screenshot（截图）</span>
@@ -305,14 +366,32 @@ function ScreenshotImportPanel({
         }}
       >
         <ImageSquare size={20} />
-        <strong>拖入截图或文本文件</strong>
-        <span>PNG / JPG / TXT / MD / PDF / DOCX</span>
+        <strong>拖入多张截图或文本文件</strong>
+        <span>PNG / JPG / TXT / MD / PDF / DOCX；先进入待解析列表</span>
       </div>
-      <label>源图片路径<input value={imagePath} onChange={(event) => setImagePath(event.target.value)} placeholder="可选，例如 D:/.../word-list.png" /></label>
-      <label>截图识别文本<textarea value={text} onChange={(event) => setText(event.target.value)} placeholder={"粘贴单词列表或题目文本，例如：collision\nn. 碰撞；冲突"} /></label>
+      {queuedFiles.length > 0 && (
+        <div className="queued-file-list" aria-label="待解析文件列表">
+          <div className="queued-file-list-head">
+            <strong>待解析文件</strong>
+            <button type="button" onClick={clearQueuedFiles} disabled={loading}>清空</button>
+          </div>
+          {queuedFiles.map((file, index) => (
+            <div className="queued-file-row" key={`${file.name}-${file.size}-${file.lastModified}-${index}`}>
+              <span title={file.name}>{file.name}</span>
+              <small>{formatFileSize(file.size)}</small>
+              <button type="button" onClick={() => removeQueuedFile(index)} disabled={loading} aria-label={`移除 ${file.name}`}>移除</button>
+            </div>
+          ))}
+        </div>
+      )}
+      <label>源图片路径 / 文件名<input value={imagePath} onChange={(event) => setImagePath(event.target.value)} placeholder="可选，例如 D:/.../word-list.png" /></label>
+      <label>截图识别文本<textarea value={text} onChange={(event) => {
+        setText(event.target.value);
+        setParsed(null);
+      }} placeholder={"粘贴单词列表或题目文本，例如：collision\nn. 碰撞；冲突"} /></label>
       <div className="workbench-actions">
-        <button className="workbench-primary" onClick={() => void parse(false)} disabled={!text.trim() || loading}>解析文本</button>
-        <button onClick={() => void parse(true)} disabled={!text.trim() || loading}>{loading ? "处理中..." : "导入并开始练习"}</button>
+        <button className="workbench-primary" onClick={() => void parse(false)} disabled={!canParse}>{loading ? "解析中..." : "解析文本"}</button>
+        <button onClick={() => void parse(true)} disabled={!canImport}>{loading ? "处理中..." : "导入并开始练习"}</button>
       </div>
       <p className="status-line">{status}</p>
       {parsed && (

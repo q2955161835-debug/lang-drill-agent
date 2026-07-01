@@ -878,6 +878,60 @@ h1, h2, h3, h4, .brand, .kicker { font-weight: 750; letter-spacing: -0.03em; }
   border-color: var(--accent);
   background: color-mix(in srgb, var(--tag-bg) 76%, var(--surface));
 }
+.queued-file-list {
+  display: grid;
+  gap: 8px;
+  border: var(--border-thin);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: 10px;
+}
+.queued-file-list-head,
+.queued-file-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.queued-file-list-head strong {
+  min-width: 0;
+  color: var(--text);
+  font-size: 0.88rem;
+}
+.queued-file-list-head button,
+.queued-file-row button {
+  min-height: 30px;
+  border: var(--border-thin);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  color: var(--muted-strong);
+  padding: 5px 9px;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+.queued-file-row {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  min-height: 36px;
+  border: var(--border-thin);
+  border-radius: 9px;
+  background: var(--surface-strong);
+  padding: 6px 8px;
+}
+.queued-file-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+.queued-file-row small {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
 .option-pills { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .option-pills button, .workbench-actions button, .workbench-primary {
   border: var(--border-thin);
