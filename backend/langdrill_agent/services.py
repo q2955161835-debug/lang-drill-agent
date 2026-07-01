@@ -30,6 +30,234 @@ from .utils import dumps, loads, new_id, normalize_api_key, today_str, validate_
 logger = logging.getLogger(__name__)
 
 
+class AgentSettingsPermissionService:
+    SETTINGS_KEY = "agent.settings.permissions"
+    FEATURES = [
+        {
+            "id": "past_paper_import",
+            "label": "历年真题导入与题型",
+            "description": "允许会话 Agent 解析试卷信息，并在用户确认后填入真题导入表单。",
+            "sensitive": False,
+        },
+        {
+            "id": "profile_exam",
+            "label": "考试与学习目标",
+            "description": "允许会话 Agent 按用户确认的目标调整考试、截止时间和学习背景草稿。",
+            "sensitive": False,
+        },
+        {
+            "id": "model_config",
+            "label": "模型供应商与默认模型",
+            "description": "允许会话 Agent 帮助填写模型供应商、模型名、Base URL（基础网址）和能力开关。",
+            "sensitive": True,
+        },
+        {
+            "id": "context_settings",
+            "label": "上下文容量",
+            "description": "允许会话 Agent 帮助调整上下文容量上限和压缩相关设置。",
+            "sensitive": False,
+        },
+        {
+            "id": "data_paths",
+            "label": "题目数据库目录",
+            "description": "允许会话 Agent 帮助填写题目数据库目录迁移设置；迁移前仍需用户确认。",
+            "sensitive": True,
+        },
+        {
+            "id": "mineru_config",
+            "label": "MinerU token",
+            "description": "允许会话 Agent 帮助打开 MinerU 配置项；token 明文仍只能由用户输入。",
+            "sensitive": True,
+        },
+    ]
+
+    def __init__(self, conn: sqlite3.Connection):
+        self.conn = conn
+
+    def status(self) -> dict[str, Any]:
+        enabled_ids = set(self._enabled_feature_ids())
+        features = [
+            {
+                **feature,
+                "enabled": feature["id"] in enabled_ids,
+            }
+            for feature in self.FEATURES
+        ]
+        return {
+            "features": features,
+            "enabled_feature_ids": [feature["id"] for feature in self.FEATURES if feature["id"] in enabled_ids],
+        }
+
+    def save(self, enabled_feature_ids: list[str]) -> dict[str, Any]:
+        allowed = {feature["id"] for feature in self.FEATURES}
+        clean_ids = []
+        for feature_id in enabled_feature_ids:
+            clean_id = str(feature_id).strip()
+            if clean_id in allowed and clean_id not in clean_ids:
+                clean_ids.append(clean_id)
+        self.conn.execute(
+            """
+            INSERT OR REPLACE INTO app_settings (key, value_json, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            """,
+            (self.SETTINGS_KEY, dumps({"enabled_feature_ids": clean_ids})),
+        )
+        return self.status()
+
+    def is_enabled(self, feature_id: str) -> bool:
+        return feature_id in set(self._enabled_feature_ids())
+
+    def _enabled_feature_ids(self) -> list[str]:
+        row = self.conn.execute(
+            "SELECT value_json FROM app_settings WHERE key=?",
+            (self.SETTINGS_KEY,),
+        ).fetchone()
+        data = loads(row["value_json"], {}) if row else {}
+        return [str(item) for item in data.get("enabled_feature_ids", []) if str(item).strip()]
+
+
+class PastPaperDraftService:
+    QUESTION_TYPE_HINTS = [
+        ("listening", "听力理解", ("听力", "listening", "short conversation", "long conversation", "lecture")),
+        ("reading", "阅读理解", ("阅读", "reading", "passage", "comprehension", "段落匹配", "仔细阅读")),
+        ("translation", "翻译", ("翻译", "translation", "translate")),
+        ("writing", "写作", ("写作", "writing", "essay", "composition")),
+        ("cloze", "完形填空", ("完形", "cloze", "fill in the blank", "blank")),
+        ("vocabulary", "词汇", ("词汇", "vocabulary", "word choice")),
+        ("grammar", "语法", ("语法", "grammar")),
+        ("speaking", "口语", ("口语", "speaking", "oral")),
+    ]
+
+    TITLE_KEYWORDS = ("真题", "试卷", "样卷", "模拟", "CET", "IELTS", "TOEFL", "高考", "四级", "六级", "Sample", "Test")
+
+    def draft(
+        self,
+        *,
+        exam_id: str,
+        title: str = "",
+        year: int | None = None,
+        source_url: str = "",
+        local_path: str = "",
+        summary: str = "",
+        question_types: list[str] | None = None,
+        raw_text: str = "",
+        filename: str = "",
+        model_hint: dict[str, Any] | None = None,
+        include_raw_text: bool = True,
+    ) -> dict[str, Any]:
+        hint = model_hint or {}
+        clean_raw = raw_text.strip()
+        clean_title = self._first_text(title, hint.get("title")) or self._infer_title(clean_raw, filename)
+        clean_year = self._coerce_year(year if year is not None else hint.get("year")) or self._infer_year(
+            " ".join(str(item or "") for item in [clean_title, filename, source_url, local_path, clean_raw[:2000]])
+        )
+        clean_source = self._first_text(source_url, hint.get("source_url"))
+        clean_local_path = self._first_text(local_path, hint.get("local_path"), filename)
+        clean_types = self._normalize_question_types([*(question_types or []), *self._hint_types(hint)])
+        if not clean_types:
+            clean_types = self._detect_question_types(clean_raw)
+        clean_summary = self._first_text(summary, hint.get("summary")) or self._infer_summary(
+            clean_raw,
+            title=clean_title,
+            year=clean_year,
+            question_types=clean_types,
+        )
+        return {
+            "exam_id": exam_id,
+            "title": clean_title,
+            "year": clean_year,
+            "source_url": clean_source,
+            "local_path": clean_local_path,
+            "question_types": clean_types,
+            "summary": clean_summary,
+            "raw_text": clean_raw if include_raw_text else "",
+        }
+
+    def _first_text(self, *values: Any) -> str:
+        for value in values:
+            text = str(value or "").strip()
+            if text:
+                return text
+        return ""
+
+    def _hint_types(self, hint: dict[str, Any]) -> list[str]:
+        value = hint.get("question_types") or hint.get("types") or []
+        if isinstance(value, str):
+            return [item.strip() for item in re.split(r"[，,\n/;；]", value) if item.strip()]
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        return []
+
+    def _normalize_question_types(self, values: list[str]) -> list[str]:
+        clean: list[str] = []
+        for value in values:
+            text = re.sub(r"\s+", " ", str(value or "")).strip(" -:：，,;；")
+            if not text:
+                continue
+            mapped = self._map_question_type(text) or text
+            if mapped not in clean:
+                clean.append(mapped)
+        return clean[:12]
+
+    def _map_question_type(self, text: str) -> str:
+        lower = text.lower()
+        for type_id, label, hints in self.QUESTION_TYPE_HINTS:
+            if lower == type_id or text == label:
+                return type_id
+            if any(hint.lower() in lower for hint in hints):
+                return type_id
+        return ""
+
+    def _detect_question_types(self, raw_text: str) -> list[str]:
+        text = raw_text.lower()
+        detected = []
+        for type_id, _label, hints in self.QUESTION_TYPE_HINTS:
+            if any(hint.lower() in text for hint in hints) and type_id not in detected:
+                detected.append(type_id)
+        return detected[:12]
+
+    def _infer_title(self, raw_text: str, filename: str) -> str:
+        for line in raw_text.splitlines()[:80]:
+            clean = re.sub(r"^[#>\-\s]+", "", line).strip()
+            clean = re.sub(r"\s+", " ", clean)
+            if 4 <= len(clean) <= 90 and any(keyword.lower() in clean.lower() for keyword in self.TITLE_KEYWORDS):
+                return clean
+        if filename:
+            return Path(filename).stem.strip() or filename.strip()
+        return ""
+
+    def _infer_year(self, text: str) -> int | None:
+        match = re.search(r"(?<!\d)(19\d{2}|20\d{2})(?!\d)", text)
+        return int(match.group(1)) if match else None
+
+    def _coerce_year(self, value: Any) -> int | None:
+        try:
+            year = int(value)
+        except (TypeError, ValueError):
+            return None
+        if 1900 <= year <= 2100:
+            return year
+        return None
+
+    def _infer_summary(self, raw_text: str, *, title: str, year: int | None, question_types: list[str]) -> str:
+        parts = []
+        if title:
+            parts.append(f"试卷：{title}")
+        if year:
+            parts.append(f"年份：{year}")
+        if question_types:
+            parts.append(f"检测到题型：{'、'.join(question_types)}")
+        excerpt_lines = [
+            re.sub(r"\s+", " ", line).strip()
+            for line in raw_text.splitlines()
+            if re.sub(r"\s+", " ", line).strip()
+        ][:8]
+        excerpt = "；".join(excerpt_lines)
+        if excerpt:
+            parts.append(f"文本摘要：{excerpt[:260]}")
+        return "；".join(parts)[:420]
+
+
 class ProfileService:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn

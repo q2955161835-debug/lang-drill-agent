@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type DragEvent, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import {
@@ -27,11 +27,12 @@ import {
 } from "@phosphor-icons/react";
 import { apiDelete, apiGet, apiPost } from "./api";
 import { ContextMenu, type ContextMenuItem } from "./components/ContextMenu";
-import { appendImportedText, extractTextFromFiles, fileTitle, fileToDataUrl, isImageFile, uploadPastPaperFile } from "./fileImport";
+import { appendImportedText, extractTextFromFiles, fileTitle, fileToDataUrl, isImageFile, uploadPastPaperDraftFile, uploadPastPaperFile } from "./fileImport";
 import { MarkdownText } from "./components/MarkdownText";
 import { RightWorkbench, type WorkbenchTab } from "./components/RightWorkbench";
 import type {
   AnsweredQuestion,
+  AgentSettingsPermissionsStatus,
   ChatImageAttachment,
   DataPathsStatus,
   DailyPanel,
@@ -41,12 +42,14 @@ import type {
   MinerUConfig,
   ModelConfig,
   ModelOption,
+  PastPaperDraft,
   PastPaperStatus,
   Profile,
   ProviderOption,
   Question,
   ScreenshotImportResult,
   SessionItem,
+  SettingsAction,
   SyllabusStatus,
   ThemeMode,
   ThinkingLevel,
@@ -55,9 +58,18 @@ import type {
 
 gsap.registerPlugin(useGSAP);
 
-function MessageItem({ message, onContextMenu }: { message: Message; onContextMenu: (event: MouseEvent, message: Message) => void }) {
+function MessageItem({
+  message,
+  onContextMenu,
+  onConfirmSettingsAction
+}: {
+  message: Message;
+  onContextMenu: (event: MouseEvent, message: Message) => void;
+  onConfirmSettingsAction: (action: SettingsAction) => void;
+}) {
   const container = useRef<HTMLElement>(null);
   const answeredQuestion = message.payload?.answered_question;
+  const settingsAction = message.payload?.settings_action;
   
   useGSAP(() => {
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -79,9 +91,39 @@ function MessageItem({ message, onContextMenu }: { message: Message; onContextMe
       <div className="avatar">{message.role === "user" ? <UserCircle size={18} /> : <Sparkle size={18} />}</div>
       <div className="message-stack">
         {answeredQuestion && <QuestionReviewCard question={answeredQuestion} />}
+        {settingsAction && <SettingsActionCard action={settingsAction} onConfirm={onConfirmSettingsAction} />}
         <div className="bubble"><MarkdownText content={message.content} /></div>
       </div>
     </article>
+  );
+}
+
+function SettingsActionCard({ action, onConfirm }: { action: SettingsAction; onConfirm: (action: SettingsAction) => void }) {
+  const draft = action.draft;
+  return (
+    <div className="settings-action-card">
+      <div>
+        <strong>{action.label}</strong>
+        <span>{draft.title || "未识别标题"}</span>
+      </div>
+      <dl>
+        <div>
+          <dt>年份</dt>
+          <dd>{draft.year || "待补充"}</dd>
+        </div>
+        <div>
+          <dt>题型</dt>
+          <dd>{draft.question_types?.length ? draft.question_types.join("、") : "待补充"}</dd>
+        </div>
+        <div>
+          <dt>解析</dt>
+          <dd>{action.parser || "草稿"}</dd>
+        </div>
+      </dl>
+      <button className="inline-action primary-inline" type="button" onClick={() => onConfirm(action)}>
+        确认填入设置
+      </button>
+    </div>
   );
 }
 
@@ -370,6 +412,128 @@ const DEFAULT_MINERU_CONFIG: MinerUConfig = {
   token_preview: ""
 };
 
+const DEFAULT_AGENT_PERMISSIONS: AgentSettingsPermissionsStatus = {
+  enabled_feature_ids: [],
+  features: [
+    {
+      id: "past_paper_import",
+      label: "历年真题导入与题型",
+      description: "允许会话 Agent 解析试卷信息，并在用户确认后填入真题导入表单。",
+      enabled: false
+    },
+    {
+      id: "profile_exam",
+      label: "考试与学习目标",
+      description: "允许会话 Agent 按用户确认的目标调整考试、截止时间和学习背景草稿。",
+      enabled: false
+    },
+    {
+      id: "model_config",
+      label: "模型供应商与默认模型",
+      description: "允许会话 Agent 帮助填写模型供应商、模型名、Base URL（基础网址）和能力开关。",
+      enabled: false,
+      sensitive: true
+    },
+    {
+      id: "context_settings",
+      label: "上下文容量",
+      description: "允许会话 Agent 帮助调整上下文容量上限和压缩相关设置。",
+      enabled: false
+    },
+    {
+      id: "data_paths",
+      label: "题目数据库目录",
+      description: "允许会话 Agent 帮助填写题目数据库目录迁移设置；迁移前仍需用户确认。",
+      enabled: false,
+      sensitive: true
+    },
+    {
+      id: "mineru_config",
+      label: "MinerU token",
+      description: "允许会话 Agent 帮助打开 MinerU 配置项；token 明文仍只能由用户输入。",
+      enabled: false,
+      sensitive: true
+    }
+  ]
+};
+
+const PANEL_SIZE_STORAGE_KEY = "langdrill.panelSizes";
+const PANEL_SIZE_LIMITS = {
+  leftDefault: 320,
+  leftMin: 240,
+  leftMax: 520,
+  leftClosed: 72,
+  rightDefault: 390,
+  rightMin: 320,
+  rightMax: 640,
+  rightClosed: 58,
+  centerMin: 520,
+  keyboardStep: 16,
+  keyboardLargeStep: 32
+};
+
+type PanelSizes = {
+  left: number;
+  right: number;
+};
+
+type ResizablePanel = "left" | "right";
+
+type PanelResizeSnapshot = {
+  panel: ResizablePanel;
+  startX: number;
+  startLeft: number;
+  startRight: number;
+};
+
+const DEFAULT_PANEL_SIZES: PanelSizes = {
+  left: PANEL_SIZE_LIMITS.leftDefault,
+  right: PANEL_SIZE_LIMITS.rightDefault
+};
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function validPanelSize(value: unknown, fallback: number, min: number, max: number) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? clamp(numeric, min, max) : fallback;
+}
+
+function loadPanelSizes(): PanelSizes {
+  try {
+    const saved = localStorage.getItem(PANEL_SIZE_STORAGE_KEY);
+    if (!saved) return DEFAULT_PANEL_SIZES;
+    const parsed = JSON.parse(saved) as Partial<PanelSizes>;
+    return {
+      left: validPanelSize(parsed.left, PANEL_SIZE_LIMITS.leftDefault, PANEL_SIZE_LIMITS.leftMin, PANEL_SIZE_LIMITS.leftMax),
+      right: validPanelSize(parsed.right, PANEL_SIZE_LIMITS.rightDefault, PANEL_SIZE_LIMITS.rightMin, PANEL_SIZE_LIMITS.rightMax)
+    };
+  } catch {
+    return DEFAULT_PANEL_SIZES;
+  }
+}
+
+function clampLeftPanelWidth(width: number, rightWidth: number, rightOpen: boolean, viewportWidth: number) {
+  const occupiedRightWidth = rightOpen ? rightWidth : PANEL_SIZE_LIMITS.rightClosed;
+  const maxByViewport = viewportWidth - occupiedRightWidth - PANEL_SIZE_LIMITS.centerMin;
+  const maxWidth = Math.max(PANEL_SIZE_LIMITS.leftMin, Math.min(PANEL_SIZE_LIMITS.leftMax, maxByViewport));
+  return clamp(width, PANEL_SIZE_LIMITS.leftMin, maxWidth);
+}
+
+function clampRightPanelWidth(width: number, leftWidth: number, leftOpen: boolean, viewportWidth: number) {
+  const occupiedLeftWidth = leftOpen ? leftWidth : PANEL_SIZE_LIMITS.leftClosed;
+  const maxByViewport = viewportWidth - occupiedLeftWidth - PANEL_SIZE_LIMITS.centerMin;
+  const maxWidth = Math.max(PANEL_SIZE_LIMITS.rightMin, Math.min(PANEL_SIZE_LIMITS.rightMax, maxByViewport));
+  return clamp(width, PANEL_SIZE_LIMITS.rightMin, maxWidth);
+}
+
+function clampPanelSizes(sizes: PanelSizes, leftOpen: boolean, rightOpen: boolean, viewportWidth: number) {
+  const left = clampLeftPanelWidth(sizes.left, sizes.right, rightOpen, viewportWidth);
+  const right = clampRightPanelWidth(sizes.right, left, leftOpen, viewportWidth);
+  return { left, right };
+}
+
 function isOptionAnswer(content: string) {
   return /^(?:选择?\s*)?[A-D]$/i.test(content.trim()) || /^答案是\s*[A-D]$/i.test(content.trim());
 }
@@ -420,6 +584,20 @@ function formatCompactNumber(value: number | undefined) {
   if (amount >= 100_000_000) return `${(amount / 100_000_000).toFixed(1)}亿`;
   if (amount >= 10_000) return `${(amount / 10_000).toFixed(1)}万`;
   return formatNumber(amount);
+}
+
+function contextPercentFromUsage(tokenUsage: TokenUsage) {
+  const limit = tokenUsage.context_limit || DEFAULT_CONTEXT_LIMIT;
+  const current = tokenUsage.estimated_current_context || 0;
+  const reportedPercent = tokenUsage.context_percent;
+  const ratio = typeof reportedPercent === "number" && Number.isFinite(reportedPercent)
+    ? reportedPercent > 1
+      ? reportedPercent / 100
+      : reportedPercent
+    : limit > 0
+      ? current / limit
+      : 0;
+  return Math.max(0, Math.min(100, Math.round((Number.isFinite(ratio) ? ratio : 0) * 100)));
 }
 
 function formatBytes(value: number | undefined) {
@@ -600,6 +778,8 @@ export default function App() {
   const [tokenUsage, setTokenUsage] = useState<TokenUsage>(DEFAULT_TOKEN_USAGE);
   const [dataPaths, setDataPaths] = useState<DataPathsStatus>(DEFAULT_DATA_PATHS);
   const [mineruConfig, setMineruConfig] = useState<MinerUConfig>(DEFAULT_MINERU_CONFIG);
+  const [agentPermissions, setAgentPermissions] = useState<AgentSettingsPermissionsStatus>(DEFAULT_AGENT_PERMISSIONS);
+  const [pendingPaperDraft, setPendingPaperDraft] = useState<PastPaperDraft | null>(null);
   const [input, setInput] = useState("");
   const [composerAttachments, setComposerAttachments] = useState<ChatImageAttachment[]>([]);
   const [composerDragActive, setComposerDragActive] = useState(false);
@@ -612,6 +792,11 @@ export default function App() {
   const [pendingNewSession, setPendingNewSession] = useState(false);
   const [leftOpen, setLeftOpen] = useState(() => localStorage.getItem("leftOpen") !== "false");
   const [rightOpen, setRightOpen] = useState(false);
+  const [panelSizes, setPanelSizes] = useState<PanelSizes>(() => loadPanelSizes());
+  const panelSizesRef = useRef(panelSizes);
+  const pendingPanelSizesRef = useRef(panelSizes);
+  const resizeSnapshotRef = useRef<PanelResizeSnapshot | null>(null);
+  const [resizingPanel, setResizingPanel] = useState<ResizablePanel | null>(null);
   const [workbenchTab, setWorkbenchTab] = useState<WorkbenchTab>("branch");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
@@ -660,6 +845,96 @@ export default function App() {
     ? modelConfig.thinking_level || ""
     : defaultThinkingLevelForModel(quickProvider, quickCurrentModel);
   const currentModelVision = Boolean(modelConfig.vision);
+  const appShellStyle = {
+    "--left-rail-width": `${panelSizes.left}px`,
+    "--right-rail-width": `${panelSizes.right}px`
+  } as CSSProperties;
+
+  const applyPanelSizeVars = useCallback((sizes: PanelSizes) => {
+    const node = appRef.current;
+    if (!node) return;
+    node.style.setProperty("--left-rail-width", `${sizes.left}px`);
+    node.style.setProperty("--right-rail-width", `${sizes.right}px`);
+  }, []);
+
+  const resizePanelWithKeyboard = useCallback((panel: ResizablePanel, event: KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const step = event.shiftKey ? PANEL_SIZE_LIMITS.keyboardLargeStep : PANEL_SIZE_LIMITS.keyboardStep;
+    const direction = panel === "left"
+      ? (event.key === "ArrowRight" ? 1 : -1)
+      : (event.key === "ArrowLeft" ? 1 : -1);
+
+    setPanelSizes((current) => {
+      const viewportWidth = window.innerWidth;
+      const next = panel === "left"
+        ? {
+            ...current,
+            left: clampLeftPanelWidth(current.left + direction * step, current.right, rightOpen, viewportWidth)
+          }
+        : {
+            ...current,
+            right: clampRightPanelWidth(current.right + direction * step, current.left, leftOpen, viewportWidth)
+          };
+      panelSizesRef.current = next;
+      pendingPanelSizesRef.current = next;
+      applyPanelSizeVars(next);
+      return next;
+    });
+  }, [applyPanelSizeVars, leftOpen, rightOpen]);
+
+  const startPanelResize = useCallback((panel: ResizablePanel, event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    const snapshot: PanelResizeSnapshot = {
+      panel,
+      startX: event.clientX,
+      startLeft: panelSizesRef.current.left,
+      startRight: panelSizesRef.current.right
+    };
+    resizeSnapshotRef.current = snapshot;
+    pendingPanelSizesRef.current = { left: snapshot.startLeft, right: snapshot.startRight };
+    setResizingPanel(panel);
+    document.body.classList.add("panel-resize-active");
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const currentSnapshot = resizeSnapshotRef.current;
+      if (!currentSnapshot) return;
+      const viewportWidth = window.innerWidth;
+      const deltaX = moveEvent.clientX - currentSnapshot.startX;
+      const next = currentSnapshot.panel === "left"
+        ? {
+            left: clampLeftPanelWidth(currentSnapshot.startLeft + deltaX, currentSnapshot.startRight, rightOpen, viewportWidth),
+            right: currentSnapshot.startRight
+          }
+        : {
+            left: currentSnapshot.startLeft,
+            right: clampRightPanelWidth(currentSnapshot.startRight - deltaX, currentSnapshot.startLeft, leftOpen, viewportWidth)
+          };
+      pendingPanelSizesRef.current = next;
+      applyPanelSizeVars(next);
+    };
+
+    const stopResize = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", stopResize);
+      window.removeEventListener("pointercancel", stopResize);
+      document.body.classList.remove("panel-resize-active");
+      resizeSnapshotRef.current = null;
+      setResizingPanel(null);
+      setPanelSizes((current) => {
+        const finalSizes = clampPanelSizes(pendingPanelSizesRef.current || current, leftOpen, rightOpen, window.innerWidth);
+        panelSizesRef.current = finalSizes;
+        pendingPanelSizesRef.current = finalSizes;
+        applyPanelSizeVars(finalSizes);
+        return finalSizes;
+      });
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", stopResize);
+    window.addEventListener("pointercancel", stopResize);
+  }, [applyPanelSizeVars, leftOpen, rightOpen]);
 
   useGSAP(
     () => {
@@ -704,6 +979,27 @@ export default function App() {
   }, [leftOpen]);
 
   useEffect(() => {
+    panelSizesRef.current = panelSizes;
+    pendingPanelSizesRef.current = panelSizes;
+    applyPanelSizeVars(panelSizes);
+    localStorage.setItem(PANEL_SIZE_STORAGE_KEY, JSON.stringify(panelSizes));
+  }, [applyPanelSizeVars, panelSizes]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setPanelSizes((current) => {
+        const next = clampPanelSizes(current, leftOpen, rightOpen, window.innerWidth);
+        panelSizesRef.current = next;
+        pendingPanelSizesRef.current = next;
+        applyPanelSizeVars(next);
+        return next;
+      });
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [applyPanelSizeVars, leftOpen, rightOpen]);
+
+  useEffect(() => {
     localStorage.setItem("expandedDates", JSON.stringify(expandedDates));
   }, [expandedDates]);
 
@@ -739,6 +1035,7 @@ export default function App() {
       exam_options?: ExamOption[];
       syllabus_status?: SyllabusStatus;
       past_paper_status?: PastPaperStatus;
+      agent_permissions?: AgentSettingsPermissionsStatus;
     }>("/api/bootstrap")
       .then((data) => {
         setProfile(data.profile);
@@ -751,6 +1048,7 @@ export default function App() {
         setTokenUsage({ ...DEFAULT_TOKEN_USAGE, ...data.token_usage });
         setDataPaths(data.data_paths || DEFAULT_DATA_PATHS);
         setMineruConfig({ ...DEFAULT_MINERU_CONFIG, ...data.mineru_config });
+        setAgentPermissions(data.agent_permissions || DEFAULT_AGENT_PERMISSIONS);
         setLearningStats(data.learning_stats || DEFAULT_LEARNING_STATS);
         setOnboardingOpen(data.profile.exam_id === "unassigned");
       })
@@ -1044,6 +1342,13 @@ export default function App() {
     if (result.auto_started) setRightOpen(false);
   }, []);
 
+  const handleConfirmSettingsAction = useCallback((action: SettingsAction) => {
+    if (action.type === "past_paper_import_draft") {
+      setPendingPaperDraft(action.draft);
+      setSettingsOpen(true);
+    }
+  }, []);
+
   const hasCurrentImportedContent = hasDailyImportedContent(dailyPanel);
 
   const quickStartToday = useCallback(() => {
@@ -1125,8 +1430,18 @@ export default function App() {
   }, [activeSessionId, copyText, createBranchFromText]);
 
   return (
-    <div className="app-shell" ref={appRef}>
+    <div className={`app-shell ${resizingPanel ? `resizing-panels resizing-${resizingPanel}` : ""}`} ref={appRef} style={appShellStyle}>
       <aside className={`left-rail panel-motion ${leftOpen ? "open" : "closed"}`}>
+        {leftOpen && (
+          <button
+            type="button"
+            className="panel-resizer panel-resizer-left"
+            aria-label="拖拽调整左侧栏宽度"
+            title="拖拽调整左侧栏宽度"
+            onPointerDown={(event) => startPanelResize("left", event)}
+            onKeyDown={(event) => resizePanelWithKeyboard("left", event)}
+          />
+        )}
         <div className="rail-top">
           <InteractiveButton className="icon-button" onClick={() => setLeftOpen((value) => !value)} title="折叠侧栏">
             <Sidebar size={20} />
@@ -1219,7 +1534,12 @@ export default function App() {
             onQuickStart={quickStartToday}
           />
           {messages.map((message) => (
-            <MessageItem key={message.id} message={message} onContextMenu={showMessageMenu} />
+            <MessageItem
+              key={message.id}
+              message={message}
+              onContextMenu={showMessageMenu}
+              onConfirmSettingsAction={handleConfirmSettingsAction}
+            />
           ))}
           {sending && <ThinkingBubble label={loadingLabel} />}
           {activeQuestion?.status === "ready" && (
@@ -1379,6 +1699,8 @@ export default function App() {
         activeTab={workbenchTab}
         onTabChange={setWorkbenchTab}
         onToggle={() => setRightOpen((value) => !value)}
+        onResizeStart={(event) => startPanelResize("right", event)}
+        onResizeKeyDown={(event) => resizePanelWithKeyboard("right", event)}
         onSendBranchMessage={(content) => void sendBranchMessage(content)}
         onDailyPanelChange={setDailyPanel}
         onScreenshotImportComplete={handleScreenshotImportComplete}
@@ -1394,6 +1716,8 @@ export default function App() {
           tokenUsage={tokenUsage}
           dataPaths={dataPaths}
           mineruConfig={mineruConfig}
+          agentPermissions={agentPermissions}
+          pendingPaperDraft={pendingPaperDraft}
           sessions={sessions}
           examOptions={examOptions}
           syllabusStatus={syllabusStatus}
@@ -1413,6 +1737,8 @@ export default function App() {
           onTokenUsageChange={(nextUsage) => setTokenUsage({ ...DEFAULT_TOKEN_USAGE, ...nextUsage })}
           onDataPathsChange={(nextPaths) => setDataPaths({ ...DEFAULT_DATA_PATHS, ...nextPaths })}
           onMinerUConfigChange={(nextConfig) => setMineruConfig({ ...DEFAULT_MINERU_CONFIG, ...nextConfig })}
+          onAgentPermissionsChange={setAgentPermissions}
+          onPaperDraftConsumed={() => setPendingPaperDraft(null)}
           onOpenOnboarding={() => {
             setSettingsOpen(false);
             setOnboardingOpen(true);
@@ -1561,7 +1887,7 @@ function ContextMeter({
 }) {
   const limit = tokenUsage.context_limit || DEFAULT_CONTEXT_LIMIT;
   const current = tokenUsage.estimated_current_context || 0;
-  const percent = Math.min(100, Math.round(((tokenUsage.context_percent ?? current / limit) || 0) * 100));
+  const percent = contextPercentFromUsage(tokenUsage);
   return (
     <div className="context-meter-wrap">
       <button
@@ -1690,6 +2016,8 @@ function SettingsDialog({
   tokenUsage,
   dataPaths,
   mineruConfig,
+  agentPermissions,
+  pendingPaperDraft,
   sessions,
   examOptions,
   syllabusStatus,
@@ -1706,6 +2034,8 @@ function SettingsDialog({
   onTokenUsageChange,
   onDataPathsChange,
   onMinerUConfigChange,
+  onAgentPermissionsChange,
+  onPaperDraftConsumed,
   onOpenOnboarding
 }: {
   profile: Profile;
@@ -1716,6 +2046,8 @@ function SettingsDialog({
   tokenUsage: TokenUsage;
   dataPaths: DataPathsStatus;
   mineruConfig: MinerUConfig;
+  agentPermissions: AgentSettingsPermissionsStatus;
+  pendingPaperDraft: PastPaperDraft | null;
   sessions: SessionItem[];
   examOptions: ExamOption[];
   syllabusStatus: SyllabusStatus;
@@ -1732,6 +2064,8 @@ function SettingsDialog({
   onTokenUsageChange: (usage: TokenUsage) => void;
   onDataPathsChange: (paths: DataPathsStatus) => void;
   onMinerUConfigChange: (config: MinerUConfig) => void;
+  onAgentPermissionsChange: (permissions: AgentSettingsPermissionsStatus) => void;
+  onPaperDraftConsumed: () => void;
   onOpenOnboarding: () => void;
 }) {
   const [draft, setDraft] = useState(profile);
@@ -1752,6 +2086,8 @@ function SettingsDialog({
   const [mineruDraft, setMineruDraft] = useState<MinerUConfig>({ ...DEFAULT_MINERU_CONFIG, ...mineruConfig });
   const [mineruToken, setMineruToken] = useState("");
   const [mineruMessage, setMineruMessage] = useState("");
+  const [permissionDraft, setPermissionDraft] = useState<AgentSettingsPermissionsStatus>(agentPermissions);
+  const [permissionMessage, setPermissionMessage] = useState("");
   const [questionDbFolder, setQuestionDbFolder] = useState(dataPaths.user_data_dir || "");
   const [migrateQuestionDb, setMigrateQuestionDb] = useState(true);
   const [overwriteQuestionDb, setOverwriteQuestionDb] = useState(false);
@@ -1787,6 +2123,28 @@ function SettingsDialog({
   const provider = selectedProvider(providers, modelDraft.provider_id);
   const modelOptions = modelOptionsFor(provider, modelDraft.model);
   const modelThinkingOptions = modelDraft.thinking_level_options || thinkingOptionsForModel(provider, modelDraft.model);
+  const applyPaperDraftToForm = useCallback((draft: PastPaperDraft, message: string) => {
+    setActiveSettingsTab("syllabus");
+    setPaperImportOpen(true);
+    setPaperImportDraft((current) => ({
+      title: draft.title || current.title,
+      year: draft.year ? String(draft.year) : current.year,
+      source_url: draft.source_url || current.source_url,
+      local_path: draft.local_path || current.local_path,
+      summary: draft.summary || current.summary,
+      question_types: draft.question_types?.length ? draft.question_types.join(", ") : current.question_types,
+      raw_text: draft.raw_text || current.raw_text
+    }));
+    setPastPaperMessage(message);
+  }, []);
+  useEffect(() => {
+    setPermissionDraft(agentPermissions);
+  }, [agentPermissions]);
+  useEffect(() => {
+    if (!pendingPaperDraft) return;
+    applyPaperDraftToForm(pendingPaperDraft, "已由会话 Agent 填入试卷导入草稿，保存前可继续修改。");
+    onPaperDraftConsumed();
+  }, [applyPaperDraftToForm, onPaperDraftConsumed, pendingPaperDraft]);
   const chooseProvider = (providerId: string) => {
     const nextProvider = selectedProvider(providers, providerId);
     const nextModel = modelOptionsFor(nextProvider, nextProvider.model)[0]?.id || nextProvider.model || "";
@@ -1911,6 +2269,36 @@ function SettingsDialog({
       setPastPaperMessage("题型生成范围已保存。");
     } catch (err) {
       setPastPaperMessage(err instanceof Error ? err.message : "题型保存失败");
+    }
+  };
+  const draftPastPaperImport = async () => {
+    setPastPaperMessage("正在解析试卷草稿...");
+    try {
+      const questionTypes = paperImportDraft.question_types.split(/[，,\n]/).map((item) => item.trim()).filter(Boolean);
+      const data = paperImportFile
+        ? await uploadPastPaperDraftFile<{ draft: PastPaperDraft; parser: string; message: string; file_parser?: string }>(paperImportFile, {
+          exam_id: draft.exam_id,
+          title: paperImportDraft.title.trim() || fileTitle(paperImportFile),
+          year: paperImportDraft.year,
+          source_url: paperImportDraft.source_url,
+          summary: paperImportDraft.summary,
+          question_types: paperImportDraft.question_types,
+          parse_now: false
+        })
+        : await apiPost<{ draft: PastPaperDraft; parser: string; message: string; file_parser?: string }>("/api/past-papers/draft", {
+          exam_id: draft.exam_id,
+          title: paperImportDraft.title,
+          year: paperImportDraft.year ? Number(paperImportDraft.year) : null,
+          source_url: paperImportDraft.source_url,
+          local_path: paperImportDraft.local_path,
+          summary: paperImportDraft.summary,
+          question_types: questionTypes,
+          raw_text: paperImportDraft.raw_text,
+          filename: paperImportDraft.local_path
+        });
+      applyPaperDraftToForm(data.draft, data.file_parser ? `${data.message} 文件解析器：${data.file_parser}` : data.message);
+    } catch (err) {
+      setPastPaperMessage(err instanceof Error ? err.message : "草稿解析失败");
     }
   };
   const importPastPaper = async () => {
@@ -2206,12 +2594,45 @@ function SettingsDialog({
       setMineruMessage(err instanceof Error ? err.message : "MinerU token 保存失败");
     }
   };
+  const toggleAgentPermission = (featureId: string) => {
+    const enabled = new Set(permissionDraft.enabled_feature_ids);
+    if (enabled.has(featureId)) {
+      enabled.delete(featureId);
+    } else {
+      enabled.add(featureId);
+    }
+    const nextIds = permissionDraft.features
+      .map((feature) => feature.id)
+      .filter((featureIdItem) => enabled.has(featureIdItem));
+    setPermissionDraft({
+      enabled_feature_ids: nextIds,
+      features: permissionDraft.features.map((feature) => ({
+        ...feature,
+        enabled: enabled.has(feature.id)
+      }))
+    });
+    setPermissionMessage("");
+  };
+  const saveAgentPermissions = async () => {
+    setPermissionMessage("正在保存权限...");
+    try {
+      const data = await apiPost<{ agent_permissions: AgentSettingsPermissionsStatus }>("/api/settings/agent-permissions", {
+        enabled_feature_ids: permissionDraft.enabled_feature_ids
+      });
+      setPermissionDraft(data.agent_permissions);
+      onAgentPermissionsChange(data.agent_permissions);
+      setPermissionMessage("Agent 设置权限已保存。");
+    } catch (err) {
+      setPermissionMessage(err instanceof Error ? err.message : "权限保存失败");
+    }
+  };
   const settingTabs = [
     { id: "model", label: "模型", icon: GearSix },
     { id: "exam", label: "考试", icon: Target },
     { id: "syllabus", label: "考纲", icon: ListBullets },
     { id: "tokens", label: "令牌", icon: Brain },
     { id: "data", label: "数据", icon: Database },
+    { id: "permissions", label: "权限", icon: ShieldCheck },
     { id: "study", label: "学习", icon: ShieldCheck },
     { id: "appearance", label: "外观", icon: Moon }
   ];
@@ -2506,6 +2927,7 @@ function SettingsDialog({
                     <textarea value={paperImportDraft.raw_text} onChange={(event) => setPaperImportDraft({ ...paperImportDraft, raw_text: event.target.value })} placeholder="可直接粘贴试卷文本或已提取的 Markdown；填写后会保存到 papers/<考试>/raw 并解析" />
                     <textarea value={paperImportDraft.summary} onChange={(event) => setPaperImportDraft({ ...paperImportDraft, summary: event.target.value })} placeholder="风格摘要、题量、分值、注意事项；不要粘贴大段受版权限制的完整真题原文" />
                     <div className="paper-import-actions">
+                      <button type="button" className="inline-action" onClick={() => void draftPastPaperImport()}><Sparkle size={16} /> 解析草稿</button>
                       <button type="button" className="inline-action" onClick={() => void importPastPaper()}><Plus size={16} /> 确认加入试卷</button>
                       <button type="button" className="inline-action" onClick={() => setPaperImportOpen(false)}>收起</button>
                     </div>
@@ -2700,6 +3122,39 @@ function SettingsDialog({
                   </button>
                 </div>
                 {dataPathMessage && <p className="hint strong-hint">{dataPathMessage}</p>}
+              </SettingSection>
+            )}
+            {activeSettingsTab === "permissions" && (
+              <SettingSection title="Agent 设置权限">
+                <p className="hint">这些权限只允许会话 Agent 先生成可确认草稿或打开对应设置动作；保存、迁移、密钥输入等关键步骤仍需要用户确认。</p>
+                <div className="permission-grid">
+                  {permissionDraft.features.map((feature) => (
+                    <label className="check-row permission-row" key={feature.id}>
+                      <input
+                        type="checkbox"
+                        checked={permissionDraft.enabled_feature_ids.includes(feature.id)}
+                        onChange={() => toggleAgentPermission(feature.id)}
+                      />
+                      <span>
+                        <strong>{feature.label}{feature.sensitive ? "（敏感）" : ""}</strong>
+                        <small>{feature.description}</small>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <div className="inline-row wrap-row">
+                  <button className="inline-action primary-inline" onClick={() => void saveAgentPermissions()}>保存权限</button>
+                  <button
+                    className="inline-action"
+                    onClick={() => {
+                      setPermissionDraft(agentPermissions);
+                      setPermissionMessage("已恢复当前已保存权限。");
+                    }}
+                  >
+                    恢复当前权限
+                  </button>
+                </div>
+                {permissionMessage && <p className="hint strong-hint">{permissionMessage}</p>}
               </SettingSection>
             )}
             {activeSettingsTab === "study" && (

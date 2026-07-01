@@ -226,6 +226,18 @@ class PastPaperImportRequest(BaseModel):
     parse_now: bool = True
 
 
+class PastPaperDraftRequest(BaseModel):
+    exam_id: str
+    title: str = ""
+    year: int | None = None
+    source_url: str = ""
+    local_path: str = ""
+    summary: str = ""
+    question_types: list[str] = Field(default_factory=list)
+    raw_text: str = ""
+    filename: str = ""
+
+
 class PastPaperSearchImportRequest(BaseModel):
     exam_id: str
     source_website: str = ""
@@ -239,6 +251,10 @@ class PastPaperParseRequest(BaseModel):
 class QuestionTypeSelectRequest(BaseModel):
     exam_id: str
     enabled_type_ids: list[str] = Field(default_factory=list)
+
+
+class AgentSettingsPermissionRequest(BaseModel):
+    enabled_feature_ids: list[str] = Field(default_factory=list)
 
 
 class PhoneMirrorStartRequest(BaseModel):

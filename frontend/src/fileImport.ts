@@ -77,3 +77,16 @@ export async function uploadPastPaperFile<T>(file: File, params: PastPaperUpload
   if (params.year) query.set("year", params.year);
   return apiPostFile<T>(`/api/past-papers/import-file?${query.toString()}`, file);
 }
+
+export async function uploadPastPaperDraftFile<T>(file: File, params: PastPaperUploadParams) {
+  const query = new URLSearchParams({
+    exam_id: params.exam_id,
+    title: params.title,
+    filename: file.name,
+    source_url: params.source_url || "",
+    summary: params.summary || "",
+    question_types: params.question_types || "",
+  });
+  if (params.year) query.set("year", params.year);
+  return apiPostFile<T>(`/api/past-papers/draft-file?${query.toString()}`, file);
+}
