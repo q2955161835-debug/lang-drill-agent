@@ -46,6 +46,9 @@ def test_agent_settings_permissions_default_enables_non_sensitive_and_save() -> 
     assert status["enabled_feature_ids"] == DEFAULT_ENABLED_PERMISSION_IDS
     assert all(feature["enabled"] is True for feature in status["features"] if feature["default_enabled"])
     assert next(feature for feature in status["features"] if feature["id"] == "skills")["enabled"] is False
+    custom_models = next(feature for feature in status["features"] if feature["id"] == "custom_models")
+    assert custom_models["enabled"] is False
+    assert custom_models["sensitive"] is True
     assert all(
         feature["enabled"] is False
         for feature in status["features"]
@@ -206,6 +209,36 @@ def test_chat_settings_requires_permission_then_returns_action(tmp_path: Path, m
     assert action["draft"]["title"] == "2025 年 6 月英语四级真题"
     assert action["draft"]["year"] == 2025
     assert {"writing", "listening", "reading", "translation"} <= set(action["draft"]["question_types"])
+
+
+def test_custom_model_settings_action_requires_permission(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "custom-model-permission.db"
+    monkeypatch.setenv("LANGDRILL_DB_PATH", str(db_path))
+    monkeypatch.setenv("LANGDRILL_DEFAULT_PROVIDER", "mock")
+    monkeypatch.setenv("LANGDRILL_DEFAULT_MODEL", "mock-tutor-v1")
+    init_db(db_path)
+    client = TestClient(_api_app())
+    client.post("/api/settings/agent-permissions", json={"enabled_feature_ids": []})
+    content = "请添加自定义模型 model: mimo-v2.5-ultra，显示名称：MiMo Ultra，上下文 100万，支持图片"
+
+    blocked = client.post("/api/chat", json={"content": content})
+    assert blocked.status_code == 200
+    assert "还没有授权" in blocked.json()["message"]["content"]
+    assert "settings_action" not in blocked.json()["message"]["payload"]
+
+    client.post("/api/settings/agent-permissions", json={"enabled_feature_ids": ["custom_models"]})
+    allowed = client.post("/api/chat", json={"content": content, "force_new_session": True})
+
+    assert allowed.status_code == 200
+    payload = allowed.json()["message"]["payload"]
+    action = payload["settings_action"]
+    assert action["type"] == "custom_model_draft"
+    assert action["feature_id"] == "custom_models"
+    assert action["confirmation_required"] is True
+    assert action["draft"]["model"] == "mimo-v2.5-ultra"
+    assert action["draft"]["label"] == "MiMo Ultra"
+    assert action["draft"]["context_tokens"] == 1000000
+    assert action["draft"]["vision"] is True
 
 
 def test_screenshot_import_permission_can_block_inline_database_write(tmp_path: Path, monkeypatch) -> None:

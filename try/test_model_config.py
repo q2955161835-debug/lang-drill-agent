@@ -538,6 +538,71 @@ def test_model_visibility_hides_model_from_picker_metadata(tmp_path, monkeypatch
     assert result["message"] == "模型 mimo-v2.5-pro 已隐藏。"
 
 
+def test_custom_model_can_be_added_and_deleted(tmp_path, monkeypatch):
+    monkeypatch.setattr(services_module, "PROJECT_ROOT", tmp_path)
+    service = ModelConfigService(_settings_conn())
+
+    added = service.add_custom_model(
+        "mimo",
+        "mimo-v2.5-ultra",
+        label="MiMo Ultra",
+        context_tokens=1200000,
+        vision=True,
+    )
+    mimo = next(item for item in added["providers"] if item["id"] == "mimo")
+    custom = next(item for item in mimo["model_options"] if item["id"] == "mimo-v2.5-ultra")
+
+    assert custom["label"] == "MiMo Ultra"
+    assert custom["context_tokens"] == 1200000
+    assert custom["vision"] is True
+    assert custom["custom"] is True
+
+    deleted = service.delete_custom_model("mimo", "mimo-v2.5-ultra")
+    mimo_after = next(item for item in deleted["providers"] if item["id"] == "mimo")
+
+    assert all(item["id"] != "mimo-v2.5-ultra" for item in mimo_after["model_options"])
+    assert deleted["message"] == "自定义模型 mimo-v2.5-ultra 已删除。"
+
+
+def test_delete_custom_model_rejects_builtin_model(tmp_path, monkeypatch):
+    monkeypatch.setattr(services_module, "PROJECT_ROOT", tmp_path)
+    service = ModelConfigService(_settings_conn())
+
+    with pytest.raises(ValueError, match="只能删除手动添加"):
+        service.delete_custom_model("mimo", "mimo-v2.5")
+
+
+def test_custom_model_api_adds_and_deletes_model(tmp_path, monkeypatch):
+    monkeypatch.setenv("LANGDRILL_USER_DATA_DIR", str(tmp_path / "user"))
+    monkeypatch.setenv("LANGDRILL_DB_PATH", str(tmp_path / "user" / "data" / "langdrill_agent.db"))
+    monkeypatch.setattr(services_module, "PROJECT_ROOT", tmp_path)
+
+    client = TestClient(app)
+    added = client.post(
+        "/api/model-config/models/custom",
+        json={
+            "provider_id": "mimo",
+            "model": "mimo-v2.5-ultra",
+            "label": "MiMo Ultra",
+            "context_tokens": 1000000,
+            "vision": True,
+        },
+    )
+
+    assert added.status_code == 200
+    mimo = next(item for item in added.json()["providers"] if item["id"] == "mimo")
+    assert next(item for item in mimo["model_options"] if item["id"] == "mimo-v2.5-ultra")["custom"] is True
+
+    deleted = client.post(
+        "/api/model-config/models/custom/delete",
+        json={"provider_id": "mimo", "model": "mimo-v2.5-ultra"},
+    )
+
+    assert deleted.status_code == 200
+    mimo_after = next(item for item in deleted.json()["providers"] if item["id"] == "mimo")
+    assert all(item["id"] != "mimo-v2.5-ultra" for item in mimo_after["model_options"])
+
+
 def test_mineru_token_status_is_secret_safe(tmp_path, monkeypatch):
     monkeypatch.setattr(services_module, "PROJECT_ROOT", tmp_path)
     monkeypatch.delenv("MINERU_TOKEN", raising=False)
