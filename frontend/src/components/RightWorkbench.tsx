@@ -1,9 +1,10 @@
-import { useState, type DragEvent } from "react";
+import { useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import {
   CaretLeft,
   CaretRight,
   ChatsCircle,
   DeviceMobile,
+  FolderOpen,
   GitBranch,
   ImageSquare,
   MicrophoneStage,
@@ -247,6 +248,7 @@ function ScreenshotImportPanel({
   const [loading, setLoading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [queuedFiles, setQueuedFiles] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const canParse = Boolean(text.trim() || queuedFiles.length) && !loading;
   const canImport = Boolean(text.trim() && !queuedFiles.length) && !loading;
   const parse = async (startDrill: boolean) => {
@@ -324,6 +326,10 @@ function ScreenshotImportPanel({
     });
     setStatus(`已导入 ${files.length} 个文件，待解析共 ${nextFiles.length} 个。可继续拖入追加，点击“解析文本”开始识别。`);
   };
+  const handleFileInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+    handleDropFiles(Array.from(event.target.files || []));
+    event.target.value = "";
+  };
   const removeQueuedFile = (index: number) => {
     if (loading) return;
     const currentSource = queuedFileSourceLabel(queuedFiles);
@@ -366,8 +372,19 @@ function ScreenshotImportPanel({
         }}
       >
         <ImageSquare size={20} />
-        <strong>拖入多张截图或文本文件</strong>
+        <strong>拖入或选择多张截图/文本文件</strong>
         <span>PNG / JPG / TXT / MD / PDF / DOCX；先进入待解析列表</span>
+        <input
+          ref={fileInputRef}
+          className="hidden-file-input"
+          type="file"
+          multiple
+          accept=".png,.jpg,.jpeg,.jp2,.webp,.gif,.bmp,.txt,.md,.markdown,.pdf,.doc,.docx,image/*"
+          onChange={handleFileInputChange}
+        />
+        <button type="button" className="drop-zone-action" onClick={() => fileInputRef.current?.click()} disabled={loading}>
+          <FolderOpen size={16} /> 选择文件
+        </button>
       </div>
       {queuedFiles.length > 0 && (
         <div className="queued-file-list" aria-label="待解析文件列表">

@@ -862,7 +862,7 @@ h1, h2, h3, h4, .brand, .kicker { font-weight: 750; letter-spacing: -0.03em; }
   padding: 12px;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
-.drop-zone svg { color: var(--accent); grid-row: span 2; }
+.drop-zone > svg { color: var(--accent); grid-row: span 3; }
 .drop-zone strong {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -878,6 +878,24 @@ h1, h2, h3, h4, .brand, .kicker { font-weight: 750; letter-spacing: -0.03em; }
   border-color: var(--accent);
   background: color-mix(in srgb, var(--tag-bg) 76%, var(--surface));
 }
+.hidden-file-input { display: none; }
+.drop-zone-action {
+  grid-column: 2;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  border: var(--border-thin);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 7px 11px;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+.drop-zone-action:hover { background: var(--surface-strong); }
+.drop-zone-action svg { color: var(--accent); }
 .queued-file-list {
   display: grid;
   gap: 8px;
@@ -927,10 +945,13 @@ h1, h2, h3, h4, .brand, .kicker { font-weight: 750; letter-spacing: -0.03em; }
   font-weight: 700;
 }
 .queued-file-row small {
-  color: var(--muted);
   font-size: 0.74rem;
-  font-weight: 700;
+  font-weight: 750;
   white-space: nowrap;
+  border-radius: var(--radius-sm);
+  background: var(--tag-bg);
+  color: var(--accent);
+  padding: 4px 7px;
 }
 .option-pills { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .option-pills button, .workbench-actions button, .workbench-primary {
@@ -1129,6 +1150,12 @@ h1, h2, h3, h4, .brand, .kicker { font-weight: 750; letter-spacing: -0.03em; }
   gap: 10px;
 }
 .paper-import-drop { grid-column: 1 / -1; }
+.paper-import-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
 .check-row {
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr);
