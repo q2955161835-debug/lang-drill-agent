@@ -34,40 +34,74 @@ class AgentSettingsPermissionService:
     SETTINGS_KEY = "agent.settings.permissions"
     FEATURES = [
         {
+            "id": "screenshot_import",
+            "label": "截图导入与词表入库",
+            "description": "允许会话 Agent 触发截图/文件词表解析，把确认后的单词写入学习库并创建练习会话。",
+            "sensitive": False,
+            "default_enabled": True,
+        },
+        {
+            "id": "learning_database",
+            "label": "单词、题目与作答数据库",
+            "description": "允许会话 Agent 通过正式学习流程创建知识项、题目、作答记录和掌握度统计。",
+            "sensitive": False,
+            "default_enabled": True,
+        },
+        {
             "id": "past_paper_import",
             "label": "历年真题导入与题型",
             "description": "允许会话 Agent 解析试卷信息，并在用户确认后填入真题导入表单。",
             "sensitive": False,
+            "default_enabled": True,
+        },
+        {
+            "id": "web_search_import",
+            "label": "联网搜索导入",
+            "description": "允许会话 Agent 使用无需个人 API Key 的本地 Skills 生成真题来源搜索索引和可核验来源。",
+            "sensitive": False,
+            "default_enabled": True,
         },
         {
             "id": "profile_exam",
             "label": "考试与学习目标",
             "description": "允许会话 Agent 按用户确认的目标调整考试、截止时间和学习背景草稿。",
             "sensitive": False,
-        },
-        {
-            "id": "model_config",
-            "label": "模型供应商与默认模型",
-            "description": "允许会话 Agent 帮助填写模型供应商、模型名、Base URL（基础网址）和能力开关。",
-            "sensitive": True,
+            "default_enabled": True,
         },
         {
             "id": "context_settings",
             "label": "上下文容量",
             "description": "允许会话 Agent 帮助调整上下文容量上限和压缩相关设置。",
             "sensitive": False,
+            "default_enabled": True,
+        },
+        {
+            "id": "skills",
+            "label": "Skills 功能",
+            "description": "允许会话 Agent 读取已安装的本地 Skills 能力，并优先使用无需密钥的技能辅助搜索和导入。",
+            "sensitive": False,
+            "default_enabled": True,
+        },
+        {
+            "id": "model_config",
+            "label": "模型供应商与默认模型",
+            "description": "允许会话 Agent 帮助填写模型供应商、模型名、Base URL（基础网址）和能力开关。",
+            "sensitive": True,
+            "default_enabled": False,
         },
         {
             "id": "data_paths",
             "label": "题目数据库目录",
             "description": "允许会话 Agent 帮助填写题目数据库目录迁移设置；迁移前仍需用户确认。",
             "sensitive": True,
+            "default_enabled": False,
         },
         {
             "id": "mineru_config",
             "label": "MinerU token",
             "description": "允许会话 Agent 帮助打开 MinerU 配置项；token 明文仍只能由用户输入。",
             "sensitive": True,
+            "default_enabled": False,
         },
     ]
 
@@ -86,6 +120,26 @@ class AgentSettingsPermissionService:
         return {
             "features": features,
             "enabled_feature_ids": [feature["id"] for feature in self.FEATURES if feature["id"] in enabled_ids],
+            "groups": [
+                {
+                    "id": "default_enabled",
+                    "label": "默认开启的能力权限",
+                    "feature_ids": [
+                        feature["id"]
+                        for feature in self.FEATURES
+                        if not bool(feature.get("sensitive"))
+                    ],
+                },
+                {
+                    "id": "sensitive",
+                    "label": "敏感设置权限",
+                    "feature_ids": [
+                        feature["id"]
+                        for feature in self.FEATURES
+                        if bool(feature.get("sensitive"))
+                    ],
+                },
+            ],
         }
 
     def save(self, enabled_feature_ids: list[str]) -> dict[str, Any]:
@@ -112,8 +166,159 @@ class AgentSettingsPermissionService:
             "SELECT value_json FROM app_settings WHERE key=?",
             (self.SETTINGS_KEY,),
         ).fetchone()
-        data = loads(row["value_json"], {}) if row else {}
+        if not row:
+            return [
+                str(feature["id"])
+                for feature in self.FEATURES
+                if bool(feature.get("default_enabled"))
+            ]
+        data = loads(row["value_json"], {})
         return [str(item) for item in data.get("enabled_feature_ids", []) if str(item).strip()]
+
+
+class SkillRegistryService:
+    DEFAULT_SEARCH_ROOT = Path("D:/2Folder/skills")
+    RECOMMENDED_WEB_SEARCH_SKILL = {
+        "id": "multi-search-engine",
+        "name": "multi-search-engine",
+        "label": "Multi Search Engine",
+        "description": "生成可审计的多搜索引擎查询 URL，支持中英文搜索、站点限定、文件类型和时间范围；不需要个人 API Key 或 token。",
+        "homepage": "https://clawhub.com/skills/multi-search-engine",
+        "requires_api_key": False,
+        "requires_token": False,
+        "permission_feature_id": "web_search_import",
+        "reason": "适合为真题、考纲和来源网站生成可核验搜索入口，避免绑定需要个人申请的搜索 API。",
+    }
+
+    def __init__(self, skills_roots: list[Path] | None = None):
+        env_roots = [
+            Path(item.strip())
+            for item in os.getenv("LANGDRILL_SKILLS_ROOTS", "").split(os.pathsep)
+            if item.strip()
+        ]
+        roots = skills_roots or [
+            *env_roots,
+            self.DEFAULT_SEARCH_ROOT,
+            Path.home() / ".agents" / "skills",
+            Path.home() / ".codex" / "skills",
+        ]
+        self.skills_roots = self._dedupe_roots(roots)
+
+    def status(self) -> dict[str, Any]:
+        installed = self.installed_skills()
+        web_search_skill = next(
+            (skill for skill in installed if skill["id"] == self.RECOMMENDED_WEB_SEARCH_SKILL["id"]),
+            None,
+        )
+        if web_search_skill:
+            web_search_skill = {
+                **web_search_skill,
+                **self.RECOMMENDED_WEB_SEARCH_SKILL,
+                "path": web_search_skill.get("path", ""),
+                "skill_file": web_search_skill.get("skill_file", ""),
+                "requires_api_key": False,
+                "requires_token": False,
+                "installed": True,
+            }
+        else:
+            web_search_skill = {
+                **self.RECOMMENDED_WEB_SEARCH_SKILL,
+                "installed": False,
+                "path": str(self.DEFAULT_SEARCH_ROOT / self.RECOMMENDED_WEB_SEARCH_SKILL["id"]),
+            }
+        no_key_skill_ids = [
+            str(skill["id"])
+            for skill in installed
+            if not bool(skill.get("requires_api_key")) and not bool(skill.get("requires_token"))
+        ]
+        return {
+            "skills_roots": [str(path) for path in self.skills_roots],
+            "installed": installed,
+            "installed_count": len(installed),
+            "no_key_skill_ids": no_key_skill_ids,
+            "web_search_skill": web_search_skill,
+            "permission_feature_id": "skills",
+            "web_search_permission_feature_id": "web_search_import",
+            "message": "已优先选择无需个人 API Key 或 token 的 multi-search-engine 作为联网搜索导入技能。",
+        }
+
+    def installed_skills(self) -> list[dict[str, Any]]:
+        skills: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for root in self.skills_roots:
+            if not root.exists() or not root.is_dir():
+                continue
+            for skill_dir in sorted(root.iterdir(), key=lambda item: item.name.lower()):
+                if not skill_dir.is_dir():
+                    continue
+                skill_file = skill_dir / "SKILL.md"
+                if not skill_file.exists():
+                    continue
+                skill = self._skill_from_file(skill_file)
+                if skill["id"] in seen:
+                    continue
+                seen.add(skill["id"])
+                skills.append(skill)
+        return skills
+
+    def _skill_from_file(self, skill_file: Path) -> dict[str, Any]:
+        text = skill_file.read_text(encoding="utf-8", errors="ignore")
+        metadata = self._frontmatter(text)
+        skill_id = str(metadata.get("name") or skill_file.parent.name).strip() or skill_file.parent.name
+        description = str(metadata.get("description") or "").strip()
+        lower = text.lower()
+        no_key = (
+            "does not require api keys" in lower
+            or "no api keys" in lower
+            or "无需" in text and ("api key" in lower or "token" in lower)
+            or "不需要" in text and ("api key" in lower or "token" in lower)
+        )
+        requires_secret = not no_key and (
+            "requires api key" in lower
+            or "api key required" in lower
+            or "requires token" in lower
+            or "token required" in lower
+        )
+        return {
+            "id": skill_id,
+            "name": skill_id,
+            "label": skill_id.replace("-", " ").title(),
+            "description": description,
+            "path": str(skill_file.parent),
+            "skill_file": str(skill_file),
+            "homepage": str(metadata.get("homepage") or ""),
+            "requires_api_key": bool(requires_secret),
+            "requires_token": bool(requires_secret),
+            "installed": True,
+        }
+
+    def _frontmatter(self, text: str) -> dict[str, str]:
+        if not text.startswith("---"):
+            return {}
+        parts = text.split("---", 2)
+        if len(parts) < 3:
+            return {}
+        metadata: dict[str, str] = {}
+        for line in parts[1].splitlines():
+            if ":" not in line:
+                continue
+            key, value = line.split(":", 1)
+            clean_key = key.strip()
+            clean_value = value.strip().strip('"').strip("'")
+            if clean_key in {"name", "description", "homepage"}:
+                metadata[clean_key] = clean_value
+        return metadata
+
+    def _dedupe_roots(self, roots: list[Path]) -> list[Path]:
+        deduped: list[Path] = []
+        seen: set[str] = set()
+        for root in roots:
+            key = str(root.expanduser()).lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(root.expanduser())
+        return deduped
 
 
 class PastPaperDraftService:

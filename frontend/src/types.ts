@@ -84,11 +84,45 @@ export type AgentSettingPermissionFeature = {
   description: string;
   enabled: boolean;
   sensitive?: boolean;
+  default_enabled?: boolean;
+};
+
+export type AgentSettingPermissionGroup = {
+  id: string;
+  label: string;
+  feature_ids: string[];
 };
 
 export type AgentSettingsPermissionsStatus = {
   features: AgentSettingPermissionFeature[];
   enabled_feature_ids: string[];
+  groups?: AgentSettingPermissionGroup[];
+};
+
+export type SkillInfo = {
+  id: string;
+  name: string;
+  label: string;
+  description: string;
+  path?: string;
+  skill_file?: string;
+  homepage?: string;
+  requires_api_key?: boolean;
+  requires_token?: boolean;
+  installed?: boolean;
+  permission_feature_id?: string;
+  reason?: string;
+};
+
+export type SkillsStatus = {
+  skills_roots: string[];
+  installed: SkillInfo[];
+  installed_count: number;
+  no_key_skill_ids: string[];
+  web_search_skill: SkillInfo;
+  permission_feature_id: string;
+  web_search_permission_feature_id: string;
+  message?: string;
 };
 
 export type SessionItem = {

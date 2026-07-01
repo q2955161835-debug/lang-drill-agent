@@ -64,6 +64,7 @@ from .services import (
     ProfileService,
     QuestionService,
     SessionService,
+    SkillRegistryService,
     SourceService,
     SyllabusService,
 )
@@ -73,6 +74,16 @@ from .utils import dumps, loads, new_id
 
 app = FastAPI(title="Lang Drill Agent API")
 logger = logging.getLogger(__name__)
+
+
+def _missing_agent_permissions(conn, feature_ids: list[str]) -> list[str]:
+    permission_service = AgentSettingsPermissionService(conn)
+    return [feature_id for feature_id in feature_ids if not permission_service.is_enabled(feature_id)]
+
+
+def _require_agent_permissions(conn, feature_ids: list[str], detail: str) -> None:
+    if _missing_agent_permissions(conn, feature_ids):
+        raise HTTPException(status_code=403, detail=detail)
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
@@ -267,11 +278,12 @@ def _general_chat_response(
                 "content": (
                     "你是 Lang Drill Agent 的语言学习聊天助手，了解本程序能力：普通学习聊天、题组练习、答题讲解、"
                     "右侧截图导入、主聊天粘贴词表或拖入文件/图片、分支对话、模型设置、上下文压缩、MinerU 配置、"
-                    "历年真题导入和本地数据库目录设置。普通寒暄、学习建议、澄清问题只自然回复；不要生成正式题组，"
-                    "不要声称已经入库题目，不要输出 JSON。如果用户问你是否能导入单词或截图，不要说没有后台题库权限；"
-                    "应说明可以通过右侧截图导入、主聊天粘贴词表，或拖入 TXT/Markdown/PDF/DOCX/图片触发程序流程。"
+                    "历年真题导入、联网搜索导入、本地 Skills 和本地数据库目录设置。普通寒暄、学习建议、澄清问题只自然回复；"
+                    "不要生成正式题组，不要声称已经入库题目，不要输出 JSON。如果用户问你是否能导入单词、截图或题目，"
+                    "不要说没有后台题库权限；应说明可以在权限开启时通过右侧截图导入、主聊天粘贴词表、"
+                    "拖入 TXT/Markdown/PDF/DOCX/图片，或使用联网搜索导入索引触发程序流程。"
                     "你不能直接读取或填写 API Key、MinerU token、cookie，也不能自行保存模型配置、迁移数据库或导入试卷；"
-                    "设置权限开启时也只能生成可确认草稿，最终保存必须由用户确认。"
+                    "敏感设置权限开启时也只能生成可确认草稿，最终保存必须由用户确认。"
                     "如果用户想练题，应提醒他明确发送词表、截图导入，或使用“出题/练习/刷题”等请求。"
                 ),
             }
@@ -362,6 +374,11 @@ def _screenshot_import_response(
     force_new_session: bool = False,
     auto_start_drill: bool = False,
 ) -> dict:
+    _require_agent_permissions(
+        conn,
+        ["screenshot_import", "learning_database"],
+        "截图导入或学习数据库权限未开启。请在设置里的「权限」页开启后再导入词表。",
+    )
     service = ScreenshotImportService()
     profile = ProfileService(conn).get()
     session_service = SessionService(conn)
@@ -665,6 +682,7 @@ def bootstrap() -> dict:
             "data_paths": DataPathService().status(),
             "mineru_config": MinerUConfigService(conn).status(),
             "agent_permissions": AgentSettingsPermissionService(conn).status(),
+            "skills_status": SkillRegistryService().status(),
         }
 
 
@@ -776,6 +794,11 @@ def save_agent_settings_permissions(request: AgentSettingsPermissionRequest) -> 
         return {"agent_permissions": AgentSettingsPermissionService(conn).save(request.enabled_feature_ids)}
 
 
+@app.get("/api/skills")
+def skills_status() -> dict:
+    return {"skills_status": SkillRegistryService().status()}
+
+
 @app.post("/api/config/providers/custom")
 def add_custom_provider(request: AddCustomProviderRequest) -> dict:
     init_db()
@@ -842,6 +865,39 @@ def chat(request: ChatRequest) -> ChatResponse:
         if not image_attachments and not request.selected_option and not request.question_id and not request.selected_text:
             parsed = ScreenshotImportService().parse_text(request.content)
             if _looks_like_inline_screenshot_words(parsed):
+                missing_permissions = _missing_agent_permissions(conn, ["screenshot_import", "learning_database"])
+                if missing_permissions:
+                    session_service = SessionService(conn)
+                    session_id = session_service.ensure_session(
+                        request.session_id,
+                        request.content or "截图词表导入",
+                        force_new=request.force_new_session,
+                    )
+                    session_service.add_message(
+                        session_id,
+                        "user",
+                        request.content,
+                        {"task": "screenshot_import", "blocked_permissions": missing_permissions},
+                    )
+                    assistant_content = (
+                        "我识别到这是截图词表，但截图导入或学习数据库权限已关闭。\n\n"
+                        "请在设置里的「权限」页开启「截图导入与词表入库」和「单词、题目与作答数据库」，"
+                        "之后再发送词表，我会自动创建截图练习会话并生成考试式题组。"
+                    )
+                    assistant_msg_id = session_service.add_message(
+                        session_id,
+                        "assistant",
+                        assistant_content,
+                        {"source": "screenshot_import_permission_blocked", "blocked_permissions": missing_permissions},
+                    )
+                    return ChatResponse(
+                        session_id=session_id,
+                        message={"id": assistant_msg_id, "role": "assistant", "content": assistant_content},
+                        daily_panel=session_service.daily_panel(session_id),
+                        active_question=None,
+                        token_usage=token_totals(conn, session_id),
+                        learning_stats=LearningStatsService(conn).overview(),
+                    )
                 imported = _screenshot_import_response(
                     conn,
                     parsed=parsed,
@@ -1445,7 +1501,16 @@ def past_paper_parse(request: PastPaperParseRequest) -> dict:
 def past_paper_search_import(request: PastPaperSearchImportRequest) -> dict:
     init_db()
     with transaction() as conn:
-        return PastPaperService(conn).search_import(request.exam_id, request.source_website)
+        _require_agent_permissions(
+            conn,
+            ["skills", "web_search_import"],
+            "联网搜索导入权限未开启。请在设置里的「权限」页开启「Skills 功能」和「联网搜索导入」。",
+        )
+        status = PastPaperService(conn).search_import(request.exam_id, request.source_website)
+        return {
+            **status,
+            "skill": SkillRegistryService().status()["web_search_skill"],
+        }
 
 
 @app.post("/api/past-papers/question-types")
