@@ -6,7 +6,18 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from langdrill_agent.db import init_db
-from langdrill_agent.services import AgentSettingsPermissionService
+from langdrill_agent.services import AgentSettingsPermissionService, SkillRegistryService
+
+
+DEFAULT_ENABLED_PERMISSION_IDS = [
+    "screenshot_import",
+    "learning_database",
+    "past_paper_import",
+    "web_search_import",
+    "profile_exam",
+    "context_settings",
+    "skills",
+]
 
 
 def _api_app():
@@ -28,18 +39,54 @@ def _settings_conn() -> sqlite3.Connection:
     return conn
 
 
-def test_agent_settings_permissions_default_closed_and_save() -> None:
+def test_agent_settings_permissions_default_enables_non_sensitive_and_save() -> None:
     conn = _settings_conn()
     service = AgentSettingsPermissionService(conn)
 
     status = service.status()
-    assert status["enabled_feature_ids"] == []
-    assert all(feature["enabled"] is False for feature in status["features"])
+    assert status["enabled_feature_ids"] == DEFAULT_ENABLED_PERMISSION_IDS
+    assert all(
+        feature["enabled"] is True
+        for feature in status["features"]
+        if not feature["sensitive"]
+    )
+    assert all(
+        feature["enabled"] is False
+        for feature in status["features"]
+        if feature["sensitive"]
+    )
+    assert [group["id"] for group in status["groups"]] == ["default_enabled", "sensitive"]
 
     updated = service.save(["past_paper_import", "unknown", "model_config", "past_paper_import"])
     assert updated["enabled_feature_ids"] == ["past_paper_import", "model_config"]
     assert service.is_enabled("past_paper_import") is True
+    assert service.is_enabled("screenshot_import") is False
     assert service.is_enabled("unknown") is False
+
+
+def test_skill_registry_selects_no_key_web_search_skill(tmp_path: Path) -> None:
+    skill_dir = tmp_path / "multi-search-engine"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: multi-search-engine
+description: Build auditable search URLs with no API keys.
+---
+
+# Multi Search Engine
+
+This skill does not require API keys.
+""",
+        encoding="utf-8",
+    )
+
+    status = SkillRegistryService([tmp_path]).status()
+
+    assert status["installed_count"] == 1
+    assert status["web_search_skill"]["id"] == "multi-search-engine"
+    assert status["web_search_skill"]["installed"] is True
+    assert status["web_search_skill"]["requires_api_key"] is False
+    assert "multi-search-engine" in status["no_key_skill_ids"]
 
 
 def test_agent_permissions_api_round_trip(tmp_path: Path, monkeypatch) -> None:
@@ -50,7 +97,7 @@ def test_agent_permissions_api_round_trip(tmp_path: Path, monkeypatch) -> None:
 
     default_response = client.get("/api/settings/agent-permissions")
     assert default_response.status_code == 200
-    assert default_response.json()["agent_permissions"]["enabled_feature_ids"] == []
+    assert default_response.json()["agent_permissions"]["enabled_feature_ids"] == DEFAULT_ENABLED_PERMISSION_IDS
 
     save_response = client.post(
         "/api/settings/agent-permissions",
@@ -58,6 +105,21 @@ def test_agent_permissions_api_round_trip(tmp_path: Path, monkeypatch) -> None:
     )
     assert save_response.status_code == 200
     assert save_response.json()["agent_permissions"]["enabled_feature_ids"] == ["past_paper_import", "context_settings"]
+
+
+def test_skills_status_api_reports_recommended_no_key_skill(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "skills-api.db"
+    monkeypatch.setenv("LANGDRILL_DB_PATH", str(db_path))
+    init_db(db_path)
+    client = TestClient(_api_app())
+
+    response = client.get("/api/skills")
+
+    assert response.status_code == 200
+    status = response.json()["skills_status"]
+    assert status["web_search_skill"]["id"] == "multi-search-engine"
+    assert status["web_search_skill"]["requires_api_key"] is False
+    assert status["web_search_skill"]["requires_token"] is False
 
 
 def test_chat_settings_requires_permission_then_returns_action(tmp_path: Path, monkeypatch) -> None:
@@ -77,6 +139,7 @@ def test_chat_settings_requires_permission_then_returns_action(tmp_path: Path, m
     )
     init_db(db_path)
     client = TestClient(_api_app())
+    client.post("/api/settings/agent-permissions", json={"enabled_feature_ids": []})
     content = (
         "请把这份真题导入设置。\n"
         "# 2025 年 6 月英语四级真题\n"
@@ -99,3 +162,60 @@ def test_chat_settings_requires_permission_then_returns_action(tmp_path: Path, m
     assert action["draft"]["title"] == "2025 年 6 月英语四级真题"
     assert action["draft"]["year"] == 2025
     assert {"writing", "listening", "reading", "translation"} <= set(action["draft"]["question_types"])
+
+
+def test_screenshot_import_permission_can_block_inline_database_write(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "screenshot-permission.db"
+    monkeypatch.setenv("LANGDRILL_DB_PATH", str(db_path))
+    monkeypatch.setenv("LANGDRILL_DEFAULT_PROVIDER", "mock")
+    monkeypatch.setenv("LANGDRILL_DEFAULT_MODEL", "mock-tutor-v1")
+    init_db(db_path)
+    client = TestClient(_api_app())
+    client.post("/api/settings/agent-permissions", json={"enabled_feature_ids": []})
+
+    response = client.post(
+        "/api/chat",
+        json={
+            "content": "\n".join(
+                [
+                    "collision",
+                    "n. 碰撞；冲突",
+                    "snowstorm",
+                    "n. 暴风雪",
+                    "cultivate",
+                    "v. 培养；耕作",
+                ]
+            )
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "权限已关闭" in payload["message"]["content"]
+    assert payload["active_question"] is None
+
+
+def test_search_import_requires_skills_permission(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "search-import-permission.db"
+    monkeypatch.setenv("LANGDRILL_DB_PATH", str(db_path))
+    monkeypatch.setenv("LANGDRILL_PAPER_ROOT", str(tmp_path / "papers"))
+    init_db(db_path)
+    client = TestClient(_api_app())
+    client.post("/api/settings/agent-permissions", json={"enabled_feature_ids": []})
+
+    blocked = client.post(
+        "/api/past-papers/search-import",
+        json={"exam_id": "cet4", "source_website": "https://example.test/cet4"},
+    )
+    assert blocked.status_code == 403
+
+    client.post("/api/settings/agent-permissions", json={"enabled_feature_ids": ["skills", "web_search_import"]})
+    allowed = client.post(
+        "/api/past-papers/search-import",
+        json={"exam_id": "cet4", "source_website": "https://example.test/cet4"},
+    )
+
+    assert allowed.status_code == 200
+    payload = allowed.json()
+    assert payload["skill"]["id"] == "multi-search-engine"
+    assert payload["selected_paper_ids"][:3] == ["paper_cet4_2025", "paper_cet4_2024", "paper_cet4_2023"]

@@ -1398,8 +1398,87 @@ body.panel-resize-active * {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
+.permission-groups {
+  display: grid;
+  gap: 14px;
+}
+.permission-group {
+  display: grid;
+  gap: 10px;
+}
+.permission-group h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.98rem;
+}
 .permission-row {
   min-height: 118px;
+}
+.skill-highlight,
+.skill-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  border: var(--border-thin);
+  border-radius: var(--radius-sm);
+  background: var(--surface-strong);
+  padding: 12px;
+}
+.skill-highlight > div:first-child,
+.skill-card > div:first-child {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.skill-highlight strong,
+.skill-card strong {
+  overflow-wrap: anywhere;
+}
+.skill-highlight span,
+.skill-card span,
+.skill-highlight small,
+.skill-card small {
+  color: var(--muted);
+  font-weight: 650;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.skill-badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.skill-badges span {
+  border-radius: 999px;
+  padding: 5px 8px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.skill-ok {
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  color: var(--accent);
+}
+.skill-warn {
+  background: color-mix(in srgb, #f59e0b 18%, var(--surface));
+  color: #f59e0b;
+}
+.skill-root-list,
+.skill-list {
+  display: grid;
+  gap: 10px;
+}
+.skill-root-list code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  border: var(--border-thin);
+  border-radius: var(--radius-sm);
+  background: var(--surface-strong);
+  color: var(--muted-strong);
+  padding: 10px 12px;
+  font-size: 0.84rem;
 }
 .compact-action {
   min-height: 34px;
@@ -1591,6 +1670,11 @@ body.panel-resize-active * {
 }
 .theme-row button.active, .modal-actions .primary { background: var(--accent); color: white; border-color: var(--accent); }
 .theme-row button:hover, .inline-action:hover, .modal-actions button:hover { background: var(--surface-strong); }
+.inline-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+.inline-action:disabled:hover { background: var(--surface); }
 .modal-actions .primary:hover { background: var(--accent-hover); }
 .inline-action { justify-content: center; width: fit-content; }
 .range-field { display: grid; gap: 8px; font-weight: 700; }
@@ -1607,7 +1691,7 @@ body.panel-resize-active * {
   .right-rail.closed { width: 0; overflow: hidden; border: none; }
   .panel-resizer { display: none; }
   .chat-main { min-height: 100dvh; }
-  .long-grid, .settings-grid, .settings-layout, .onboarding-flow, .options, .question-followup, .usage-dashboard, .usage-ledger-grid, .context-setting-row, .data-path-grid, .toggle-grid, .permission-grid, .settings-action-card dl { grid-template-columns: 1fr; }
+  .long-grid, .settings-grid, .settings-layout, .onboarding-flow, .options, .question-followup, .usage-dashboard, .usage-ledger-grid, .context-setting-row, .data-path-grid, .toggle-grid, .permission-grid, .skill-highlight, .skill-card, .settings-action-card dl { grid-template-columns: 1fr; }
   .settings-tabs { border-right: 0; border-bottom: var(--border-thick); flex-direction: row; overflow-x: auto; }
   .settings-tabs button { flex: 0 0 auto; }
   .score-stack { grid-template-columns: repeat(2, minmax(0, 1fr)); }

@@ -35,6 +35,7 @@ import { MarkdownText } from "./components/MarkdownText";
 import { RightWorkbench, type WorkbenchTab } from "./components/RightWorkbench";
 import type {
   AnsweredQuestion,
+  AgentSettingPermissionFeature,
   AgentSettingsPermissionsStatus,
   ChatImageAttachment,
   DataPathsStatus,
@@ -53,6 +54,7 @@ import type {
   ScreenshotImportResult,
   SessionItem,
   SettingsAction,
+  SkillsStatus,
   SyllabusStatus,
   ThemeMode,
   ThinkingLevel,
@@ -434,48 +436,130 @@ const DEFAULT_MINERU_CONFIG: MinerUConfig = {
 };
 
 const DEFAULT_AGENT_PERMISSIONS: AgentSettingsPermissionsStatus = {
-  enabled_feature_ids: [],
+  enabled_feature_ids: [
+    "screenshot_import",
+    "learning_database",
+    "past_paper_import",
+    "web_search_import",
+    "profile_exam",
+    "context_settings",
+    "skills"
+  ],
   features: [
+    {
+      id: "screenshot_import",
+      label: "截图导入与词表入库",
+      description: "允许会话 Agent 触发截图/文件词表解析，把确认后的单词写入学习库并创建练习会话。",
+      enabled: true,
+      default_enabled: true
+    },
+    {
+      id: "learning_database",
+      label: "单词、题目与作答数据库",
+      description: "允许会话 Agent 通过正式学习流程创建知识项、题目、作答记录和掌握度统计。",
+      enabled: true,
+      default_enabled: true
+    },
     {
       id: "past_paper_import",
       label: "历年真题导入与题型",
       description: "允许会话 Agent 解析试卷信息，并在用户确认后填入真题导入表单。",
-      enabled: false
+      enabled: true,
+      default_enabled: true
+    },
+    {
+      id: "web_search_import",
+      label: "联网搜索导入",
+      description: "允许会话 Agent 使用无需个人 API Key 的本地 Skills 生成真题来源搜索索引和可核验来源。",
+      enabled: true,
+      default_enabled: true
     },
     {
       id: "profile_exam",
       label: "考试与学习目标",
       description: "允许会话 Agent 按用户确认的目标调整考试、截止时间和学习背景草稿。",
-      enabled: false
+      enabled: true,
+      default_enabled: true
+    },
+    {
+      id: "context_settings",
+      label: "上下文容量",
+      description: "允许会话 Agent 帮助调整上下文容量上限和压缩相关设置。",
+      enabled: true,
+      default_enabled: true
+    },
+    {
+      id: "skills",
+      label: "Skills 功能",
+      description: "允许会话 Agent 读取已安装的本地 Skills 能力，并优先使用无需密钥的技能辅助搜索和导入。",
+      enabled: true,
+      default_enabled: true
     },
     {
       id: "model_config",
       label: "模型供应商与默认模型",
       description: "允许会话 Agent 帮助填写模型供应商、模型名、Base URL（基础网址）和能力开关。",
       enabled: false,
-      sensitive: true
-    },
-    {
-      id: "context_settings",
-      label: "上下文容量",
-      description: "允许会话 Agent 帮助调整上下文容量上限和压缩相关设置。",
-      enabled: false
+      sensitive: true,
+      default_enabled: false
     },
     {
       id: "data_paths",
       label: "题目数据库目录",
       description: "允许会话 Agent 帮助填写题目数据库目录迁移设置；迁移前仍需用户确认。",
       enabled: false,
-      sensitive: true
+      sensitive: true,
+      default_enabled: false
     },
     {
       id: "mineru_config",
       label: "MinerU token",
       description: "允许会话 Agent 帮助打开 MinerU 配置项；token 明文仍只能由用户输入。",
       enabled: false,
-      sensitive: true
+      sensitive: true,
+      default_enabled: false
+    }
+  ],
+  groups: [
+    {
+      id: "default_enabled",
+      label: "默认开启的能力权限",
+      feature_ids: [
+        "screenshot_import",
+        "learning_database",
+        "past_paper_import",
+        "web_search_import",
+        "profile_exam",
+        "context_settings",
+        "skills"
+      ]
+    },
+    {
+      id: "sensitive",
+      label: "敏感设置权限",
+      feature_ids: ["model_config", "data_paths", "mineru_config"]
     }
   ]
+};
+
+const DEFAULT_SKILLS_STATUS: SkillsStatus = {
+  skills_roots: ["D:\\2Folder\\skills"],
+  installed: [],
+  installed_count: 0,
+  no_key_skill_ids: [],
+  permission_feature_id: "skills",
+  web_search_permission_feature_id: "web_search_import",
+  web_search_skill: {
+    id: "multi-search-engine",
+    name: "multi-search-engine",
+    label: "Multi Search Engine",
+    description: "生成可审计的多搜索引擎查询 URL；不需要个人 API Key 或 token。",
+    homepage: "https://clawhub.com/skills/multi-search-engine",
+    requires_api_key: false,
+    requires_token: false,
+    installed: false,
+    permission_feature_id: "web_search_import"
+  }
 };
 
 const PANEL_SIZE_STORAGE_KEY = "langdrill.panelSizes";
@@ -834,6 +918,7 @@ export default function App() {
   const [dataPaths, setDataPaths] = useState<DataPathsStatus>(DEFAULT_DATA_PATHS);
   const [mineruConfig, setMineruConfig] = useState<MinerUConfig>(DEFAULT_MINERU_CONFIG);
   const [agentPermissions, setAgentPermissions] = useState<AgentSettingsPermissionsStatus>(DEFAULT_AGENT_PERMISSIONS);
+  const [skillsStatus, setSkillsStatus] = useState<SkillsStatus>(DEFAULT_SKILLS_STATUS);
   const [pendingPaperDraft, setPendingPaperDraft] = useState<PastPaperDraft | null>(null);
   const [input, setInput] = useState("");
   const [composerAttachments, setComposerAttachments] = useState<ChatImageAttachment[]>([]);
@@ -1094,6 +1179,7 @@ export default function App() {
       syllabus_status?: SyllabusStatus;
       past_paper_status?: PastPaperStatus;
       agent_permissions?: AgentSettingsPermissionsStatus;
+      skills_status?: SkillsStatus;
     }>("/api/bootstrap")
       .then((data) => {
         setProfile(data.profile);
@@ -1107,6 +1193,7 @@ export default function App() {
         setDataPaths(data.data_paths || DEFAULT_DATA_PATHS);
         setMineruConfig({ ...DEFAULT_MINERU_CONFIG, ...data.mineru_config });
         setAgentPermissions(data.agent_permissions || DEFAULT_AGENT_PERMISSIONS);
+        setSkillsStatus(data.skills_status || DEFAULT_SKILLS_STATUS);
         setLearningStats(data.learning_stats || DEFAULT_LEARNING_STATS);
         setOnboardingOpen(data.profile.exam_id === "unassigned");
       })
@@ -1782,6 +1869,7 @@ export default function App() {
           dataPaths={dataPaths}
           mineruConfig={mineruConfig}
           agentPermissions={agentPermissions}
+          skillsStatus={skillsStatus}
           pendingPaperDraft={pendingPaperDraft}
           sessions={sessions}
           examOptions={examOptions}
@@ -1803,6 +1891,7 @@ export default function App() {
           onDataPathsChange={(nextPaths) => setDataPaths({ ...DEFAULT_DATA_PATHS, ...nextPaths })}
           onMinerUConfigChange={(nextConfig) => setMineruConfig({ ...DEFAULT_MINERU_CONFIG, ...nextConfig })}
           onAgentPermissionsChange={setAgentPermissions}
+          onSkillsStatusChange={setSkillsStatus}
           onPaperDraftConsumed={() => setPendingPaperDraft(null)}
           onOpenOnboarding={() => {
             setSettingsOpen(false);
@@ -2082,6 +2171,7 @@ function SettingsDialog({
   dataPaths,
   mineruConfig,
   agentPermissions,
+  skillsStatus,
   pendingPaperDraft,
   sessions,
   examOptions,
@@ -2100,6 +2190,7 @@ function SettingsDialog({
   onDataPathsChange,
   onMinerUConfigChange,
   onAgentPermissionsChange,
+  onSkillsStatusChange,
   onPaperDraftConsumed,
   onOpenOnboarding
 }: {
@@ -2112,6 +2203,7 @@ function SettingsDialog({
   dataPaths: DataPathsStatus;
   mineruConfig: MinerUConfig;
   agentPermissions: AgentSettingsPermissionsStatus;
+  skillsStatus: SkillsStatus;
   pendingPaperDraft: PastPaperDraft | null;
   sessions: SessionItem[];
   examOptions: ExamOption[];
@@ -2130,6 +2222,7 @@ function SettingsDialog({
   onDataPathsChange: (paths: DataPathsStatus) => void;
   onMinerUConfigChange: (config: MinerUConfig) => void;
   onAgentPermissionsChange: (permissions: AgentSettingsPermissionsStatus) => void;
+  onSkillsStatusChange: (status: SkillsStatus) => void;
   onPaperDraftConsumed: () => void;
   onOpenOnboarding: () => void;
 }) {
@@ -2157,6 +2250,8 @@ function SettingsDialog({
   const [mineruMessage, setMineruMessage] = useState("");
   const [permissionDraft, setPermissionDraft] = useState<AgentSettingsPermissionsStatus>(agentPermissions);
   const [permissionMessage, setPermissionMessage] = useState("");
+  const [skillsDraft, setSkillsDraft] = useState<SkillsStatus>(skillsStatus);
+  const [skillsMessage, setSkillsMessage] = useState("");
   const [questionDbFolder, setQuestionDbFolder] = useState(dataPaths.user_data_dir || "");
   const [migrateQuestionDb, setMigrateQuestionDb] = useState(true);
   const [overwriteQuestionDb, setOverwriteQuestionDb] = useState(false);
@@ -2199,6 +2294,8 @@ function SettingsDialog({
     modelDraft.thinking_level,
     defaultThinkingLevelForModel(provider, modelDraft.model)
   );
+  const savedPermissionIds = new Set(agentPermissions.enabled_feature_ids);
+  const canUseWebSearchImport = savedPermissionIds.has("skills") && savedPermissionIds.has("web_search_import");
   const applyPaperDraftToForm = useCallback((draft: PastPaperDraft, message: string) => {
     setActiveSettingsTab("syllabus");
     setPaperImportOpen(true);
@@ -2216,6 +2313,9 @@ function SettingsDialog({
   useEffect(() => {
     setPermissionDraft(agentPermissions);
   }, [agentPermissions]);
+  useEffect(() => {
+    setSkillsDraft(skillsStatus);
+  }, [skillsStatus]);
   useEffect(() => {
     if (!pendingPaperDraft) return;
     applyPaperDraftToForm(pendingPaperDraft, "已由会话 Agent 填入试卷导入草稿，保存前可继续修改。");
@@ -2436,6 +2536,11 @@ function SettingsDialog({
     }
   };
   const searchImportPastPapers = async () => {
+    if (!canUseWebSearchImport) {
+      setPastPaperMessage("请先在「权限」页开启「Skills 功能」和「联网搜索导入」，再使用真题搜索导入。");
+      setActiveSettingsTab("permissions");
+      return;
+    }
     setPastPaperMessage("正在创建联网搜索导入索引...");
     try {
       const status = await apiPost<PastPaperStatus>("/api/past-papers/search-import", {
@@ -2821,6 +2926,38 @@ function SettingsDialog({
       setPermissionMessage(err instanceof Error ? err.message : "权限保存失败");
     }
   };
+  const refreshSkillsStatus = async () => {
+    setSkillsMessage("正在刷新 Skills 状态...");
+    try {
+      const data = await apiGet<{ skills_status: SkillsStatus }>("/api/skills");
+      setSkillsDraft(data.skills_status);
+      onSkillsStatusChange(data.skills_status);
+      setSkillsMessage("Skills 状态已刷新。");
+    } catch (err) {
+      setSkillsMessage(err instanceof Error ? err.message : "Skills 状态刷新失败。");
+    }
+  };
+  const permissionGroups = (
+    permissionDraft.groups?.length
+      ? permissionDraft.groups
+      : [
+          {
+            id: "default_enabled",
+            label: "默认开启的能力权限",
+            feature_ids: permissionDraft.features.filter((feature) => !feature.sensitive).map((feature) => feature.id)
+          },
+          {
+            id: "sensitive",
+            label: "敏感设置权限",
+            feature_ids: permissionDraft.features.filter((feature) => feature.sensitive).map((feature) => feature.id)
+          }
+        ]
+  ).map((group) => ({
+    ...group,
+    features: group.feature_ids
+      .map((featureId) => permissionDraft.features.find((feature) => feature.id === featureId))
+      .filter((feature): feature is AgentSettingPermissionFeature => Boolean(feature))
+  })).filter((group) => group.features.length);
   const settingTabs = [
     { id: "model", label: "模型", icon: GearSix },
     { id: "exam", label: "考试", icon: Target },
@@ -2828,6 +2965,7 @@ function SettingsDialog({
     { id: "tokens", label: "令牌", icon: Brain },
     { id: "data", label: "数据", icon: Database },
     { id: "permissions", label: "权限", icon: ShieldCheck },
+    { id: "skills", label: "Skills", icon: Sparkle },
     { id: "study", label: "学习", icon: ShieldCheck },
     { id: "appearance", label: "外观", icon: Moon }
   ];
@@ -3172,7 +3310,14 @@ function SettingsDialog({
                 </div>
                 <div className="settings-summary-line">{pastPaperDraft.description}</div>
                 <div className="inline-row">
-                  <button className="inline-action" onClick={() => void searchImportPastPapers()}><Sparkle size={16} /> 大模型联网搜索导入</button>
+                  <button
+                    className="inline-action"
+                    onClick={() => void searchImportPastPapers()}
+                    disabled={!canUseWebSearchImport}
+                    title={canUseWebSearchImport ? "使用已授权的 Skills 联网搜索导入" : "先在权限页开启 Skills 功能和联网搜索导入"}
+                  >
+                    <Sparkle size={16} /> 联网搜索导入
+                  </button>
                   {pastPaperDraft.source_website && <a className="inline-link" href={pastPaperDraft.source_website} target="_blank" rel="noreferrer">打开来源网站</a>}
                 </div>
                 <div className="paper-list">
@@ -3494,20 +3639,27 @@ function SettingsDialog({
             )}
             {activeSettingsTab === "permissions" && (
               <SettingSection title="Agent 设置权限">
-                <p className="hint">这些权限只允许会话 Agent 先生成可确认草稿或打开对应设置动作；保存、迁移、密钥输入等关键步骤仍需要用户确认。</p>
-                <div className="permission-grid">
-                  {permissionDraft.features.map((feature) => (
-                    <label className="check-row permission-row" key={feature.id}>
-                      <input
-                        type="checkbox"
-                        checked={permissionDraft.enabled_feature_ids.includes(feature.id)}
-                        onChange={() => toggleAgentPermission(feature.id)}
-                      />
-                      <span>
-                        <strong>{feature.label}{feature.sensitive ? "（敏感）" : ""}</strong>
-                        <small>{feature.description}</small>
-                      </span>
-                    </label>
+                <p className="hint">非敏感能力默认开启；敏感设置集中在下方。保存、迁移、密钥输入、试卷保存等关键步骤仍需要用户确认。</p>
+                <div className="permission-groups">
+                  {permissionGroups.map((group) => (
+                    <div className="permission-group" key={group.id}>
+                      <h4>{group.label}</h4>
+                      <div className="permission-grid">
+                        {group.features.map((feature) => (
+                          <label className="check-row permission-row" key={feature.id}>
+                            <input
+                              type="checkbox"
+                              checked={permissionDraft.enabled_feature_ids.includes(feature.id)}
+                              onChange={() => toggleAgentPermission(feature.id)}
+                            />
+                            <span>
+                              <strong>{feature.label}{feature.sensitive ? "（敏感）" : ""}</strong>
+                              <small>{feature.description}</small>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
                 <div className="inline-row wrap-row">
@@ -3523,6 +3675,59 @@ function SettingsDialog({
                   </button>
                 </div>
                 {permissionMessage && <p className="hint strong-hint">{permissionMessage}</p>}
+              </SettingSection>
+            )}
+            {activeSettingsTab === "skills" && (
+              <SettingSection title="Skills 功能">
+                <p className="hint">当前只接入本地已安装 Skills 的状态展示和授权入口；需要密钥或个人 token 的技能不会作为默认联网搜索方案。</p>
+                <div className="skill-highlight">
+                  <div>
+                    <strong>{skillsDraft.web_search_skill.label || skillsDraft.web_search_skill.name}</strong>
+                    <span>{skillsDraft.web_search_skill.description}</span>
+                    {skillsDraft.web_search_skill.reason && <small>{skillsDraft.web_search_skill.reason}</small>}
+                  </div>
+                  <div className="skill-badges">
+                    <span className={skillsDraft.web_search_skill.installed ? "skill-ok" : "skill-warn"}>
+                      {skillsDraft.web_search_skill.installed ? "已安装" : "未发现"}
+                    </span>
+                    <span className="skill-ok">无需 API Key</span>
+                    <span className="skill-ok">无需 token</span>
+                  </div>
+                </div>
+                <div className="inline-row wrap-row">
+                  <button className="inline-action" onClick={() => void refreshSkillsStatus()}>
+                    <ArrowClockwise size={16} /> 刷新 Skills 状态
+                  </button>
+                  {skillsDraft.web_search_skill.homepage && (
+                    <a className="inline-link" href={skillsDraft.web_search_skill.homepage} target="_blank" rel="noreferrer">打开技能来源</a>
+                  )}
+                </div>
+                <div className="settings-summary-line">
+                  已发现 {skillsDraft.installed_count} 个本地 Skills；其中 {skillsDraft.no_key_skill_ids.length} 个未声明需要个人密钥。
+                </div>
+                <div className="skill-root-list">
+                  {skillsDraft.skills_roots.map((root) => (
+                    <code key={root}>{root}</code>
+                  ))}
+                </div>
+                <div className="skill-list">
+                  {skillsDraft.installed.map((skill) => (
+                    <div className="skill-card" key={`${skill.id}-${skill.path || ""}`}>
+                      <div>
+                        <strong>{skill.label || skill.name}</strong>
+                        <span>{skill.description || "未提供描述。"}</span>
+                        {skill.path && <small>{skill.path}</small>}
+                      </div>
+                      <div className="skill-badges">
+                        <span className={skill.requires_api_key || skill.requires_token ? "skill-warn" : "skill-ok"}>
+                          {skill.requires_api_key || skill.requires_token ? "可能需要密钥" : "无密钥"}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                  {!skillsDraft.installed.length && <p className="hint">当前未发现本地 Skills。确认技能目录存在后点击刷新。</p>}
+                </div>
+                {skillsMessage && <p className="hint strong-hint">{skillsMessage}</p>}
               </SettingSection>
             )}
             {activeSettingsTab === "study" && (
