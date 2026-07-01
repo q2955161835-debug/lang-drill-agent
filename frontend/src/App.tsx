@@ -107,8 +107,8 @@ function MessageItem({
 }
 
 function SettingsActionCard({ action, onConfirm }: { action: SettingsAction; onConfirm: (action: SettingsAction) => void }) {
-  const draft = action.draft;
   if (action.type === "custom_model_draft") {
+    const draft = action.draft;
     return (
       <div className="settings-action-card">
         <div>
@@ -135,6 +135,7 @@ function SettingsActionCard({ action, onConfirm }: { action: SettingsAction; onC
       </div>
     );
   }
+  const draft = action.draft;
   return (
     <div className="settings-action-card">
       <div>
@@ -806,9 +807,9 @@ function modelOptionLabel(option: ModelOption) {
 
 function normalizedModelOption(option: ModelOption): Exclude<ModelOption, string> {
   if (typeof option === "string") {
-    return { id: option, label: option, vision: false, visible: true };
+    return { id: option, label: option, vision: false, visible: true, custom: false };
   }
-  return { ...option, vision: Boolean(option.vision), visible: option.visible !== false };
+  return { ...option, vision: Boolean(option.vision), visible: option.visible !== false, custom: Boolean(option.custom) };
 }
 
 function modelOptionsFor(provider: ProviderOption, currentModel: string, optionsConfig: { visibleOnly?: boolean } = {}) {
