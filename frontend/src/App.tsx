@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type MouseEvent, type ReactNode } from "react";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import {
@@ -8,6 +8,7 @@ import {
   CheckCircle,
   CircleNotch,
   Database,
+  FolderOpen,
   GearSix,
   GitBranch,
   ImageSquare,
@@ -26,6 +27,7 @@ import {
 } from "@phosphor-icons/react";
 import { apiDelete, apiGet, apiPost } from "./api";
 import { ContextMenu, type ContextMenuItem } from "./components/ContextMenu";
+import { appendImportedText, extractTextFromFiles, fileTitle, uploadPastPaperFile } from "./fileImport";
 import { MarkdownText } from "./components/MarkdownText";
 import { RightWorkbench, type WorkbenchTab } from "./components/RightWorkbench";
 import type {
@@ -579,6 +581,8 @@ export default function App() {
   const [tokenUsage, setTokenUsage] = useState<TokenUsage>(DEFAULT_TOKEN_USAGE);
   const [dataPaths, setDataPaths] = useState<DataPathsStatus>(DEFAULT_DATA_PATHS);
   const [input, setInput] = useState("");
+  const [composerDragActive, setComposerDragActive] = useState(false);
+  const [composerFileStatus, setComposerFileStatus] = useState("");
   const [sending, setSending] = useState(false);
   const [loadingLabel, setLoadingLabel] = useState("模型正在思考");
   const [quickStartHint, setQuickStartHint] = useState("");
@@ -780,6 +784,27 @@ export default function App() {
       setSending(false);
     }
   }, [activeQuestion, activeSessionId, pendingNewSession, sending]);
+
+  const handleComposerFiles = useCallback(async (files: File[]) => {
+    if (!files.length || sending) return;
+    setComposerFileStatus("正在读取拖入文件...");
+    try {
+      const extracted = await extractTextFromFiles(files);
+      setInput((current) => appendImportedText(current, extracted.text));
+      const names = extracted.results.map((result) => result.filename).join("、");
+      setComposerFileStatus(`已插入 ${names} 的文本。`);
+      composerRef.current?.focus();
+    } catch (err) {
+      setComposerFileStatus(`文件读取失败：${err instanceof Error ? err.message : "未知错误"}`);
+    }
+  }, [sending]);
+
+  const handleComposerDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setComposerDragActive(false);
+    const files = Array.from(event.dataTransfer.files || []);
+    void handleComposerFiles(files);
+  }, [handleComposerFiles]);
 
   const sendMessage = useCallback(async () => {
     const content = input.trim();
@@ -1209,7 +1234,21 @@ export default function App() {
             )}
             <span title="按当前模型配置写入原生 API 参数">当前：{thinkingLevelLabel({ ...modelConfig, thinking_level: quickThinkingLevel, thinking_level_options: quickThinkingOptions })}</span>
           </div>
-          <div className="composer">
+          <div
+            className={`composer ${composerDragActive ? "drag-over" : ""}`}
+            onDragEnter={(event) => {
+              if (event.dataTransfer.types.includes("Files")) setComposerDragActive(true);
+            }}
+            onDragOver={(event) => {
+              if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+            }}
+            onDragLeave={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                setComposerDragActive(false);
+              }
+            }}
+            onDrop={handleComposerDrop}
+          >
             <textarea
               ref={composerRef}
               value={input}
@@ -1238,6 +1277,7 @@ export default function App() {
               {sending ? <span className="spinner" /> : <PaperPlaneRight size={20} weight="fill" />}
             </InteractiveButton>
           </div>
+          {composerFileStatus && <p className="composer-file-status">{composerFileStatus}</p>}
         </div>
       </main>
 
@@ -1632,6 +1672,8 @@ function SettingsDialog({
     question_types: "",
     raw_text: ""
   });
+  const [paperImportFile, setPaperImportFile] = useState<File | null>(null);
+  const [paperImportDragActive, setPaperImportDragActive] = useState(false);
   const [customExam, setCustomExam] = useState({
     name: "",
     target_language: "",
@@ -1770,25 +1812,38 @@ function SettingsDialog({
     }
   };
   const importPastPaper = async () => {
-    if (!paperImportDraft.title.trim()) {
+    const finalTitle = paperImportDraft.title.trim() || (paperImportFile ? fileTitle(paperImportFile) : "");
+    if (!finalTitle) {
       setPastPaperMessage("请先填写试卷标题。");
       return;
     }
     try {
-      const status = await apiPost<PastPaperStatus>("/api/past-papers/import", {
-        exam_id: draft.exam_id,
-        title: paperImportDraft.title,
-        year: paperImportDraft.year ? Number(paperImportDraft.year) : null,
-        source_url: paperImportDraft.source_url,
-        local_path: paperImportDraft.local_path,
-        summary: paperImportDraft.summary,
-        question_types: paperImportDraft.question_types.split(/[，,\n]/).map((item) => item.trim()).filter(Boolean),
-        raw_text: paperImportDraft.raw_text,
-        parse_now: true
-      });
+      const questionTypes = paperImportDraft.question_types.split(/[，,\n]/).map((item) => item.trim()).filter(Boolean);
+      const status = paperImportFile
+        ? await uploadPastPaperFile<PastPaperStatus>(paperImportFile, {
+          exam_id: draft.exam_id,
+          title: finalTitle,
+          year: paperImportDraft.year,
+          source_url: paperImportDraft.source_url,
+          summary: paperImportDraft.summary,
+          question_types: paperImportDraft.question_types,
+          parse_now: true
+        })
+        : await apiPost<PastPaperStatus>("/api/past-papers/import", {
+          exam_id: draft.exam_id,
+          title: finalTitle,
+          year: paperImportDraft.year ? Number(paperImportDraft.year) : null,
+          source_url: paperImportDraft.source_url,
+          local_path: paperImportDraft.local_path,
+          summary: paperImportDraft.summary,
+          question_types: questionTypes,
+          raw_text: paperImportDraft.raw_text,
+          parse_now: true
+        });
       setPastPaperDraft(status);
       onPastPaperStatusChange(status);
       setPaperImportDraft({ title: "", year: "", source_url: "", local_path: "", summary: "", question_types: "", raw_text: "" });
+      setPaperImportFile(null);
       setPastPaperMessage("已保存试卷文件/文本、完成解析并加入当前参考列表。");
     } catch (err) {
       setPastPaperMessage(err instanceof Error ? err.message : "手动导入失败");
@@ -1822,6 +1877,19 @@ function SettingsDialog({
       setPastPaperMessage(err instanceof Error ? err.message : "联网搜索导入失败");
     }
   };
+  const handlePastPaperDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setPaperImportDragActive(false);
+    const file = Array.from(event.dataTransfer.files || [])[0];
+    if (!file) return;
+    setPaperImportFile(file);
+    setPaperImportDraft((current) => ({
+      ...current,
+      title: current.title || fileTitle(file),
+      local_path: file.name
+    }));
+    setPastPaperMessage(`已选择文件：${file.name}。`);
+  }, []);
   const saveModelConfig = async (successMessage = "模型配置已保存。如有自定义 URL/模型将永久应用于此提供商。") => {
     const finalModel = customModel.trim() || modelDraft.model;
     const data = await apiPost<{ model_config: ModelConfig; providers?: ProviderOption[] }>("/api/model-config", {
@@ -1992,6 +2060,21 @@ function SettingsDialog({
       setDataPathMessage(data.message || "题目数据库目录已更新。");
     } catch (err) {
       setDataPathMessage(err instanceof Error ? err.message : "题目数据库目录更新失败");
+    }
+  };
+  const chooseQuestionDatabaseFolder = async () => {
+    setDataPathMessage("正在打开文件夹选择器...");
+    try {
+      const data = await apiPost<{ selected: boolean; folder: string; message?: string }>("/api/data-paths/select-folder", {
+        initial_folder: questionDbFolder || dataPathDraft.user_data_dir || "",
+        title: "选择题目数据库文件夹"
+      });
+      if (data.selected && data.folder) {
+        setQuestionDbFolder(data.folder);
+      }
+      setDataPathMessage(data.message || (data.selected ? "已选择文件夹。" : "未选择文件夹。"));
+    } catch (err) {
+      setDataPathMessage(err instanceof Error ? err.message : "文件夹选择器打开失败");
     }
   };
   const settingTabs = [
@@ -2217,6 +2300,25 @@ function SettingsDialog({
                   {!pastPaperDraft.papers.length && <p className="hint">暂无真题试卷索引，可手动导入或使用联网搜索导入。</p>}
                 </div>
                 <div className="paper-import-grid">
+                  <div
+                    className={`drop-zone paper-import-drop ${paperImportDragActive ? "drag-over" : ""}`}
+                    onDragEnter={(event) => {
+                      if (event.dataTransfer.types.includes("Files")) setPaperImportDragActive(true);
+                    }}
+                    onDragOver={(event) => {
+                      if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+                    }}
+                    onDragLeave={(event) => {
+                      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                        setPaperImportDragActive(false);
+                      }
+                    }}
+                    onDrop={handlePastPaperDrop}
+                  >
+                    <FolderOpen size={20} />
+                    <strong>{paperImportFile ? paperImportFile.name : "拖入试卷文件"}</strong>
+                    <span>PDF / DOCX / TXT / MD / 图片</span>
+                  </div>
                   <input value={paperImportDraft.title} onChange={(event) => setPaperImportDraft({ ...paperImportDraft, title: event.target.value })} placeholder="试卷标题，例如：2025 年 6 月英语四级真题" />
                   <input value={paperImportDraft.year} onChange={(event) => setPaperImportDraft({ ...paperImportDraft, year: event.target.value })} placeholder="年份" inputMode="numeric" />
                   <input value={paperImportDraft.source_url} onChange={(event) => setPaperImportDraft({ ...paperImportDraft, source_url: event.target.value })} placeholder="来源网站或网页 URL" />
@@ -2358,11 +2460,22 @@ function SettingsDialog({
                 </div>
                 <label className="field-label">
                   <span>题目数据库文件夹</span>
-                  <input
-                    value={questionDbFolder}
-                    onChange={(event) => setQuestionDbFolder(event.target.value)}
-                    placeholder="例如：D:\\LangDrill\\user-data"
-                  />
+                  <div className="field-with-button">
+                    <input
+                      value={questionDbFolder}
+                      onChange={(event) => setQuestionDbFolder(event.target.value)}
+                      placeholder="例如：D:\\LangDrill\\user-data"
+                    />
+                    <button
+                      type="button"
+                      className="inline-action square-action"
+                      onClick={() => void chooseQuestionDatabaseFolder()}
+                      title="选择文件夹"
+                      aria-label="选择题目数据库文件夹"
+                    >
+                      <FolderOpen size={18} />
+                    </button>
+                  </div>
                   <small>数据库文件会写入该文件夹下的 data\\langdrill_agent.db。</small>
                 </label>
                 <div className="toggle-grid">

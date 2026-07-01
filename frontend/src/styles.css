@@ -655,6 +655,18 @@ h1, h2, h3, h4, .brand, .kicker { font-weight: 750; letter-spacing: -0.03em; }
   border-radius: 22px;
   background: var(--surface);
   box-shadow: var(--shadow-cartoon);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.composer.drag-over {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--tag-bg) 72%, var(--surface));
+}
+.composer-file-status {
+  width: min(920px, 100%);
+  margin: 8px auto 0;
+  color: var(--muted-strong);
+  font-size: 0.82rem;
+  font-weight: 650;
 }
 .composer textarea {
   border: 0;
@@ -810,6 +822,35 @@ h1, h2, h3, h4, .brand, .kicker { font-weight: 750; letter-spacing: -0.03em; }
   padding: 10px 12px;
 }
 .workbench-form textarea { min-height: 88px; resize: vertical; }
+.drop-zone {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 6px 10px;
+  align-items: center;
+  min-height: 74px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 45%, var(--line));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--tag-bg) 45%, var(--surface));
+  color: var(--muted-strong);
+  padding: 12px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.drop-zone svg { color: var(--accent); grid-row: span 2; }
+.drop-zone strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 0.92rem;
+}
+.drop-zone span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+.drop-zone.drag-over {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--tag-bg) 76%, var(--surface));
+}
 .option-pills { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .option-pills button, .workbench-actions button, .workbench-primary {
   border: var(--border-thin);
@@ -945,6 +986,13 @@ h1, h2, h3, h4, .brand, .kicker { font-weight: 750; letter-spacing: -0.03em; }
 .token-card strong { display: block; font-size: 2rem; font-weight: 800; }
 .inline-row { display: flex; gap: 10px; align-items: center; }
 .inline-row select, .inline-row input { flex: 1; }
+.field-with-button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+.field-with-button .inline-action { min-height: 44px; }
 .wrap-row { flex-wrap: wrap; }
 .square-action { width: 44px; justify-content: center; }
 .inline-action.square-action { width: 44px; min-width: 44px; padding-inline: 0; }
@@ -991,6 +1039,7 @@ h1, h2, h3, h4, .brand, .kicker { font-weight: 750; letter-spacing: -0.03em; }
   display: grid;
   gap: 10px;
 }
+.paper-import-drop { grid-column: 1 / -1; }
 .check-row {
   display: grid;
   grid-template-columns: 20px minmax(0, 1fr);

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from fastapi.testclient import TestClient
+
 from langdrill_agent.agents import QuestionAuthorAgent
 from langdrill_agent.db import init_db, transaction
 from langdrill_agent.models import UserProfile
@@ -9,6 +11,10 @@ from langdrill_agent.paper_assets import parse_paper_text
 from langdrill_agent.providers import ModelResult
 from langdrill_agent.services import PastPaperService, ProfileService, QuestionService, SessionService
 from langdrill_agent.utils import dumps
+
+
+def _api_app():
+    return __import__("langdrill_agent.api", fromlist=["app"]).app
 
 
 class CapturingProvider:
@@ -162,6 +168,58 @@ def test_manual_import_adds_paper_and_question_type(tmp_path: Path, monkeypatch)
     assert metadata["parse_status"] == "parsed"
     assert metadata["parsed"]["stats"]["sections"] >= 2
     assert metadata["parsed"]["usable_excerpts"]
+
+
+def test_extract_text_endpoint_reads_uploaded_text_file() -> None:
+    client = TestClient(_api_app())
+    response = client.post(
+        "/api/files/extract-text",
+        params={"filename": "words.txt"},
+        content="collision: 碰撞；冲突\nemerge: 出现".encode("utf-8"),
+        headers={"content-type": "text/plain"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["filename"] == "words.txt"
+    assert payload["parser"] == "text"
+    assert "collision" in payload["text"]
+
+
+def test_past_paper_file_upload_imports_and_parses_text_file(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("LANGDRILL_PAPER_ROOT", str(tmp_path / "paper-assets"))
+    db_path = tmp_path / "uploaded-paper.db"
+    monkeypatch.setenv("LANGDRILL_DB_PATH", str(db_path))
+    init_db(db_path)
+
+    client = TestClient(_api_app())
+    response = client.post(
+        "/api/past-papers/import-file",
+        params={
+            "exam_id": "custom",
+            "title": "拖拽导入样卷",
+            "filename": "drag-paper.md",
+            "year": "2026",
+            "question_types": "reading,writing",
+        },
+        content=(
+            "# 拖拽导入样卷\n\n"
+            "Part I Writing\n"
+            "1. Write an essay about learning tools.\n\n"
+            "Part II Reading\n"
+            "2. Which statement best summarizes the passage?"
+        ).encode("utf-8"),
+        headers={"content-type": "text/markdown"},
+    )
+
+    assert response.status_code == 200
+    status = response.json()
+    imported = next(paper for paper in status["current_papers"] if paper["title"] == "拖拽导入样卷")
+    metadata = imported["metadata"]
+    assert Path(metadata["raw_path"]).exists()
+    assert Path(metadata["parsed_path"]).exists()
+    assert metadata["parser"] == "text"
+    assert {"reading", "writing"} <= set(metadata["question_types"])
 
 
 def test_parse_paper_text_extracts_needed_parts() -> None:

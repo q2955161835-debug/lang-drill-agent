@@ -158,6 +158,11 @@ class QuestionDatabaseFolderRequest(BaseModel):
     overwrite: bool = False
 
 
+class QuestionDatabaseFolderSelectRequest(BaseModel):
+    initial_folder: str = ""
+    title: str = "选择题目数据库文件夹"
+
+
 class ProfileUpdateRequest(BaseModel):
     display_name: str | None = None
     target_language: str | None = None

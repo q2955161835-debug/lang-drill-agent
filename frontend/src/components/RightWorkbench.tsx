@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState, type DragEvent } from "react";
 import {
   CaretLeft,
   CaretRight,
@@ -10,6 +10,7 @@ import {
 } from "@phosphor-icons/react";
 import type { DailyPanel, Message, ScreenshotImportResult } from "../types";
 import { apiGet, apiPost } from "../api";
+import { appendImportedText, extractTextFromFiles } from "../fileImport";
 import { MarkdownText } from "./MarkdownText";
 
 export type WorkbenchTab = "branch" | "mirror" | "screenshot" | "voice";
@@ -234,6 +235,7 @@ function ScreenshotImportPanel({
   const [parsed, setParsed] = useState<ScreenshotImportResult | null>(null);
   const [status, setStatus] = useState("粘贴 OCR（文字识别）文本后可解析；导入后会自动开始考试式练习。");
   const [loading, setLoading] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
   const parse = async (startDrill: boolean) => {
     if (loading) return;
     setLoading(true);
@@ -265,11 +267,47 @@ function ScreenshotImportPanel({
       setLoading(false);
     }
   };
+  const handleDropFiles = useCallback(async (files: File[]) => {
+    if (!files.length || loading) return;
+    setDragActive(false);
+    setStatus("正在读取拖入文件...");
+    try {
+      const extracted = await extractTextFromFiles(files);
+      setText((current) => appendImportedText(current, extracted.text));
+      setImagePath(files[0]?.name || "");
+      const names = extracted.results.map((result) => result.filename).join("、");
+      setStatus(`已读取 ${names}，可继续解析或导入练习。`);
+    } catch (err) {
+      setStatus(`文件读取失败：${err instanceof Error ? err.message : "未知错误"}`);
+    }
+  }, [loading]);
   return (
     <section className="coming-panel workbench-form">
       <span className="eyebrow">Screenshot（截图）</span>
       <h3>截图导入</h3>
       <p>截图导入会把识别出的词表写入学习库，并立即创建一组考试式语境题。</p>
+      <div
+        className={`drop-zone screenshot-drop ${dragActive ? "drag-over" : ""}`}
+        onDragEnter={(event) => {
+          if (event.dataTransfer.types.includes("Files")) setDragActive(true);
+        }}
+        onDragOver={(event) => {
+          if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+        }}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            setDragActive(false);
+          }
+        }}
+        onDrop={(event: DragEvent<HTMLDivElement>) => {
+          event.preventDefault();
+          void handleDropFiles(Array.from(event.dataTransfer.files || []));
+        }}
+      >
+        <ImageSquare size={20} />
+        <strong>拖入截图或文本文件</strong>
+        <span>PNG / JPG / TXT / MD / PDF / DOCX</span>
+      </div>
       <label>源图片路径<input value={imagePath} onChange={(event) => setImagePath(event.target.value)} placeholder="可选，例如 D:/.../word-list.png" /></label>
       <label>截图识别文本<textarea value={text} onChange={(event) => setText(event.target.value)} placeholder={"粘贴单词列表或题目文本，例如：collision\nn. 碰撞；冲突"} /></label>
       <div className="workbench-actions">

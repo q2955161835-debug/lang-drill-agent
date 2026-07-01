@@ -78,6 +78,51 @@ class DataPathService:
         )
         return status
 
+    def choose_question_database_folder(
+        self,
+        *,
+        initial_folder: str = "",
+        title: str = "选择题目数据库文件夹",
+    ) -> dict[str, Any]:
+        initial = self._initial_dialog_folder(initial_folder)
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+        except Exception as exc:
+            return {
+                "selected": False,
+                "folder": "",
+                "message": f"无法打开本机文件夹选择器：{exc}",
+            }
+
+        root = None
+        try:
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes("-topmost", True)
+            selected = filedialog.askdirectory(title=title or "选择题目数据库文件夹", initialdir=str(initial))
+        except Exception as exc:
+            return {
+                "selected": False,
+                "folder": "",
+                "message": f"无法打开本机文件夹选择器：{exc}",
+            }
+        finally:
+            if root is not None:
+                try:
+                    root.destroy()
+                except Exception:
+                    pass
+
+        if not selected:
+            return {"selected": False, "folder": "", "message": "未选择文件夹。"}
+        folder = Path(selected).resolve()
+        return {
+            "selected": True,
+            "folder": self._display_path(folder),
+            "message": "已选择题目数据库文件夹，请确认迁移方式后保存。",
+        }
+
     def _resolve_folder(self, raw_folder: str) -> Path:
         clean = (raw_folder or "").strip().strip('"')
         if not clean:
@@ -88,6 +133,16 @@ class DataPathService:
         if folder.exists() and not folder.is_dir():
             raise ValueError("题目数据库位置必须是文件夹。")
         return folder.resolve()
+
+    def _initial_dialog_folder(self, raw_folder: str) -> Path:
+        clean = (raw_folder or "").strip().strip('"')
+        if clean:
+            folder = Path(os.path.expandvars(clean)).expanduser()
+            if not folder.is_absolute():
+                folder = PROJECT_ROOT / folder
+            if folder.exists() and folder.is_dir():
+                return folder.resolve()
+        return load_settings().user_data_dir
 
     def _initialize_default_database(self, db_path: Path) -> None:
         init_db(db_path)

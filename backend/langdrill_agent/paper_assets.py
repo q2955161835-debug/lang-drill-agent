@@ -13,7 +13,9 @@ from .utils import dumps
 
 
 BUILTIN_PAPER_EXAM_IDS = ["cet4", "cet6", "cjt4", "cjt6", "ielts", "toefl", "gaokao-english", "custom"]
-TEXT_SUFFIXES = {".md", ".markdown", ".txt"}
+TEXT_SUFFIXES = {".md", ".markdown", ".txt", ".csv"}
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".jp2", ".webp", ".gif", ".bmp"}
+MINERU_FLASH_SUFFIXES = IMAGE_SUFFIXES | {".pptx", ".xlsx"}
 
 
 def paper_root() -> Path:
@@ -93,7 +95,9 @@ def extract_text_from_file(path: Path, *, language: str = "ch") -> tuple[str, st
         return _extract_pdf_text(path, language=language)
     if suffix == ".docx":
         return _extract_docx_text(path)
-    raise RuntimeError(f"暂不支持解析 {suffix or '无扩展名'} 文件，请先转换为 Markdown/TXT/PDF/DOCX。")
+    if suffix in MINERU_FLASH_SUFFIXES:
+        return _extract_with_mineru_flash(path, language=language)
+    raise RuntimeError(f"暂不支持解析 {suffix or '无扩展名'} 文件，请先转换为 Markdown/TXT/PDF/DOCX 或图片。")
 
 
 def _extract_pdf_text(path: Path, *, language: str) -> tuple[str, str]:
@@ -107,9 +111,16 @@ def _extract_pdf_text(path: Path, *, language: str) -> tuple[str, str]:
     except Exception:
         pass
 
+    try:
+        return _extract_with_mineru_flash(path, language=language)
+    except RuntimeError as exc:
+        raise RuntimeError(f"PDF 解析失败：{exc}") from exc
+
+
+def _extract_with_mineru_flash(path: Path, *, language: str) -> tuple[str, str]:
     mineru = shutil.which("mineru-open-api")
     if not mineru:
-        raise RuntimeError("PDF 解析需要安装 pypdf，或安装 MinerU CLI：npm install -g mineru-open-api。")
+        raise RuntimeError("图片或复杂文档解析需要安装 MinerU CLI：npm install -g mineru-open-api。")
     result = subprocess.run(
         [mineru, "flash-extract", str(path), "--language", language],
         capture_output=True,

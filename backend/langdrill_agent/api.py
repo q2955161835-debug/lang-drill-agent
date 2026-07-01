@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import logging
 import re
+import tempfile
 import time
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi import Request
@@ -33,6 +35,7 @@ from .models import (
     PhoneMirrorStartRequest,
     ProfileUpdateRequest,
     PromptPack,
+    QuestionDatabaseFolderSelectRequest,
     QuestionDatabaseFolderRequest,
     QuestionTypeSelectRequest,
     ScreenshotImportRequest,
@@ -41,6 +44,7 @@ from .models import (
     TaskType,
     UserProfile,
 )
+from .paper_assets import extract_text_from_file, safe_path_part
 from .providers import ModelProvider
 from .phone_mirror import PhoneMirrorService
 from .screenshot_import import ScreenshotImportService
@@ -181,6 +185,47 @@ def _coerce_plain_model_text(content: str, fallback: str) -> str:
                 return value.strip()
         return fallback
     return text or fallback
+
+
+def _safe_upload_filename(filename: str) -> str:
+    raw_name = Path((filename or "uploaded-file").replace("\\", "/")).name
+    suffix = Path(raw_name).suffix.lower()
+    stem = safe_path_part(Path(raw_name).stem)
+    if not suffix or not re.match(r"^\.[A-Za-z0-9]{1,8}$", suffix):
+        suffix = ".txt"
+    return f"{stem or 'uploaded-file'}{suffix}"
+
+
+async def _uploaded_file_to_temp(request: Request, *, filename: str) -> tuple[tempfile.TemporaryDirectory, Path, int]:
+    data = await request.body()
+    if not data:
+        raise ValueError("上传文件为空。")
+    max_bytes = 25 * 1024 * 1024
+    if len(data) > max_bytes:
+        raise ValueError("上传文件不能超过 25MB。")
+    temp_dir = tempfile.TemporaryDirectory(prefix="langdrill-upload-")
+    path = Path(temp_dir.name) / _safe_upload_filename(filename)
+    path.write_bytes(data)
+    return temp_dir, path, len(data)
+
+
+async def _extract_uploaded_file_text(
+    request: Request,
+    *,
+    filename: str,
+    language: str = "ch",
+) -> dict:
+    temp_dir, path, size = await _uploaded_file_to_temp(request, filename=filename)
+    try:
+        text, parser = extract_text_from_file(path, language=language)
+        return {
+            "filename": filename or path.name,
+            "text": text,
+            "parser": parser,
+            "size": size,
+        }
+    finally:
+        temp_dir.cleanup()
 
 
 def _general_chat_response(
@@ -513,6 +558,23 @@ def configure_question_database_folder(request: QuestionDatabaseFolderRequest) -
         overwrite=request.overwrite,
     )
     return {"data_paths": status, "message": status.get("message", "题目数据库目录已更新。")}
+
+
+@app.post("/api/data-paths/select-folder")
+def select_question_database_folder(request: QuestionDatabaseFolderSelectRequest) -> dict:
+    return DataPathService().choose_question_database_folder(
+        initial_folder=request.initial_folder,
+        title=request.title,
+    )
+
+
+@app.post("/api/files/extract-text")
+async def extract_uploaded_file_text(
+    request: Request,
+    filename: str = "",
+    language: str = "ch",
+) -> dict:
+    return await _extract_uploaded_file_text(request, filename=filename, language=language)
 
 
 @app.post("/api/settings/defaults")
@@ -984,6 +1046,38 @@ def past_paper_import(request: PastPaperImportRequest) -> dict:
             raw_text=request.raw_text,
             parse_now=request.parse_now,
         )
+
+
+@app.post("/api/past-papers/import-file")
+async def past_paper_import_file(
+    request: Request,
+    exam_id: str,
+    title: str,
+    filename: str = "",
+    year: int | None = None,
+    source_url: str = "",
+    summary: str = "",
+    question_types: str = "",
+    parse_now: bool = True,
+) -> dict:
+    temp_dir, path, _size = await _uploaded_file_to_temp(request, filename=filename)
+    try:
+        clean_types = [item.strip() for item in re.split(r"[，,\n]", question_types) if item.strip()]
+        init_db()
+        with transaction() as conn:
+            return PastPaperService(conn).manual_import(
+                exam_id=exam_id,
+                title=title,
+                year=year,
+                source_url=source_url,
+                local_path=str(path),
+                summary=summary,
+                question_types=clean_types,
+                raw_text="",
+                parse_now=parse_now,
+            )
+    finally:
+        temp_dir.cleanup()
 
 
 @app.post("/api/past-papers/parse")

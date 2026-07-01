@@ -16,12 +16,13 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - 普通寒暄、学习建议咨询和澄清问题必须作为普通聊天处理，不得自动生成题组或写入题目；只有明确词表、截图词表、显式“出题 / 练习 / 刷题 / 考我”等学习动作才进入正式组卷流程。
 - 启动链路必须适配中文路径、后台运行、日志落盘和 HTTP（HyperText Transfer Protocol，超文本传输协议）健康检查。
 - 截图词表导入后必须自动创建独立练习会话并生成完整考试式题组；词表解析需支持“单词独占一行 + 下一行释义”、`word n. 释义` 和 `word: 释义` 等常见 OCR（文字识别）/主聊天粘贴格式；题型应使用英文语境句、完形空格、阅读问题或同义改写，禁止退化为“选择中文释义 / 最合适理解”的词卡题。
-- 主聊天栏粘贴 3 个以上截图词条时必须复用截图导入后台流程，自动创建截图练习会话、导入词表并生成题组；前端等待状态需区分“截图解析中”和“题目生成中”。
+- 主聊天栏粘贴 3 个以上截图词条时必须复用截图导入后台流程，自动创建截图练习会话、导入词表并生成题组；主聊天文本框支持拖入 TXT（纯文本格式）/Markdown（Markdown 文本格式）/PDF（Portable Document Format，便携式文档格式）/DOCX（Word 文档格式）/图片等文件并把抽取文本追加到输入框；前端等待状态需区分“截图解析中”和“题目生成中”。
+- 右侧“截图导入”和设置页“手动导入试卷”必须支持文件拖拽导入：截图导入拖入文件后抽取 OCR（文字识别）/文本并填入识别文本框；手动导入试卷拖入文件后上传到后端，保存到 `papers/<考试>/raw` 并生成 `papers/<考试>/parsed` 解析 JSON（JSON 数据交换格式）。
 - 答题提交后必须让 Evaluator Tutor（判题讲解 Agent）结合当前会话上下文、用户背景和程序判定生成个性化讲解；模型不可用时才回退基础判题，且不得丢失作答记录。刚答完的题目必须作为普通聊天回顾卡片保留，显示用户选择、正确答案和对错状态；只有当前待答题使用置顶/吸附题卡。
 - 聊天输入区需要展示当前上下文容量占用，默认上限 1,000,000 token（令牌），支持保存自定义上限和主动压缩上下文；LLMLingua（提示词压缩库）作为可选增强，默认使用本地抽取式摘要兜底。
 - 主聊天和右侧分支消息必须通过安全的 Markdown（标记语言）渲染组件展示基础格式，包括加粗、内联代码、列表、标题和代码块；禁止用不可信模型内容直接写入 HTML（超文本标记语言）。
 - 历年真题以 `exam_assets` 中的试卷记录和 `papers/<考试>/raw`、`papers/<考试>/parsed` 中的原始/解析资产为准，默认选择近 3 年真题；出题 Agent（智能体）必须参考当前选中的真题解析结果和已勾选题型，但不得复刻或长段引用完整真题原文。
-- 用户题目数据库支持自定义用户数据文件夹和迁移：模型生成给用户作答的题目、会话、作答、知识项和统计仍写入同一个 SQLite（轻量数据库）运行库；设置页“数据”页签和 CLI（命令行接口）可迁移当前库或初始化空库。
+- 用户题目数据库支持自定义用户数据文件夹和迁移：模型生成给用户作答的题目、会话、作答、知识项和统计仍写入同一个 SQLite（轻量数据库）运行库；设置页“数据”页签和 CLI（命令行接口）可迁移当前库或初始化空库，Web（网页）设置页应提供本机文件夹选择按钮辅助填写目录。
 
 ## GitHub（代码托管平台）
 
@@ -40,14 +41,14 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 ## 目录结构与职责
 
 - `backend/langdrill_agent/`：共享后端核心。CLI（命令行接口）、API（接口）、服务层、Agent（智能体）、模型配置、学习算法和数据库访问都在这里。
-- `backend/langdrill_agent/api.py`：FastAPI（Web API 框架）入口，负责 bootstrap（初始化加载）、chat（聊天学习）、branch（分支）、profile（用户档案）、model-config（模型配置）、exam/syllabus（考试与考纲）、phone-mirror（手机映像）和 screenshot（截图导入）接口。
+- `backend/langdrill_agent/api.py`：FastAPI（Web API 框架）入口，负责 bootstrap（初始化加载）、chat（聊天学习）、branch（分支）、profile（用户档案）、model-config（模型配置）、exam/syllabus（考试与考纲）、phone-mirror（手机映像）、screenshot（截图导入）、文件文本抽取和数据路径选择接口。
 - `backend/langdrill_agent/cli.py`：命令行入口，提供 init（初始化）、serve（启动服务）、status（状态）、chat（终端聊天）、data-paths（数据路径）和 backup-user-data（备份用户数据）。
 - `backend/langdrill_agent/services.py`：学习状态机、题组推进、作答写入、掌握度更新、会话生命周期和业务编排。
 - `backend/langdrill_agent/services.py` 中的 `PastPaperService`：历年真题试卷资产、默认近三年选择、题型开关、手动导入、重新解析和联网搜索导入索引。
-- `backend/langdrill_agent/paper_assets.py`：历年真题目录、原始文件保存、PDF（Portable Document Format，便携式文档格式）/DOCX（Word 文档格式）/Markdown（Markdown 文本格式）文本抽取、解析 JSON（JSON 数据交换格式）生成和短摘录提取。
+- `backend/langdrill_agent/paper_assets.py`：历年真题目录、原始文件保存、PDF（Portable Document Format，便携式文档格式）/DOCX（Word 文档格式）/Markdown（Markdown 文本格式）/图片文件文本抽取、解析 JSON（JSON 数据交换格式）生成和短摘录提取；图片和复杂文档依赖可选 MinerU CLI（MinerU 命令行工具）。
 - `backend/langdrill_agent/learning_stats.py`：长期学习统计服务，按当前考试聚合题目完成、词汇掌握和整体正确率。
 - `backend/langdrill_agent/context.py`：上下文容量、会话上下文快照、主动压缩、使用统计和 token（令牌）统计口径。
-- `backend/langdrill_agent/data_paths.py`：用户数据目录、题目 SQLite（轻量数据库）路径状态、迁移、空库初始化和 `.env` 路径账本更新。
+- `backend/langdrill_agent/data_paths.py`：用户数据目录、题目 SQLite（轻量数据库）路径状态、迁移、空库初始化、本机文件夹选择和 `.env` 路径账本更新。
 - `backend/langdrill_agent/agents.py`：Orchestrator（调度器）、Question Author（出题 Agent）和 Evaluator Tutor（判题讲解 Agent）的实现。
 - `backend/langdrill_agent/task_router.py`：用户意图识别与任务路由。
 - `backend/langdrill_agent/providers.py`：模型供应商配置、API Key（接口密钥）读取和模型调用适配。
