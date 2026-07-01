@@ -288,12 +288,20 @@ export type ScreenshotWord = {
   meaning: string;
 };
 
+export type ScreenshotImportDiagnostics = {
+  skipped_lines: Array<{ text: string; reason: string }>;
+  repaired_terms: Array<{ text: string; term: string; reason: string }>;
+  skipped_count: number;
+  repaired_count: number;
+};
+
 export type ScreenshotImportResult = {
   prompt: string;
   options: string[];
   confidence: string;
   raw_text: string;
   words?: ScreenshotWord[];
+  diagnostics?: ScreenshotImportDiagnostics;
   imported?: boolean;
   imported_count?: number;
   auto_started?: boolean;

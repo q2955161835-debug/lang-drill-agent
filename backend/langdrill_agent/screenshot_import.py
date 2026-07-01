@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 class ScreenshotImportService:
     OPTION_RE = re.compile(r"(?:^|\n)\s*([A-D])\s*[\.．、)]\s*(.+?)(?=\n\s*[A-D]\s*[\.．、)]|$)", re.S | re.I)
     TERM_RE = re.compile(r"^[A-Za-z][A-Za-z'-]{1,40}$")
+    INCOMPLETE_TERM_RE = re.compile(r"^[A-Za-z][A-Za-z'-]{1,40}[\.．…]$")
     INLINE_POS_RE = re.compile(
         r"^([A-Za-z][A-Za-z'-]{1,40})\s+"
         r"((?:n|v|vi|vt|adj|adv|prep|conj|pron|num|art|aux)\..+)$",
@@ -21,6 +22,55 @@ class ScreenshotImportService:
     )
     INLINE_SEPARATOR_RE = re.compile(r"^([A-Za-z][A-Za-z'-]{1,40})\s*[:：]\s*(.+)$")
     PART_OF_SPEECH_RE = re.compile(r"^(?:n|v|vi|vt|adj|adv|prep|conj|pron|num|art|aux)\.", re.I)
+    UI_NOISE_EXACT = {
+        "abc",
+        "单词列表",
+        "展开",
+        "速听",
+        "速刷",
+        "单词选义",
+        "拼写",
+        "听写",
+    }
+    UI_NOISE_PATTERNS = (
+        re.compile(r"^截图导入文本[:：]?$"),
+        re.compile(r"^\d{1,2}:\d{2}$"),
+        re.compile(r"^\d{1,3}%?$"),
+        re.compile(r"^共\s*\d+\s*词$"),
+        re.compile(r"^按.+排序$"),
+        re.compile(r"^已思考\s*\d+\s*s\s*[>＞]?$", re.I),
+    )
+    COMMON_REPAIR_TERMS = {
+        "adequate",
+        "altogether",
+        "aware",
+        "blood",
+        "bow",
+        "champion",
+        "class",
+        "contrary",
+        "course",
+        "cultivate",
+        "discard",
+        "evident",
+        "executive",
+        "extreme",
+        "fall",
+        "fierce",
+        "forever",
+        "hence",
+        "laser",
+        "loyalty",
+        "material",
+        "process",
+        "research",
+        "robe",
+        "root",
+        "skin",
+        "state",
+        "vigorous",
+        "waterfall",
+    }
 
     def parse_text(self, text: str, source_image_path: str = "") -> dict[str, Any]:
         cleaned = "\n".join(line.strip() for line in text.splitlines() if line.strip())
@@ -31,7 +81,7 @@ class ScreenshotImportService:
                 options.append(option_text)
         prompt = self.OPTION_RE.split(cleaned)[0].strip() if options else cleaned
         prompt = prompt or "Imported screenshot question"
-        words = self._parse_vocabulary_words(cleaned)
+        words, diagnostics = self._parse_vocabulary_words(cleaned)
         confidence = "structured" if len(options) >= 2 else "text_only"
         if words and not options:
             confidence = "vocabulary_list"
@@ -43,10 +93,11 @@ class ScreenshotImportService:
             "prompt": prompt,
             "options": options[:4],
             "words": words,
+            "diagnostics": diagnostics,
             "confidence": confidence,
             "raw_text": cleaned,
             "source_image_path": source_image_path,
-            "next_step": "请人工确认题干和选项；确认后可把文本发送到主聊天生成练习。",
+            "next_step": self._next_step(confidence, diagnostics),
         }
 
     def import_words(
@@ -134,9 +185,11 @@ class ScreenshotImportService:
             (dumps(plan), session_id),
         )
 
-    def _parse_vocabulary_words(self, cleaned: str) -> list[dict[str, str]]:
+    def _parse_vocabulary_words(self, cleaned: str) -> tuple[list[dict[str, str]], dict[str, Any]]:
         lines = [line.strip() for line in cleaned.splitlines() if line.strip()]
         words: list[dict[str, str]] = []
+        skipped_lines: list[dict[str, str]] = []
+        repaired_terms: list[dict[str, str]] = []
         current_term = ""
         current_meaning: list[str] = []
 
@@ -148,23 +201,60 @@ class ScreenshotImportService:
             current_term = ""
             current_meaning = []
 
+        def reset_current(reason: str = "") -> None:
+            nonlocal current_term, current_meaning
+            if current_term and current_meaning:
+                flush()
+            elif current_term and reason:
+                skipped_lines.append({"text": current_term, "reason": reason})
+                current_term = ""
+                current_meaning = []
+
         for line in lines:
+            if self._is_ui_noise(line):
+                if current_term and current_meaning:
+                    flush()
+                continue
             inline_word = self._parse_inline_word(line)
             if inline_word:
-                flush()
+                reset_current("missing_meaning")
                 words.append(inline_word)
                 continue
             if self._looks_like_term(line):
-                flush()
+                reset_current("missing_meaning")
                 current_term = line.lower()
+                continue
+            repaired_term = self._repair_incomplete_term(line)
+            if repaired_term:
+                reset_current("missing_meaning")
+                current_term = repaired_term
+                repaired_terms.append({"text": line, "term": repaired_term, "reason": "ocr_clipped_term_repaired"})
+                continue
+            if self._looks_like_incomplete_term(line):
+                reset_current()
+                skipped_lines.append({"text": line, "reason": "ocr_clipped_term"})
                 continue
             if current_term and self._looks_like_meaning(line):
                 current_meaning.append(line)
-        flush()
-        return words
+                continue
+            if self._looks_like_meaning(line):
+                skipped_lines.append({"text": line, "reason": "meaning_without_term"})
+                continue
+            reset_current("unrecognized_line_interrupted_entry")
+        reset_current("missing_meaning")
+        diagnostics = {
+            "skipped_lines": skipped_lines[:20],
+            "repaired_terms": repaired_terms[:20],
+            "skipped_count": len(skipped_lines),
+            "repaired_count": len(repaired_terms),
+        }
+        return words, diagnostics
 
     def _looks_like_term(self, line: str) -> bool:
         return bool(self.TERM_RE.fullmatch(line)) and line.lower() not in {"qq", "abc"}
+
+    def _looks_like_incomplete_term(self, line: str) -> bool:
+        return bool(self.INCOMPLETE_TERM_RE.fullmatch(line))
 
     def _looks_like_meaning(self, line: str) -> bool:
         return bool(self.PART_OF_SPEECH_RE.match(line)) or any("\u4e00" <= char <= "\u9fff" for char in line)
@@ -179,3 +269,25 @@ class ScreenshotImportService:
             if term and meaning and self._looks_like_meaning(meaning):
                 return {"term": term, "meaning": meaning}
         return None
+
+    def _is_ui_noise(self, line: str) -> bool:
+        normalized = line.strip()
+        if normalized in self.UI_NOISE_EXACT or normalized.lower() in self.UI_NOISE_EXACT:
+            return True
+        return any(pattern.match(normalized) for pattern in self.UI_NOISE_PATTERNS)
+
+    def _repair_incomplete_term(self, line: str) -> str:
+        if not self._looks_like_incomplete_term(line):
+            return ""
+        prefix = re.sub(r"[^a-z'-]", "", line.lower())
+        if len(prefix) < 5:
+            return ""
+        matches = [term for term in self.COMMON_REPAIR_TERMS if term.startswith(prefix)]
+        return matches[0] if len(matches) == 1 else ""
+
+    def _next_step(self, confidence: str, diagnostics: dict[str, Any]) -> str:
+        if confidence == "vocabulary_list":
+            if diagnostics.get("skipped_count") or diagnostics.get("repaired_count"):
+                return "已尽量过滤手机界面噪声并修复疑似截断词；请人工确认词条后导入练习。"
+            return "已识别为词表；确认后可直接导入并开始练习。"
+        return "请人工确认题干和选项；确认后可把文本发送到主聊天生成练习。"

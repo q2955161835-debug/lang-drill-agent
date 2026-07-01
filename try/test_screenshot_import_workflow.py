@@ -42,6 +42,46 @@ n. 忠诚，忠心
 """
 
 
+NOISY_MOBILE_WORD_LIST_TEXT = """
+截图导入文本：
+15:29
+88
+单词列表
+共4440词
+按词书默认排序
+skin
+n.皮，皮肤，肤色；兽皮，毛皮
+hence
+adv.因此
+vigorous
+adj.强有力的，有活力的
+waterfall
+n.瀑布
+fierce
+adj.凶猛的，凶狠的；激烈的
+contrary
+adj.对立的，相反的；叛逆的
+discard
+V.丢掉
+evident
+adj.显然的，明显的，明白的
+fall
+vi.下降，减弱；落下；跌倒，突然倒下
+class
+n.课，上
+等级制度
+abc
+altoge.
+速听
+单词选义
+速刷
+拼写
+听写
+adv.完全
+forever
+"""
+
+
 def _use_mock_provider(db_path: Path) -> None:
     with transaction(db_path) as conn:
         conn.execute(
@@ -74,6 +114,34 @@ def test_parse_real_word_list_text_from_user_screenshot() -> None:
         "blood",
     ]
     assert parsed["words"][0]["meaning"].startswith("v. 培养")
+
+
+def test_parse_noisy_mobile_word_list_skips_navigation_and_repairs_clipped_terms() -> None:
+    parsed = ScreenshotImportService().parse_text(NOISY_MOBILE_WORD_LIST_TEXT)
+
+    terms = [item["term"] for item in parsed["words"]]
+    meanings = {item["term"]: item["meaning"] for item in parsed["words"]}
+
+    assert parsed["confidence"] == "vocabulary_list"
+    assert terms == [
+        "skin",
+        "hence",
+        "vigorous",
+        "waterfall",
+        "fierce",
+        "contrary",
+        "discard",
+        "evident",
+        "fall",
+        "class",
+        "altogether",
+    ]
+    assert meanings["class"] == "n.课，上 等级制度"
+    assert "速听" not in meanings["class"]
+    assert meanings["altogether"] == "adv.完全"
+    assert "forever" not in terms
+    assert parsed["diagnostics"]["repaired_terms"][0]["term"] == "altogether"
+    assert parsed["diagnostics"]["skipped_lines"][0]["text"] == "forever"
 
 
 def test_parse_inline_vocabulary_formats_from_chat_or_ocr() -> None:
