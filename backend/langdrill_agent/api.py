@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+import sqlite3
 import tempfile
 import time
 from pathlib import Path
@@ -663,6 +664,52 @@ def _looks_like_past_paper_settings_request(text: str) -> bool:
     return paper_cue and action_cue
 
 
+def _looks_like_custom_model_settings_request(text: str) -> bool:
+    lower = text.lower()
+    model_cue = any(token in lower for token in ("自定义模型", "添加模型", "新增模型", "custom model", "add model"))
+    action_cue = any(token in lower for token in ("添加", "新增", "加入", "配置", "设置", "填写", "填入", "add", "custom"))
+    return model_cue and action_cue
+
+
+def _custom_model_draft_from_request(conn: sqlite3.Connection, text: str) -> dict[str, Any]:
+    current_model = ModelConfigService(conn).current_for_ui()
+    model_id = ""
+    for pattern in (
+        r"(?:模型|model)\s*(?:id|ID|名称|名|name)?\s*[:：=]\s*([A-Za-z0-9._/@:+-]+)",
+        r"(?:添加|新增|加入|配置)\s*(?:自定义)?模型\s*([A-Za-z0-9._/@:+-]+)",
+        r"`([^`\s]+)`",
+    ):
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            model_id = match.group(1).strip(" ，,。；;")
+            break
+    label = ""
+    label_match = re.search(r"(?:显示名称|显示名|label)\s*[:：=]\s*([^\n，,；;]+)", text, re.IGNORECASE)
+    if label_match:
+        label = label_match.group(1).strip()
+    context_tokens = 0
+    context_match = re.search(r"(?:上下文|context)[^\d]{0,12}(\d+(?:\.\d+)?)\s*(万|k|m|million|tokens?|令牌)?", text, re.IGNORECASE)
+    if context_match:
+        value = float(context_match.group(1))
+        unit = (context_match.group(2) or "").lower()
+        if unit == "万":
+            value *= 10_000
+        elif unit == "k":
+            value *= 1_000
+        elif unit in {"m", "million"}:
+            value *= 1_000_000
+        context_tokens = int(value)
+    negative_vision = any(token in text for token in ("不支持图片", "不支持视觉", "非视觉"))
+    vision = not negative_vision and any(token in text.lower() for token in ("支持图片", "视觉", "vision", "image"))
+    return {
+        "provider_id": current_model.get("provider_id") or "mimo",
+        "model": model_id,
+        "label": label,
+        "context_tokens": context_tokens,
+        "vision": vision,
+    }
+
+
 @app.get("/api/bootstrap")
 def bootstrap() -> dict:
     init_db()
@@ -1079,7 +1126,32 @@ def chat(request: ChatRequest) -> ChatResponse:
 
         elif task.value == "settings":
             # ── 设置：有授权的功能可生成可确认设置动作；无授权只引导用户打开设置页 ──
-            if _looks_like_past_paper_settings_request(request.content):
+            if _looks_like_custom_model_settings_request(request.content):
+                permission_service = AgentSettingsPermissionService(conn)
+                if not permission_service.is_enabled("custom_models"):
+                    assistant_content = (
+                        "我可以帮你整理自定义模型草稿并填入模型设置页，但该功能还没有授权。\n\n"
+                        "请在设置里的「权限」页开启「配置自定义模型」，之后把模型 ID、显示名称、上下文容量和是否支持图片发给我，"
+                        "我会生成草稿，最终添加或删除仍由你在设置页确认。"
+                    )
+                else:
+                    draft = _custom_model_draft_from_request(conn, request.content)
+                    settings_action = {
+                        "type": "custom_model_draft",
+                        "feature_id": "custom_models",
+                        "label": "填入自定义模型表单",
+                        "draft": draft,
+                        "parser": "custom_model_settings_parser",
+                        "confirmation_required": True,
+                    }
+                    assistant_content = (
+                        "我已整理出一份自定义模型草稿，请确认后填入设置页再保存。\n\n"
+                        f"- 模型 ID：{draft.get('model') or '待补充'}\n"
+                        f"- 显示名称：{draft.get('label') or '同模型 ID'}\n"
+                        f"- 上下文容量：{draft.get('context_tokens') or '待补充'}\n"
+                        f"- 图片输入：{'支持' if draft.get('vision') else '文本模型'}"
+                    )
+            elif _looks_like_past_paper_settings_request(request.content):
                 permission_service = AgentSettingsPermissionService(conn)
                 if not permission_service.is_enabled("past_paper_import"):
                     assistant_content = (
