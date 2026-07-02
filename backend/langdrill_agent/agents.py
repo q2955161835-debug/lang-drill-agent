@@ -945,13 +945,27 @@ class EvaluatorTutorAgent:
                 },
                 "programmatic_judgement": "correct" if is_correct else "incorrect",
                 "base_feedback": base_feedback,
+                "user_extra_prompt": extra_prompt,
+                "answer_feedback_contract": {
+                    "extra_prompt_priority": (
+                        "如果 user_extra_prompt 非空，必须先直接回应用户这个补充提问，"
+                        "再做常规判题讲解；不要只给泛化学习建议。"
+                    ),
+                    "profile_usage": (
+                        "profile 只用于辅助判断讲解深度、例子难度和复习建议。"
+                        "除非用户问到学习设置、制定计划，或画像信息与当前错误直接相关，"
+                        "不要显式复述目标分数、考试时间、学习背景或弱项。"
+                    ),
+                },
             },
             user_content=(
                 f"用户选择：{user_answer}\n"
                 f"用户额外提问：{extra_prompt or '无'}\n\n"
-                "请基于程序判定、完整会话上下文、用户学习目标和背景，生成一段定制化判题讲解。"
+                "请基于程序判定、完整会话上下文和用户画像生成判题讲解。"
+                "如果用户额外提问不是“无”，必须在正文前半部分直接回答这个提问。"
                 "必须保留对错结论和正确答案，不要更改正确答案；如果用户没有额外提问，也要主动解释为什么对/错，"
                 "指出最该复习的知识点，并给出下一题前的一句具体提醒。"
+                "用户画像只作为辅助上下文，不要每次显式重复学习目标、目标分数、考试时间、学习背景或弱项。"
             ),
             allow_global_user_prompt=True,
         )

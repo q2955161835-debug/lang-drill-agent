@@ -7,8 +7,7 @@ from fastapi.testclient import TestClient
 from langdrill_agent.agents import EvaluatorTutorAgent, QuestionAuthorAgent
 from langdrill_agent.api import app
 from langdrill_agent.db import init_db, transaction
-from langdrill_agent.models import ChatRequest, TaskType
-from langdrill_agent.models import Question
+from langdrill_agent.models import ChatRequest, Question, TaskType, UserProfile
 from langdrill_agent.providers import ModelResult
 from langdrill_agent.services import ProfileService, QuestionService, SessionService
 from langdrill_agent.task_router import TaskRouter
@@ -36,6 +35,24 @@ class ChineseOptionProvider:
             ],
         }
         return ModelResult(content=dumps(payload), input_tokens=1, output_tokens=1, latency_ms=0, model=self.model)
+
+
+class CapturePromptProvider:
+    provider_id = "capture"
+    model = "capture-model"
+
+    def __init__(self) -> None:
+        self.packs = []
+
+    def complete(self, pack) -> ModelResult:
+        self.packs.append(pack)
+        return ModelResult(
+            content="判断：正确。\n\n正确答案：A skin。\n\nD 是 waterfall，意思是瀑布，不能和 harm 搭配表示损害皮肤。",
+            input_tokens=1,
+            output_tokens=1,
+            latency_ms=0,
+            model=self.model,
+        )
 
 
 def test_selected_option_routes_as_answer_even_with_extra_prompt() -> None:
@@ -139,6 +156,54 @@ def test_chat_answers_question_by_id_without_model_reroute(
         ).fetchall()
 
     assert [row["task_type"] for row in calls] == ["answer_evaluation"]
+
+
+def test_answer_extra_prompt_is_structured_and_profile_usage_is_not_repetitive(tmp_path: Path) -> None:
+    db_path = tmp_path / "answer-extra-prompt.db"
+    init_db(db_path)
+    provider = CapturePromptProvider()
+
+    with transaction(db_path) as conn:
+        ProfileService(conn).update(
+            UserProfile(
+                exam_id="cet4",
+                exam_name="大学英语四级",
+                learning_goal="四级 600 分",
+                learning_background="阅读和长难句偏弱",
+            )
+        )
+        session_id = SessionService(conn).ensure_session(None, "answer extra prompt", force_new=True)
+        question = Question(
+            id="q_extra_prompt",
+            session_id=session_id,
+            sequence=1,
+            type="cloze",
+            prompt="Choose the best word to complete the sentence.\n\nThis cream can protect your ______.",
+            options=["skin", "hence", "fierce", "waterfall"],
+            answer={"letter": "A", "correct": "skin"},
+            explanation="Skin fits the body-part context.",
+            knowledge_tags=["vocabulary:skin"],
+            difficulty=0.3,
+            source_refs=[],
+        )
+        QuestionService(conn).save_question(question)
+        EvaluatorTutorAgent(conn, provider).evaluate(
+            session_id,
+            QuestionService(conn).active_question(session_id),
+            "A",
+            extra_prompt="D 不太会",
+        )
+
+    pack = provider.packs[0]
+    module_text = "\n".join(module["content"] for module in pack.system_modules)
+
+    assert pack.context_pack["user_extra_prompt"] == "D 不太会"
+    assert "必须先直接回应用户这个补充提问" in pack.context_pack["answer_feedback_contract"]["extra_prompt_priority"]
+    assert "用户额外提问：D 不太会" in pack.user_content
+    assert "必须在正文前半部分直接回答这个提问" in pack.user_content
+    assert "不要每次显式重复学习目标" in pack.user_content
+    assert "除非用户主动询问学习设置、制定计划" in module_text
+    assert "要主动结合这些信息" not in module_text
 
 
 def test_model_feedback_json_is_rendered_as_readable_text() -> None:

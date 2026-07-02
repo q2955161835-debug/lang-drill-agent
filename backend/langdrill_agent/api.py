@@ -400,7 +400,8 @@ def _runtime_instruction_modules(task_type: str) -> list[dict[str, str]]:
         "content": (
             "必须把 context_pack.profile 当作当前用户画像来源。用户询问“我的目标/基础/考试/考试时间/每天学习多久/当前语言”时，"
             "优先直接读取 learning_goal、learning_background、exam_name、target_language、deadline、daily_minutes；字段为空才反问。"
-            "讲解题目、制定计划和分支解释时，要主动结合这些信息，例如目标分数、考试截止时间、学习基础和弱项。"
+            "讲解题目、制定计划和分支解释时，把这些信息作为辅助上下文来调节难度、例子和复习建议；"
+            "除非用户主动询问学习设置、制定计划，或目标/背景与当前错误直接相关，否则不要在回复中显式复述目标分数、考试时间、学习背景或弱项。"
             "不要让用户重复提供 context_pack.profile 已有的信息。"
         ),
     }
@@ -422,7 +423,8 @@ def _runtime_instruction_modules(task_type: str) -> list[dict[str, str]]:
                 "id": "runtime.branch_context_contract",
                 "content": (
                     "分支会话继承主会话的用户画像、考试目标、权限状态、当前题和选中文本。"
-                    "解释 selected_text 或追问时，要围绕分支材料展开，并结合用户学习背景调整难度；"
+                    "解释 selected_text 或追问时，要围绕分支材料展开，并使用用户学习背景调整难度；"
+                    "除非用户询问或确实直接相关，不要重复强调目标分数、考试时间或学习背景；"
                     "默认不写回主会话数据库，不声称已经修改主线记录。"
                 ),
             },
@@ -1498,7 +1500,10 @@ def chat(request: ChatRequest) -> ChatResponse:
                 extra_context={
                     "task_type": "explanation",
                     "question": active,
-                    "explanation_contract": "围绕当前题讲解和提示，结合用户目标、考试时间和学习背景调整难度；未作答前不要直接泄露正确答案。",
+                    "explanation_contract": (
+                        "围绕当前题讲解和提示，用用户目标、考试时间和学习背景调节难度；"
+                        "除非用户询问或与当前追问直接相关，不要显式复述这些画像字段；未作答前不要直接泄露正确答案。"
+                    ),
                 },
             )
             try:
