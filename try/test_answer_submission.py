@@ -170,6 +170,7 @@ def test_answer_extra_prompt_is_structured_and_profile_usage_is_not_repetitive(t
                 exam_name="大学英语四级",
                 learning_goal="四级 600 分",
                 learning_background="阅读和长难句偏弱",
+                global_user_prompt="讲题时先给结论，再解释易混点。",
             )
         )
         session_id = SessionService(conn).ensure_session(None, "answer extra prompt", force_new=True)
@@ -199,11 +200,31 @@ def test_answer_extra_prompt_is_structured_and_profile_usage_is_not_repetitive(t
 
     assert pack.context_pack["user_extra_prompt"] == "D 不太会"
     assert "必须先直接回应用户这个补充提问" in pack.context_pack["answer_feedback_contract"]["extra_prompt_priority"]
+    assert "不要输出“下一题已就绪”" in pack.context_pack["answer_feedback_contract"]["progress_footer"]
     assert "用户额外提问：D 不太会" in pack.user_content
     assert "必须在正文前半部分直接回答这个提问" in pack.user_content
+    assert "不要写“下一题已就绪”" in pack.user_content
     assert "不要每次显式重复学习目标" in pack.user_content
+    assert "profile.saved_user_prompt" in [module["id"] for module in pack.system_modules]
+    assert "讲题时先给结论，再解释易混点。" in module_text
     assert "除非用户主动询问学习设置、制定计划" in module_text
     assert "要主动结合这些信息" not in module_text
+
+
+def test_model_feedback_progress_footer_is_stripped() -> None:
+    feedback = (
+        "判断：正确。\n\n"
+        "正确答案：A skin。\n\n"
+        "讲解：skin fits the sentence.\n\n"
+        "下一题已就绪：第 7 题 / 共 11 题。"
+    )
+
+    assert EvaluatorTutorAgent._strip_drill_progress_footer(feedback) == (
+        "判断：正确。\n\n"
+        "正确答案：A skin。\n\n"
+        "讲解：skin fits the sentence."
+    )
+    assert EvaluatorTutorAgent._strip_drill_progress_footer("下一题已就绪：第 7 题 / 共 11 题。") == ""
 
 
 def test_model_feedback_json_is_rendered_as_readable_text() -> None:

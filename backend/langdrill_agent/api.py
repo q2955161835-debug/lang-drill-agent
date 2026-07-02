@@ -1462,18 +1462,19 @@ def chat(request: ChatRequest) -> ChatResponse:
                     answer_content,
                     extra_prompt=extra_prompt,
                 )
+                feedback = EvaluatorTutorAgent._strip_drill_progress_footer(result.feedback)
                 answered_question = _answered_question_snapshot(active, answer_content, result.is_correct)
                 session_service.mark_completed_if_finished(session_id)
                 active_question = QuestionService(conn).active_question(session_id)
                 progress = QuestionService(conn).question_progress(session_id)
                 if active_question:
                     assistant_content = (
-                        f"{result.feedback}\n\n"
+                        f"{feedback}\n\n"
                         f"下一题已就绪：第 {active_question.get('sequence')} 题 / 共 {progress['total']} 题。"
                     )
                 else:
                     assistant_content = (
-                        f"{result.feedback}\n\n"
+                        f"{feedback}\n\n"
                         f"本轮题目已完成：{progress['done']}/{progress['total']}。"
                         "可以输入新的学习内容开启下一轮，或输入“总结”查看今日复盘。"
                     )

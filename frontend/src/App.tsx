@@ -4134,13 +4134,15 @@ function SettingsDialog({
                   {personalityOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
                 </select>
                 <p className="hint">{personalityOptions.find((item) => item.id === draft.persona)?.prompt}</p>
-                {draft.persona === "custom" && (
+                <label className="field-label">
+                  自定义指令
                   <textarea
                     value={draft.global_user_prompt || ""}
                     onChange={(event) => setDraft({ ...draft, global_user_prompt: event.target.value })}
-                    placeholder="填写自定义人格提示词，例如：语气冷静、少废话、每次先给结论。"
+                    placeholder="例如：先给结论，再分步骤讲题；错题要指出易混点；回复少寒暄。"
                   />
-                )}
+                  <small>用于普通聊天、题目讲解和复习建议。</small>
+                </label>
                 <select aria-label="掌握度算法">
                   <option>掌握度算法：当前 V1（基础分数版）</option>
                   <option>间隔复习算法：FSRS（Free Spaced Repetition Scheduler，间隔复习调度器）预留，暂未启用</option>

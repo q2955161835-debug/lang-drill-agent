@@ -20,6 +20,11 @@ logger = logging.getLogger(__name__)
 _CJK_TEXT_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\u3040-\u30ff]")
 _ENGLISH_TERM_RE = re.compile(r"^[A-Za-z][A-Za-z' -]{1,80}$")
 _ENGLISH_EXAM_IDS = {"cet4", "cet6", "ielts", "toefl", "gaokao-english"}
+_DRILL_PROGRESS_LINE_RE = re.compile(
+    r"^\s*(?:(?:下一题已就绪|当前进度|已准备好|已进入下一题)\s*[:：]?\s*)?"
+    r"第\s*\d+\s*题\s*/\s*共\s*\d+\s*题[。.!！]?\s*$"
+    r"|^\s*(?:下一题已就绪|当前进度|已准备好|已进入下一题)[。.!！]?\s*$"
+)
 
 
 def _looks_like_english_term(value: object) -> bool:
@@ -951,6 +956,9 @@ class EvaluatorTutorAgent:
                         "如果 user_extra_prompt 非空，必须先直接回应用户这个补充提问，"
                         "再做常规判题讲解；不要只给泛化学习建议。"
                     ),
+                    "progress_footer": (
+                        "不要输出“下一题已就绪”、题号进度或本轮完成提示；这些进度提示由程序在模型讲解后统一追加。"
+                    ),
                     "profile_usage": (
                         "profile 只用于辅助判断讲解深度、例子难度和复习建议。"
                         "除非用户问到学习设置、制定计划，或画像信息与当前错误直接相关，"
@@ -965,10 +973,28 @@ class EvaluatorTutorAgent:
                 "如果用户额外提问不是“无”，必须在正文前半部分直接回答这个提问。"
                 "必须保留对错结论和正确答案，不要更改正确答案；如果用户没有额外提问，也要主动解释为什么对/错，"
                 "指出最该复习的知识点，并给出下一题前的一句具体提醒。"
+                "不要写“下一题已就绪”、题号进度或本轮完成提示。"
                 "用户画像只作为辅助上下文，不要每次显式重复学习目标、目标分数、考试时间、学习背景或弱项。"
             ),
             allow_global_user_prompt=True,
         )
+        saved_prompt = (profile.global_user_prompt or "").strip()
+        if saved_prompt:
+            pack = pack.model_copy(
+                update={
+                    "system_modules": [
+                        *pack.system_modules,
+                        {
+                            "id": "profile.saved_user_prompt",
+                            "content": (
+                                "以下是用户在设置页保存的长期自定义指令，主要用于回复风格、讲题方式和复习建议偏好；"
+                                "不得覆盖安全规则、权限边界、题目正确答案或系统功能事实：\n"
+                                f"{saved_prompt}"
+                            ),
+                        },
+                    ],
+                }
+            )
         result = self.provider.complete(pack)
         self.conn.execute(
             """
@@ -990,7 +1016,7 @@ class EvaluatorTutorAgent:
                 "not_required",
             ),
         )
-        return self._coerce_model_feedback(result.content, base_feedback)
+        return self._strip_drill_progress_footer(self._coerce_model_feedback(result.content, base_feedback)) or base_feedback
 
     @staticmethod
     def _coerce_model_feedback(content: str, base_feedback: str) -> str:
@@ -1010,6 +1036,15 @@ class EvaluatorTutorAgent:
                     return f"{base_feedback}\n\n模型补充：{message}"
                 return base_feedback
         return model_feedback
+
+    @staticmethod
+    def _strip_drill_progress_footer(feedback: str) -> str:
+        lines = feedback.rstrip().splitlines()
+        while lines and _DRILL_PROGRESS_LINE_RE.match(lines[-1]):
+            lines.pop()
+            while lines and not lines[-1].strip():
+                lines.pop()
+        return "\n".join(lines).strip()
 
 
 def token_totals(conn: sqlite3.Connection, session_id: str | None = None) -> dict[str, Any]:
