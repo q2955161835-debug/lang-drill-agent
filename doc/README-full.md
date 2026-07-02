@@ -87,7 +87,7 @@ Web（网页）前端包含三个主区域：
 - 右侧模块：分支对话界面，默认折叠，未创建分支时显示“目前没有分支对话”。
 - 右侧工作台：包含分支、手机映像、截图导入和语音预留；右侧栏可拖拽调宽，折叠或切换页签时保留截图导入和分支草稿状态；旧组词器和 Anki（记忆卡工具）导出已归档，不再进入运行路径。
 - 聊天输入区：模型快捷配置中的思考等级下拉是当前原生 thinking level（思考等级）的显示与切换入口，切换模型时按新模型能力刷新档位，不额外追加“当前：开启”这类重复状态标签；输入框右下角发送按钮左侧显示上下文容量白色占比圆环，悬浮可查看占用和执行上下文压缩。
-- 主题背景：浅色主题使用 CSS（层叠样式表）微纹理；深色主题使用 `frontend/public/assets/dark-theme-bg.jpg` 作为低对比深色微纹理背景，避免纯黑背景压暗学习界面。
+- 主题背景：浅色主题使用低方差浅蓝紫底色，深色主题使用低方差深蓝紫底色，不再叠加高对比纹理或图片背景。
 
 设置面板包含：
 
@@ -230,7 +230,7 @@ backend/langdrill_agent/        共享后端内核、API（接口）、辅助 CL
 backend/langdrill_agent/migrations/ SQLite（轻量数据库）schema（结构定义）
 backend/langdrill_agent/data_paths.py 用户数据目录、题目数据库迁移和空库初始化
 frontend/                       React（前端框架）+ Vite（前端构建工具）网页前端
-frontend/public/assets/         前端公开静态资源，例如深色主题生成背景图
+frontend/public/assets/         前端公开静态资源；当前外观背景不依赖图片资产
 papers/                         按考试类型分开的真题 raw（原始文件）和 parsed（解析结果）目录骨架
 scripts/dev/                    开发期启动与维护脚本
 src-tauri/                      Tauri（桌面壳）Windows 桌面封装骨架
