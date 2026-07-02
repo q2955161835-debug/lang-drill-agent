@@ -1039,6 +1039,28 @@ body.panel-resize-active * {
 .coming-panel h3 { margin: 6px 0 8px; }
 .coming-panel p { margin: 0; color: var(--muted); line-height: 1.7; }
 .workbench-form { display: grid; gap: 12px; }
+.screenshot-import-panel {
+  display: block;
+}
+.workbench-tab-panel > .screenshot-import-panel.has-results {
+  overflow: auto;
+}
+.workbench-tab-panel > .screenshot-import-panel.no-results {
+  overflow: auto;
+}
+.screenshot-import-controls {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.screenshot-import-panel.has-results .screenshot-import-controls {
+  margin-bottom: 12px;
+}
+.screenshot-result-region {
+  min-height: max-content;
+  overflow: visible;
+  padding-right: 0;
+}
 .workbench-form label { display: grid; gap: 7px; color: var(--muted-strong); font-size: 0.86rem; font-weight: 700; }
 .workbench-form input, .workbench-form textarea, .workbench-form select {
   width: 100%;
@@ -1302,9 +1324,11 @@ body.panel-resize-active * {
 .screenshot-word-list {
   display: grid;
   gap: 8px;
-  max-height: 360px;
-  overflow-y: auto;
-  padding-right: 2px;
+  padding-right: 0;
+}
+.screenshot-result-region .screenshot-word-list {
+  max-height: none;
+  overflow: visible;
 }
 .screenshot-word-card {
   display: grid;

@@ -506,123 +506,127 @@ function ScreenshotImportPanel({
     setStatus("已清空待解析文件，可重新拖入或粘贴文本。");
   };
   return (
-    <section className="coming-panel workbench-form">
-      <span className="eyebrow">Screenshot（截图）</span>
-      <h3>截图导入</h3>
-      <p>截图导入会把识别出的词表写入学习库，并立即创建一组考试式语境题。</p>
-      <div
-        className={`drop-zone screenshot-drop ${dragActive ? "drag-over" : ""}`}
-        onDragEnter={(event) => {
-          if (event.dataTransfer.types.includes("Files")) setDragActive(true);
-        }}
-        onDragOver={(event) => {
-          if (event.dataTransfer.types.includes("Files")) event.preventDefault();
-        }}
-        onDragLeave={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-            setDragActive(false);
-          }
-        }}
-        onDrop={(event: DragEvent<HTMLDivElement>) => {
-          event.preventDefault();
-          void handleDropFiles(Array.from(event.dataTransfer.files || []));
-        }}
-      >
-        <div className="drop-zone-main">
-          <span className="drop-zone-icon" aria-hidden="true">
-            <ImageSquare size={20} />
-          </span>
-          <span className="drop-zone-copy">
-            <strong>拖入截图或文件</strong>
-            <span>图片、文本、PDF、DOCX，先入队</span>
-          </span>
-        </div>
-        <input
-          ref={fileInputRef}
-          className="hidden-file-input"
-          type="file"
-          multiple
-          accept=".png,.jpg,.jpeg,.jp2,.webp,.gif,.bmp,.txt,.md,.markdown,.pdf,.doc,.docx,image/*"
-          onChange={handleFileInputChange}
-        />
-        <button type="button" className="drop-zone-action" onClick={() => fileInputRef.current?.click()} disabled={loading}>
-          <FolderOpen size={16} /> 选择文件
-        </button>
-      </div>
-      {queuedFiles.length > 0 && (
-        <div className="queued-file-list" aria-label="待解析文件列表">
-          <div className="queued-file-list-head">
-            <strong>待解析文件 <span>{queuedFiles.length}</span></strong>
-            <button type="button" onClick={clearQueuedFiles} disabled={loading}>清空</button>
+    <section className={`coming-panel workbench-form screenshot-import-panel ${parsed ? "has-results" : "no-results"}`}>
+      <div className="screenshot-import-controls">
+        <span className="eyebrow">Screenshot（截图）</span>
+        <h3>截图导入</h3>
+        <p>截图导入会把识别出的词表写入学习库，并立即创建一组考试式语境题。</p>
+        <div
+          className={`drop-zone screenshot-drop ${dragActive ? "drag-over" : ""}`}
+          onDragEnter={(event) => {
+            if (event.dataTransfer.types.includes("Files")) setDragActive(true);
+          }}
+          onDragOver={(event) => {
+            if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+          }}
+          onDragLeave={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+              setDragActive(false);
+            }
+          }}
+          onDrop={(event: DragEvent<HTMLDivElement>) => {
+            event.preventDefault();
+            void handleDropFiles(Array.from(event.dataTransfer.files || []));
+          }}
+        >
+          <div className="drop-zone-main">
+            <span className="drop-zone-icon" aria-hidden="true">
+              <ImageSquare size={20} />
+            </span>
+            <span className="drop-zone-copy">
+              <strong>拖入截图或文件</strong>
+              <span>图片、文本、PDF、DOCX，先入队</span>
+            </span>
           </div>
-          {queuedFiles.map((file, index) => (
-            <div className="queued-file-row" key={`${file.name}-${file.size}-${file.lastModified}-${index}`}>
-              <FileText size={16} aria-hidden="true" />
-              <span title={file.name}>{file.name}</span>
-              <small>{formatFileSize(file.size)}</small>
-              <button
-                type="button"
-                className="queued-file-remove"
-                onClick={() => removeQueuedFile(index)}
-                disabled={loading}
-                aria-label={`移除 ${file.name}`}
-                title={`移除 ${file.name}`}
-              >
-                <X size={14} />
-              </button>
-            </div>
-          ))}
+          <input
+            ref={fileInputRef}
+            className="hidden-file-input"
+            type="file"
+            multiple
+            accept=".png,.jpg,.jpeg,.jp2,.webp,.gif,.bmp,.txt,.md,.markdown,.pdf,.doc,.docx,image/*"
+            onChange={handleFileInputChange}
+          />
+          <button type="button" className="drop-zone-action" onClick={() => fileInputRef.current?.click()} disabled={loading}>
+            <FolderOpen size={16} /> 选择文件
+          </button>
         </div>
-      )}
-      <label>源图片路径 / 文件名<input value={imagePath} onChange={(event) => setImagePath(event.target.value)} placeholder="可选，例如 D:/.../word-list.png" /></label>
-      <label>截图识别文本<textarea value={text} onChange={(event) => {
-        setText(event.target.value);
-        setParsed(null);
-        setEditableWords([]);
-      }} placeholder={"粘贴单词列表或题目文本，例如：collision\nn. 碰撞；冲突"} /></label>
-      <div className="workbench-actions">
-        <button className="workbench-primary" onClick={() => void parse(false)} disabled={!canParse}>{loading ? "解析中..." : "解析文本"}</button>
-        <button onClick={() => void parse(true)} disabled={!canImport}>{loading ? "处理中..." : "导入并开始练习"}</button>
+        {queuedFiles.length > 0 && (
+          <div className="queued-file-list" aria-label="待解析文件列表">
+            <div className="queued-file-list-head">
+              <strong>待解析文件 <span>{queuedFiles.length}</span></strong>
+              <button type="button" onClick={clearQueuedFiles} disabled={loading}>清空</button>
+            </div>
+            {queuedFiles.map((file, index) => (
+              <div className="queued-file-row" key={`${file.name}-${file.size}-${file.lastModified}-${index}`}>
+                <FileText size={16} aria-hidden="true" />
+                <span title={file.name}>{file.name}</span>
+                <small>{formatFileSize(file.size)}</small>
+                <button
+                  type="button"
+                  className="queued-file-remove"
+                  onClick={() => removeQueuedFile(index)}
+                  disabled={loading}
+                  aria-label={`移除 ${file.name}`}
+                  title={`移除 ${file.name}`}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <label>源图片路径 / 文件名<input value={imagePath} onChange={(event) => setImagePath(event.target.value)} placeholder="可选，例如 D:/.../word-list.png" /></label>
+        <label>截图识别文本<textarea value={text} onChange={(event) => {
+          setText(event.target.value);
+          setParsed(null);
+          setEditableWords([]);
+        }} placeholder={"粘贴单词列表或题目文本，例如：collision\nn. 碰撞；冲突"} /></label>
+        <div className="workbench-actions">
+          <button className="workbench-primary" onClick={() => void parse(false)} disabled={!canParse}>{loading ? "解析中..." : "解析文本"}</button>
+          <button onClick={() => void parse(true)} disabled={!canImport}>{loading ? "处理中..." : "导入并开始练习"}</button>
+        </div>
+        <p className="status-line">{status}</p>
       </div>
-      <p className="status-line">{status}</p>
       {parsed && (
-        <div className="screenshot-review">
-          <div className="screenshot-review-head">
-            <div>
-              <p>识别类型：{parsed.confidence}</p>
-              <strong>{parsed.prompt}</strong>
+        <div className="screenshot-result-region">
+          <div className="screenshot-review">
+            <div className="screenshot-review-head">
+              <div>
+                <p>识别类型：{parsed.confidence}</p>
+                <strong>{parsed.prompt}</strong>
+              </div>
+              {editableWords.length > 0 && <span>{confirmedWordCount}/{editableWords.length} 可导入</span>}
             </div>
-            {editableWords.length > 0 && <span>{confirmedWordCount}/{editableWords.length} 可导入</span>}
+            {editableWords.length > 0 && (
+              <div className="screenshot-word-list" aria-label="可编辑词条">
+                {editableWords.map((word, index) => (
+                  <div className="screenshot-word-card" key={word.id}>
+                    <div className="screenshot-word-index">{index + 1}</div>
+                    <label>单词<input value={word.term} onChange={(event) => updateEditableWord(word.id, "term", event.target.value)} /></label>
+                    <label>释义<textarea value={word.meaning} onChange={(event) => updateEditableWord(word.id, "meaning", event.target.value)} /></label>
+                    <button
+                      type="button"
+                      className="icon-button screenshot-word-remove"
+                      onClick={() => removeEditableWord(word.id)}
+                      aria-label={`删除词条 ${word.term || index + 1}`}
+                      title={`删除词条 ${word.term || index + 1}`}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+                <button type="button" className="screenshot-add-word" onClick={addEditableWord}>
+                  <Plus size={14} /> 添加词条
+                </button>
+              </div>
+            )}
+            {parsed.options.map((option, index) => <span key={option}>{String.fromCharCode(65 + index)}. {option}</span>)}
+            {parsed.diagnostics && (parsed.diagnostics.skipped_count > 0 || parsed.diagnostics.repaired_count > 0) && (
+              <p className="screenshot-diagnostics">
+                已跳过 {parsed.diagnostics.skipped_count} 行，修复 {parsed.diagnostics.repaired_count} 个疑似截断词。
+              </p>
+            )}
           </div>
-          {editableWords.length > 0 && (
-            <div className="screenshot-word-list" aria-label="可编辑词条">
-              {editableWords.map((word, index) => (
-                <div className="screenshot-word-card" key={word.id}>
-                  <div className="screenshot-word-index">{index + 1}</div>
-                  <label>单词<input value={word.term} onChange={(event) => updateEditableWord(word.id, "term", event.target.value)} /></label>
-                  <label>释义<textarea value={word.meaning} onChange={(event) => updateEditableWord(word.id, "meaning", event.target.value)} /></label>
-                  <button
-                    type="button"
-                    className="icon-button screenshot-word-remove"
-                    onClick={() => removeEditableWord(word.id)}
-                    aria-label={`删除词条 ${word.term || index + 1}`}
-                    title={`删除词条 ${word.term || index + 1}`}
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              ))}
-              <button type="button" className="screenshot-add-word" onClick={addEditableWord}>
-                <Plus size={14} /> 添加词条
-              </button>
-            </div>
-          )}
-          {parsed.options.map((option, index) => <span key={option}>{String.fromCharCode(65 + index)}. {option}</span>)}
-          {parsed.diagnostics && (parsed.diagnostics.skipped_count > 0 || parsed.diagnostics.repaired_count > 0) && (
-            <p className="screenshot-diagnostics">
-              已跳过 {parsed.diagnostics.skipped_count} 行，修复 {parsed.diagnostics.repaired_count} 个疑似截断词。
-            </p>
-          )}
         </div>
       )}
     </section>
