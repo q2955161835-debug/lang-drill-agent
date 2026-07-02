@@ -125,10 +125,38 @@ def test_past_papers_default_selects_recent_three_and_creates_files(tmp_path: Pa
     assert [paper["year"] for paper in status["current_papers"]] == [2025, 2024, 2023]
     assert all(paper["source_url"] == "https://www.guojiya.cn/#exams" for paper in status["current_papers"])
     assert {item["id"] for item in status["question_types"]} >= {"listening", "reading", "translation", "writing"}
+    listening = next(item for item in status["question_types"] if item["id"] == "listening")
+    assert listening["disabled"] is True
+    assert listening["locked"] is True
+    assert "语音模型" in listening["disabled_reason"]
+    assert "listening" not in status["enabled_question_type_ids"]
     first = status["current_papers"][0]["metadata"]
     assert Path(first["raw_path"]).exists()
     assert Path(first["parsed_path"]).exists()
     assert first["parse_status"] == "source_manifest_only"
+
+
+def test_listening_question_type_is_reserved_for_all_builtin_exams(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("LANGDRILL_PAPER_ROOT", str(tmp_path / "paper-assets"))
+    db_path = tmp_path / "reserved-listening.db"
+    init_db(db_path)
+
+    with transaction(db_path) as conn:
+        service = PastPaperService(conn)
+        for exam_id in ["cet4", "cet6", "cft4", "cjt4", "cjt6", "ielts", "toefl", "gaokao-english"]:
+            status = service.status(exam_id)
+            listening = next(item for item in status["question_types"] if item["id"] == "listening")
+
+            assert listening["available"] is False
+            assert listening["disabled"] is True
+            assert listening["locked"] is True
+            assert "listening" not in status["enabled_question_type_ids"]
+
+            first_available = next(item["id"] for item in status["question_types"] if not item["disabled"])
+            updated = service.save_question_types(exam_id, ["listening", first_available])
+
+            assert "listening" not in updated["enabled_question_type_ids"]
+            assert updated["enabled_question_type_ids"] == [first_available]
 
 
 def test_manual_import_adds_paper_and_question_type(tmp_path: Path, monkeypatch) -> None:

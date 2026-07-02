@@ -263,7 +263,13 @@ def main() -> None:
         expect_visible(past_papers.locator(".paper-import-grid"), "加入试卷导入栏")
         past_papers.locator(".paper-import-grid input[type='file']").set_input_files(str(paper_file))
         expect_visible(past_papers.get_by_text("browser-paper.md"), "试卷待导入文件名")
-        first_question_type = past_papers.locator(".question-type-grid label").first.locator("input[type='checkbox']")
+        listening_type = past_papers.locator(".question-type-grid label").filter(has_text="听力").first.locator("input[type='checkbox']")
+        expect_visible(listening_type, "听力题型复选框")
+        if not listening_type.is_disabled() or listening_type.is_checked():
+            fail("听力题型应预留为禁用且默认未勾选")
+        if "暂未接入听力题和语音模型" not in (past_papers.text_content() or ""):
+            fail("听力题型未说明预留原因")
+        first_question_type = past_papers.locator(".question-type-grid input[type='checkbox']:not(:disabled)").first
         before_question_type = first_question_type.is_checked()
         wait_post(page, "/api/past-papers/question-types", first_question_type.click)
         if first_question_type.is_checked() == before_question_type:

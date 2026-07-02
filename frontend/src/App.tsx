@@ -369,19 +369,27 @@ const DEFAULT_SYLLABUS_STATUS: SyllabusStatus = {
 
 const DEFAULT_PAST_PAPER_STATUS: PastPaperStatus = {
   exam_id: "cet4",
-  description: "CET-4（大学英语四级）真题按听力、阅读、翻译和写作组织。",
+  description: "CET-4（大学英语四级）真题按阅读、翻译和写作组织；听力题型暂预留。",
   source_website: "https://www.guojiya.cn/#exams",
   papers: [],
   selected_paper_ids: [],
   current_papers: [],
   question_types: [
-    { id: "listening", label: "听力理解", description: "短篇新闻、长对话和听力篇章。" },
+    {
+      id: "listening",
+      label: "听力理解",
+      description: "短篇新闻、长对话和听力篇章。",
+      available: false,
+      disabled: true,
+      locked: true,
+      disabled_reason: "暂未接入听力题和语音模型，此题型先预留，当前不可勾选。"
+    },
     { id: "reading", label: "阅读理解", description: "选词填空、长篇匹配和仔细阅读。" },
     { id: "translation", label: "汉译英翻译", description: "段落翻译，偏中国文化与社会话题。" },
     { id: "writing", label: "短文写作", description: "议论文、应用文或图表类写作。" },
     { id: "context_vocabulary", label: "语境词汇", description: "从真题语境抽取搭配、词义和近义辨析。" }
   ],
-  enabled_question_type_ids: ["listening", "reading", "translation", "writing", "context_vocabulary"]
+  enabled_question_type_ids: ["reading", "translation", "writing", "context_vocabulary"]
 };
 
 const DEFAULT_LEARNING_STATS: LearningStats = {
@@ -2602,6 +2610,11 @@ function SettingsDialog({
     }
   };
   const toggleQuestionType = async (typeId: string) => {
+    const type = pastPaperDraft.question_types.find((item) => item.id === typeId);
+    if (type?.disabled) {
+      setPastPaperMessage(type.disabled_reason || "该题型暂未开放，当前不可勾选。");
+      return;
+    }
     const selected = new Set(pastPaperDraft.enabled_question_type_ids);
     if (selected.has(typeId)) {
       selected.delete(typeId);
@@ -3712,19 +3725,24 @@ function SettingsDialog({
                   </div>
                 )}
                 <div className="question-type-grid">
-                  {pastPaperDraft.question_types.map((type) => (
-                    <label className="check-row" key={type.id}>
-                      <input
-                        type="checkbox"
-                        checked={pastPaperDraft.enabled_question_type_ids.includes(type.id)}
-                        onChange={() => void toggleQuestionType(type.id)}
-                      />
-                      <span>
-                        <strong>{type.label}</strong>
-                        <small>{type.description}</small>
-                      </span>
-                    </label>
-                  ))}
+                  {pastPaperDraft.question_types.map((type) => {
+                    const typeDisabled = Boolean(type.disabled);
+                    return (
+                      <label className={`check-row${typeDisabled ? " is-disabled" : ""}`} key={type.id} aria-disabled={typeDisabled}>
+                        <input
+                          type="checkbox"
+                          checked={!typeDisabled && pastPaperDraft.enabled_question_type_ids.includes(type.id)}
+                          disabled={typeDisabled}
+                          onChange={() => void toggleQuestionType(type.id)}
+                        />
+                        <span>
+                          <strong>{type.label}</strong>
+                          <small>{type.description}</small>
+                          {type.disabled_reason && <small>{type.disabled_reason}</small>}
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
                 <p className="hint">生成题组时只会使用已勾选题型，并把当前选中的真题试卷索引写入模型上下文和题目来源引用。</p>
                 {pastPaperMessage && <p className="hint strong-hint">{pastPaperMessage}</p>}

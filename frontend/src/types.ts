@@ -418,6 +418,10 @@ export type QuestionTypeOption = {
   id: string;
   label: string;
   description: string;
+  available?: boolean;
+  disabled?: boolean;
+  locked?: boolean;
+  disabled_reason?: string;
 };
 
 export type PastPaperStatus = {

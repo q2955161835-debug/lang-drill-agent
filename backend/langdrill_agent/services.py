@@ -1406,11 +1406,12 @@ class SyllabusService:
 class PastPaperService:
     DEFAULT_RECENT_YEARS = [2025, 2024, 2023]
     CET_PAPER_SOURCE = "https://www.guojiya.cn/#exams"
+    RESERVED_LISTENING_REASON = "暂未接入听力题和语音模型，此题型先预留，当前不可勾选。"
     EXAM_PAPER_SOURCES = {
         "cet4": {
             "source_website": CET_PAPER_SOURCE,
             "title_prefix": "大学英语四级",
-            "description": "CET-4（大学英语四级）真题按听力、阅读、翻译和写作组织。",
+            "description": "CET-4（大学英语四级）真题按阅读、翻译和写作组织；听力题型暂预留。",
             "question_types": [
                 {"id": "listening", "label": "听力理解", "description": "短篇新闻、长对话和听力篇章。"},
                 {"id": "reading", "label": "阅读理解", "description": "选词填空、长篇匹配和仔细阅读。"},
@@ -1422,7 +1423,7 @@ class PastPaperService:
         "cet6": {
             "source_website": CET_PAPER_SOURCE,
             "title_prefix": "大学英语六级",
-            "description": "CET-6（大学英语六级）真题强调更高难度阅读、听力和写译表达。",
+            "description": "CET-6（大学英语六级）真题强调更高难度阅读和写译表达；听力题型暂预留。",
             "question_types": [
                 {"id": "listening", "label": "听力理解", "description": "讲座、长对话和篇章理解。"},
                 {"id": "reading", "label": "阅读理解", "description": "选词填空、信息匹配和仔细阅读。"},
@@ -1434,7 +1435,7 @@ class PastPaperService:
         "cft4": {
             "source_website": "https://cet.neea.edu.cn/",
             "title_prefix": "大学法语四级",
-            "description": "CFT-4（大学法语四级）按听力、阅读、语法词汇、翻译和写作组织。",
+            "description": "CFT-4（大学法语四级）按阅读、语法词汇、翻译和写作组织；听力题型暂预留。",
             "question_types": [
                 {"id": "listening", "label": "听力理解", "description": "对话、短文和信息判断。"},
                 {"id": "reading", "label": "阅读理解", "description": "篇章理解、细节定位和推断。"},
@@ -1446,7 +1447,7 @@ class PastPaperService:
         "cjt4": {
             "source_website": "https://cet.neea.edu.cn/",
             "title_prefix": "大学日语四级",
-            "description": "CJT-4（大学日语四级）按文字词汇、语法、阅读、翻译和听力组织。",
+            "description": "CJT-4（大学日语四级）按文字词汇、语法、阅读和翻译组织；听力题型暂预留。",
             "question_types": [
                 {"id": "vocabulary", "label": "文字词汇", "description": "假名、汉字、词义和用法。"},
                 {"id": "grammar", "label": "语法结构", "description": "助词、句型、活用和固定表达。"},
@@ -1458,7 +1459,7 @@ class PastPaperService:
         "cjt6": {
             "source_website": "https://cet.neea.edu.cn/",
             "title_prefix": "大学日语六级",
-            "description": "CJT-6（大学日语六级）按高阶文字词汇、语法、阅读、翻译和听力组织。",
+            "description": "CJT-6（大学日语六级）按高阶文字词汇、语法、阅读和翻译组织；听力题型暂预留。",
             "question_types": [
                 {"id": "vocabulary", "label": "文字词汇", "description": "高阶汉字、词义辨析和惯用表达。"},
                 {"id": "grammar", "label": "语法结构", "description": "复合句、敬语、助词和高级句型。"},
@@ -1470,7 +1471,7 @@ class PastPaperService:
         "ielts": {
             "source_website": "https://ielts.org/take-a-test/preparation",
             "title_prefix": "雅思学术类",
-            "description": "IELTS（雅思）公开样题按听、说、读、写四科参考，不默认保存完整真题原文。",
+            "description": "IELTS（雅思）公开样题按口语、阅读和写作任务参考；听力题型暂预留，不默认保存完整真题原文。",
             "question_types": [
                 {"id": "listening", "label": "Listening", "description": "听力信息定位、拼写和匹配。"},
                 {"id": "reading", "label": "Reading", "description": "判断、匹配、填空和主旨题。"},
@@ -1482,7 +1483,7 @@ class PastPaperService:
         "toefl": {
             "source_website": "https://www.ets.org/toefl/test-takers/ibt/prepare.html",
             "title_prefix": "TOEFL iBT",
-            "description": "TOEFL iBT（托福网考）按阅读、听力、口语和写作综合任务组织。",
+            "description": "TOEFL iBT（托福网考）按阅读、口语和写作综合任务组织；听力题型暂预留。",
             "question_types": [
                 {"id": "reading", "label": "Reading", "description": "学术文章理解、词汇和推断。"},
                 {"id": "listening", "label": "Listening", "description": "讲座和校园对话。"},
@@ -1493,7 +1494,7 @@ class PastPaperService:
         "gaokao-english": {
             "source_website": "https://www.moe.gov.cn/",
             "title_prefix": "高考英语",
-            "description": "高考英语按地区卷型差异参考，默认只保留题型结构和来源索引。",
+            "description": "高考英语按地区卷型差异参考，听力题型暂预留，默认只保留题型结构和来源索引。",
             "question_types": [
                 {"id": "listening", "label": "听力", "description": "短对话、长对话和独白。"},
                 {"id": "reading", "label": "阅读理解", "description": "细节、推断、主旨和词义猜测。"},
@@ -1531,9 +1532,14 @@ class PastPaperService:
         current_papers = [paper for paper in papers if paper["id"] in selected_set]
         source_info = self._source_info(target_exam)
         question_types = self._question_type_options(target_exam)
-        enabled_ids = self._enabled_question_type_ids(target_exam)
+        available_type_ids = {item["id"] for item in question_types if not bool(item.get("disabled"))}
+        enabled_ids = [
+            type_id
+            for type_id in self._enabled_question_type_ids(target_exam)
+            if type_id in available_type_ids
+        ]
         if not enabled_ids:
-            enabled_ids = [item["id"] for item in question_types]
+            enabled_ids = [item["id"] for item in question_types if not bool(item.get("disabled"))]
         return {
             "exam_id": target_exam,
             "description": source_info["description"],
@@ -1671,8 +1677,12 @@ class PastPaperService:
         return self.status(exam_id)
 
     def save_question_types(self, exam_id: str, enabled_type_ids: list[str]) -> dict[str, Any]:
-        known = {item["id"] for item in self._question_type_options(exam_id)}
-        clean_ids = [type_id for type_id in enabled_type_ids if type_id in known]
+        known = {item["id"]: item for item in self._question_type_options(exam_id)}
+        clean_ids = [
+            type_id
+            for type_id in enabled_type_ids
+            if type_id in known and not bool(known[type_id].get("disabled"))
+        ]
         self.conn.execute(
             """
             INSERT OR REPLACE INTO app_settings (key, value_json, updated_at)
@@ -1952,7 +1962,7 @@ class PastPaperService:
             return source_path
         return PROJECT_ROOT / source_path
 
-    def _question_type_options(self, exam_id: str) -> list[dict[str, str]]:
+    def _question_type_options(self, exam_id: str) -> list[dict[str, Any]]:
         info = self._source_info(exam_id)
         options = [dict(item) for item in info.get("question_types", [])]
         seen = {item["id"] for item in options}
@@ -1974,7 +1984,37 @@ class PastPaperService:
                     continue
                 seen.add(type_id)
                 options.append({"id": type_id, "label": clean_label, "description": "来自已导入试卷的题型。"})
-        return options
+        return [self._with_question_type_availability(option) for option in options]
+
+    def _with_question_type_availability(self, option: dict[str, Any]) -> dict[str, Any]:
+        if not self._is_reserved_listening_type(option):
+            return {
+                **option,
+                "available": True,
+                "disabled": False,
+                "locked": False,
+            }
+        return {
+            **option,
+            "available": False,
+            "disabled": True,
+            "locked": True,
+            "disabled_reason": self.RESERVED_LISTENING_REASON,
+        }
+
+    def _is_reserved_listening_type(self, option: dict[str, Any]) -> bool:
+        type_id = str(option.get("id") or "").strip().lower()
+        label = str(option.get("label") or "").strip().lower()
+        description = str(option.get("description") or "").strip().lower()
+        return (
+            type_id == "listening"
+            or "听力" in type_id
+            or "听力" in label
+            or "听力" in description
+            or "listening" in type_id
+            or "listening" in label
+            or "listening" in description
+        )
 
 
 class ModelListUnsupportedError(ValueError):
