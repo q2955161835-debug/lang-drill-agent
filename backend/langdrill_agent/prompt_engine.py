@@ -25,7 +25,7 @@ class PromptRegistry:
               AND (
                 task_type = 'all'
                 OR task_type = ?
-                OR (scope = 'persona' AND ? IN ('chat_summary', 'summary'))
+                OR (scope = 'persona' AND ? IN ('general_chat', 'branch_chat', 'chat_summary', 'summary'))
               )
               AND (exam_id = 'any' OR exam_id = ?)
             ORDER BY priority DESC, id ASC
@@ -34,7 +34,7 @@ class PromptRegistry:
         ).fetchall()
 
         modules = [dict(row) for row in rows if row["scope"] != "persona"]
-        if task_type in {"chat_summary", "summary"} and persona != "none":
+        if task_type in {"general_chat", "branch_chat", "chat_summary", "summary"} and persona != "none":
             persona_id = f"persona.{persona}"
             modules.extend(dict(row) for row in rows if row["id"] == persona_id)
 

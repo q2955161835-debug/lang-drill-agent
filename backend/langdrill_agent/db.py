@@ -143,6 +143,38 @@ def seed_prompt_modules(conn: sqlite3.Connection) -> None:
             1,
         ),
         (
+            "task.general_chat",
+            "1.0.0",
+            "task",
+            "general_chat",
+            "any",
+            720,
+            900,
+            "core.safety,core.product_capabilities",
+            (
+                "普通主会话必须由当前模型回复。根据 context_pack 中的学习目标、学习背景、权限状态、"
+                "拓展 Skills 状态、当前题目和联网检索状态自然回答。不要因为寒暄或学习建议而生成题组；"
+                "只有用户明确要求出题、练习、刷题、截图词表导入或文件导入时，才应引导进入对应程序流程。"
+                "如果模型上下文显示联网请求未执行，说明原因并避免编造实时信息。"
+            ),
+            1,
+        ),
+        (
+            "task.branch_chat",
+            "1.0.0",
+            "task",
+            "branch_chat",
+            "any",
+            720,
+            900,
+            "core.safety,core.product_capabilities",
+            (
+                "分支对话必须由当前模型回复。只围绕 context_pack.selected_text 和分支历史解释、改写、举例、"
+                "拆解语法、整理复习卡片或回答追问；默认不写回主会话，不声称已修改主线学习记录。"
+            ),
+            1,
+        ),
+        (
             "persona.warm",
             "1.0.0",
             "persona",

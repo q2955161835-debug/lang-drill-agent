@@ -2,7 +2,7 @@
 
 :root {
   color-scheme: light;
-  --bg: #f1f4ff;
+  --bg: #f6f7f9;
   --surface: #ffffff;
   --surface-strong: #f0f3f7;
   --surface-glass: rgba(255, 255, 255, 0.78);
@@ -18,6 +18,13 @@
   --accent-3: #f59e0b;
   --accent-4: #e8eef8;
   --danger: #dc2626;
+  --bubble-assistant-bg: #f3f6ff;
+  --bubble-assistant-border: #dbe3f5;
+  --bubble-user-bg: #dfe8ff;
+  --bubble-user-border: #c5d4ff;
+  --bubble-user-text: #172033;
+  --bubble-user-code-bg: rgba(23, 32, 51, 0.08);
+  --bubble-user-code-border: rgba(37, 99, 235, 0.18);
   --shadow-cartoon: 0 18px 50px rgba(15, 23, 42, 0.08);
   --shadow-cartoon-hover: 0 14px 40px rgba(15, 23, 42, 0.1);
   --shadow-cartoon-active: 0 8px 24px rgba(15, 23, 42, 0.08);
@@ -26,17 +33,20 @@
   --radius: 18px;
   --radius-sm: 12px;
   --radius-xs: 8px;
-  --app-background: var(--bg);
-  --app-background-size: auto;
-  --app-background-position: center;
-  --app-background-repeat: no-repeat;
+  --app-background:
+    radial-gradient(circle at 16% 0%, rgba(37, 99, 235, 0.12), transparent 32rem),
+    linear-gradient(135deg, rgba(15, 23, 42, 0.035) 25%, transparent 25%),
+    var(--bg);
+  --app-background-size: auto, 18px 18px, auto;
+  --app-background-position: center, center, center;
+  --app-background-repeat: no-repeat, repeat, no-repeat;
   font-family: 'Inter', 'Microsoft YaHei UI', 'PingFang SC', system-ui, sans-serif;
   font-size: 16px;
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #11162d;
+  --bg: #0b1018;
   --surface: #10141d;
   --surface-strong: #171d29;
   --surface-glass: rgba(16, 20, 29, 0.78);
@@ -52,13 +62,23 @@
   --accent-3: #fbbf24;
   --accent-4: #172033;
   --danger: #f87171;
+  --bubble-assistant-bg: #151b33;
+  --bubble-assistant-border: #2b3658;
+  --bubble-user-bg: #dce6ff;
+  --bubble-user-border: #aebfff;
+  --bubble-user-text: #11162d;
+  --bubble-user-code-bg: rgba(17, 22, 45, 0.1);
+  --bubble-user-code-border: rgba(17, 22, 45, 0.18);
   --shadow-cartoon: 0 22px 70px rgba(0, 0, 0, 0.36);
   --shadow-cartoon-hover: 0 18px 58px rgba(0, 0, 0, 0.42);
   --shadow-cartoon-active: 0 10px 32px rgba(0, 0, 0, 0.32);
-  --app-background: var(--bg);
-  --app-background-size: auto;
-  --app-background-position: center;
-  --app-background-repeat: no-repeat;
+  --app-background:
+    linear-gradient(rgba(8, 11, 16, 0.16), rgba(8, 11, 16, 0.16)),
+    url("/assets/dark-theme-bg.jpg"),
+    var(--bg);
+  --app-background-size: auto, cover, auto;
+  --app-background-position: center, center, center;
+  --app-background-repeat: no-repeat, no-repeat, no-repeat;
 }
 
 * { box-sizing: border-box; }
@@ -504,14 +524,26 @@ body.panel-resize-active * {
   background: var(--surface);
   color: var(--accent);
 }
-.message.user .avatar { background: var(--text); color: var(--surface); grid-column: 2; }
+.message.user .avatar {
+  background: var(--bubble-user-bg);
+  color: var(--accent);
+  border-color: var(--bubble-user-border);
+  grid-column: 2;
+}
 .message.user .message-stack { grid-column: 1; grid-row: 1; }
-.message.user .bubble { grid-column: 1; grid-row: 1; background: var(--text); color: var(--surface); border-color: var(--text); }
+.message.user .bubble {
+  grid-column: 1;
+  grid-row: 1;
+  background: var(--bubble-user-bg);
+  color: var(--bubble-user-text);
+  border-color: var(--bubble-user-border);
+}
 .bubble {
   padding: 15px 18px;
   border: var(--border-thin);
   border-radius: 18px;
-  background: var(--surface);
+  background: var(--bubble-assistant-bg);
+  border-color: var(--bubble-assistant-border);
   line-height: 1.72;
   white-space: pre-wrap;
   box-shadow: 0 8px 28px rgba(15, 23, 42, 0.04);
@@ -567,8 +599,8 @@ body.panel-resize-active * {
 }
 .message.user .markdown-text code,
 .message.user .markdown-text pre {
-  border-color: rgba(255, 255, 255, 0.24);
-  background: rgba(255, 255, 255, 0.14);
+  border-color: var(--bubble-user-code-border);
+  background: var(--bubble-user-code-bg);
   color: inherit;
 }
 .thinking-bubble { display: inline-flex; align-items: center; gap: 10px; color: var(--muted-strong); }
@@ -908,12 +940,17 @@ body.panel-resize-active * {
   border-radius: var(--radius-sm);
   margin-bottom: 12px;
   line-height: 1.65;
-  background: var(--surface);
+  background: var(--bubble-assistant-bg);
+  border-color: var(--bubble-assistant-border);
   font-weight: 500;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.branch-message.user { background: var(--tag-bg); color: var(--accent); }
+.branch-message.user {
+  background: var(--bubble-user-bg);
+  color: var(--bubble-user-text);
+  border-color: var(--bubble-user-border);
+}
 .branch-thinking {
   display: flex;
   align-items: center;

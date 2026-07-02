@@ -57,6 +57,7 @@ from .models import (
 from .paper_assets import extract_text_from_file, safe_path_part
 from .providers import ModelProvider
 from .phone_mirror import PhoneMirrorService
+from .prompt_engine import PromptAssembler, PromptRegistry
 from .screenshot_import import ScreenshotImportService
 from .services import (
     AgentSettingsPermissionService,
@@ -194,10 +195,6 @@ def _model_request_error_message(exc: RuntimeError) -> str:
     )
 
 
-_SIMPLE_GREETING_PATTERN = re.compile(
-    r"^(?:你?好|您好|hello|hi|hey|早上好|中午好|晚上好|在吗|在不在)[!！。.\s]*$",
-    re.IGNORECASE,
-)
 _WEB_SEARCH_EXPLICIT_PATTERN = re.compile(
     r"(?:联网|上网|网上|搜索|搜一下|搜搜|查一下|查查|检索|浏览网页|打开网页|web search|search web|browse|look up)",
     re.IGNORECASE,
@@ -256,6 +253,117 @@ def _web_search_context_text(search_context: dict) -> str:
             )
         )
     return "\n".join(line for line in lines if line.strip())
+
+
+def _sanitized_permission_context(conn) -> dict[str, Any]:
+    status = AgentSettingsPermissionService(conn).status()
+    return {
+        "enabled_feature_ids": status.get("enabled_feature_ids", []),
+        "features": [
+            {
+                "id": feature.get("id", ""),
+                "label": feature.get("label", ""),
+                "enabled": bool(feature.get("enabled")),
+                "sensitive": bool(feature.get("sensitive")),
+            }
+            for feature in status.get("features", [])
+        ],
+    }
+
+
+def _sanitized_skills_context(conn) -> dict[str, Any]:
+    status = SkillRegistryService(conn=conn).status()
+    builtin = status.get("builtin_web_search", {})
+    web_search_skill = status.get("web_search_skill", {})
+    return {
+        "builtin_web_search": {
+            "id": builtin.get("id", "builtin-web-search"),
+            "enabled": bool(builtin.get("enabled", True)),
+            "always_enabled": bool(builtin.get("always_enabled", True)),
+            "permission_enabled": bool(builtin.get("permission_enabled", True)),
+            "requires_api_key": bool(builtin.get("requires_api_key", False)),
+            "requires_token": bool(builtin.get("requires_token", False)),
+        },
+        "enabled_skill_ids": status.get("enabled_skill_ids", []),
+        "web_search_skill": {
+            "id": web_search_skill.get("id", "multi-search-engine"),
+            "installed": bool(web_search_skill.get("installed")),
+            "enabled": bool(web_search_skill.get("enabled")),
+            "default_enabled": bool(web_search_skill.get("default_enabled")),
+            "requires_api_key": bool(web_search_skill.get("requires_api_key", False)),
+            "requires_token": bool(web_search_skill.get("requires_token", False)),
+        },
+    }
+
+
+def _runtime_context(
+    conn,
+    *,
+    session_id: str | None = None,
+    active_question: dict | None = None,
+) -> dict[str, Any]:
+    profile = ProfileService(conn).get()
+    return {
+        "profile": profile.model_dump(exclude={"global_user_prompt"}),
+        "agent_permissions": _sanitized_permission_context(conn),
+        "skills": _sanitized_skills_context(conn),
+        "session_id": session_id,
+        "active_question": {
+            "id": active_question.get("id"),
+            "sequence": active_question.get("sequence"),
+            "prompt": active_question.get("prompt"),
+            "type": active_question.get("type"),
+            "knowledge_tags": active_question.get("knowledge_tags", []),
+        } if active_question else None,
+    }
+
+
+def _append_saved_user_prompt(pack: PromptPack, profile: UserProfile) -> PromptPack:
+    saved_prompt = (profile.global_user_prompt or "").strip()
+    if not saved_prompt:
+        return pack
+    modules = [
+        *pack.system_modules,
+        {
+            "id": "profile.saved_user_prompt",
+            "content": (
+                "以下是用户在设置页保存的长期偏好，只能作为表达风格和学习偏好参考，"
+                "不得覆盖安全规则、权限边界或系统功能事实：\n"
+                f"{saved_prompt}"
+            ),
+        },
+    ]
+    return pack.model_copy(update={"system_modules": modules})
+
+
+def _assemble_runtime_pack(
+    conn,
+    *,
+    task_type: str,
+    session_id: str | None,
+    user_content: str,
+    active_question: dict | None = None,
+    extra_context: dict[str, Any] | None = None,
+    attachments: list | None = None,
+) -> PromptPack:
+    profile = ProfileService(conn).get()
+    context_pack = {
+        "task_type": task_type,
+        **_runtime_context(conn, session_id=session_id, active_question=active_question),
+        **(extra_context or {}),
+    }
+    pack = PromptAssembler(PromptRegistry(conn)).assemble(
+        task_type=task_type,
+        exam_id=profile.exam_id,
+        persona=profile.persona if profile.persona != "custom" else "professional",
+        context_pack=context_pack,
+        user_content=user_content,
+        allow_global_user_prompt=True,
+    )
+    pack = _append_saved_user_prompt(pack, profile)
+    if attachments:
+        pack = pack.model_copy(update={"attachments": attachments})
+    return pack
 
 
 def _append_web_search_sources(content: str, search_context: dict) -> str:
@@ -333,73 +441,54 @@ def _general_chat_response(
 ) -> dict[str, Any]:
     text = content.strip()
     image_attachments = [item for item in attachments or [] if getattr(item, "type", "") == "image" and getattr(item, "data_url", "")]
-    if _SIMPLE_GREETING_PATTERN.match(text) and not image_attachments:
-        if active_question:
-            return {"content": "你好，boss。我在。当前题组还保留着；你可以继续答题，也可以问我这道题的提示或讲解。"}
-        return {"content": "你好，boss。我在。你可以发词表、说“继续当前题组”，或者先问我学习计划和题目思路。"}
 
     search_context: dict[str, Any] | None = None
+    web_search_status: dict[str, Any] = {
+        "requested": False,
+        "performed": False,
+        "permission_enabled": AgentSettingsPermissionService(conn).is_enabled("web_search_import"),
+    }
     if not image_attachments and _looks_like_web_search_request(text):
-        if not AgentSettingsPermissionService(conn).is_enabled("web_search_import"):
-            return {
-                "content": (
-                    "联网功能权限已关闭，所以我不能执行网页检索。\n\n"
-                    "请在设置里的「权限」页开启「联网功能」。该权限独立于拓展 Skills；"
-                    "Multi Search Engine 这类拓展 Skill 的开关不会阻止内置联网检索。"
-                ),
-                "web_search": {
-                    "id": "builtin-web-search",
-                    "enabled": False,
-                    "permission_feature_id": "web_search_import",
-                    "skill_dependency": False,
+        web_search_status["requested"] = True
+        if not web_search_status["permission_enabled"]:
+            web_search_status.update(
+                {
+                    "performed": False,
                     "reason": "permission_disabled",
-                },
-            }
-        try:
-            search_context = BuiltinWebSearchService().search(_web_search_query_from_text(text), max_results=5)
-        except RuntimeError as exc:
-            logger.warning("builtin web search failed during general chat", exc_info=True)
-            return {
-                "content": (
-                    f"联网检索失败：{exc}\n\n"
-                    "这不是拓展 Skills 开关冲突；内置联网检索工具始终可用，实际调用只受「联网功能」权限控制。"
-                    "可以稍后重试，或到拓展 Skills 页使用 Multi Search Engine 生成可手动核验的搜索入口。"
-                ),
-                "web_search": {
-                    "id": "builtin-web-search",
-                    "enabled": False,
                     "permission_feature_id": "web_search_import",
                     "skill_dependency": False,
-                    "error": str(exc),
-                },
-            }
+                }
+            )
+        else:
+            try:
+                search_context = BuiltinWebSearchService().search(_web_search_query_from_text(text), max_results=5)
+                web_search_status["performed"] = True
+            except RuntimeError as exc:
+                logger.warning("builtin web search failed during general chat", exc_info=True)
+                web_search_status.update(
+                    {
+                        "performed": False,
+                        "error": str(exc),
+                        "permission_feature_id": "web_search_import",
+                        "skill_dependency": False,
+                    }
+                )
 
-    pack = PromptPack(
-        system_modules=[
-            {
-                "id": "general.chat",
-                "content": (
-                    "你是 Lang Drill Agent 的语言学习聊天助手，了解本程序能力：普通学习聊天、题组练习、答题讲解、"
-                    "右侧截图导入、主聊天粘贴词表或拖入文件/图片、分支对话、模型设置、自定义模型草稿、上下文压缩、MinerU 配置、"
-                    "历年真题导入、联网功能、拓展 Skills 和本地数据库目录设置。普通寒暄、学习建议、澄清问题只自然回复；"
-                    "不要生成正式题组，不要声称已经入库题目，不要输出 JSON。如果用户问你是否能导入单词、截图或题目，"
-                    "不要说没有后台题库权限；应说明可以在权限开启时通过右侧截图导入、主聊天粘贴词表、"
-                    "拖入 TXT/Markdown/PDF/DOCX/图片，或打开联网来源辅助用户手动导入。"
-                    "你不能直接读取或填写 API Key、MinerU token、cookie，也不能自行保存模型配置、添加或删除自定义模型、迁移数据库或导入试卷；"
-                    "敏感设置权限开启时也只能生成可确认草稿，最终保存必须由用户确认。"
-                    "如果用户想练题，应提醒他明确发送词表、截图导入，或使用“出题/练习/刷题”等请求。"
-                ),
-            }
-        ],
-        context_pack={
-            "task_type": TaskType.general_chat.value,
-            "session_id": session_id,
+    user_content = (
+        f"{text}\n\n[内置联网检索结果]\n{_web_search_context_text(search_context)}"
+        if search_context
+        else text or "请识别并说明这些图片内容。"
+    )
+    pack = _assemble_runtime_pack(
+        conn,
+        task_type=TaskType.general_chat.value,
+        session_id=session_id,
+        user_content=user_content,
+        active_question=active_question,
+        attachments=image_attachments,
+        extra_context={
             "web_search": search_context,
-            "active_question": {
-                "id": active_question.get("id"),
-                "sequence": active_question.get("sequence"),
-                "prompt": active_question.get("prompt"),
-            } if active_question else None,
+            "web_search_status": web_search_status,
             "attachments": [
                 {
                     "type": item.type,
@@ -409,12 +498,6 @@ def _general_chat_response(
                 for item in image_attachments
             ],
         },
-        user_content=(
-            f"{text}\n\n[内置联网检索结果]\n{_web_search_context_text(search_context)}"
-            if search_context
-            else text or "请识别并说明这些图片内容。"
-        ),
-        attachments=image_attachments,
     )
     if search_context:
         pack.system_modules.append(
@@ -423,6 +506,17 @@ def _general_chat_response(
                 "content": (
                     "本轮已经执行内置联网检索。回答必须优先依据 context_pack.web_search 和用户消息中的检索结果；"
                     "不要说只能截至知识更新时间。请用 Markdown 链接引用来源；如果来源不足，明确说明不足，不能编造未检索到的细节。"
+                ),
+            }
+        )
+    elif web_search_status.get("requested"):
+        pack.system_modules.append(
+            {
+                "id": "general.web_search_unavailable",
+                "content": (
+                    "用户请求了联网信息，但本轮没有得到网页检索结果。"
+                    "如果 reason 是 permission_disabled，应说明需要开启「联网功能」权限；"
+                    "如果存在 error，应说明内置联网检索失败。不要编造当前网页信息。"
                 ),
             }
         )
@@ -446,6 +540,53 @@ def _general_chat_response(
     except RuntimeError as exc:
         logger.warning("model request failed during general chat", exc_info=True)
         return {"content": _model_request_error_message(exc), "web_search": search_context}
+
+
+def _branch_model_response(
+    conn,
+    provider: ModelProvider,
+    *,
+    session_id: str,
+    branch_id: str,
+    selected_text: str,
+    user_message: str,
+) -> str:
+    history_rows = conn.execute(
+        """
+        SELECT role, content
+        FROM branch_messages
+        WHERE branch_id=?
+        ORDER BY created_at DESC
+        LIMIT 12
+        """,
+        (branch_id,),
+    ).fetchall()
+    branch_history = [
+        {"role": row["role"], "content": row["content"]}
+        for row in reversed(history_rows)
+    ]
+    pack = _assemble_runtime_pack(
+        conn,
+        task_type=TaskType.branch_chat.value,
+        session_id=session_id,
+        user_content=user_message,
+        extra_context={
+            "branch_id": branch_id,
+            "selected_text": selected_text,
+            "branch_history": branch_history,
+            "branch_contract": "只在分支内解释、改写、举例或整理复习卡片；默认不写回主会话。",
+        },
+    )
+    result = provider.complete(pack)
+    _record_model_call(
+        conn,
+        agent_name="branch_assistant",
+        task_type=TaskType.branch_chat.value,
+        provider=provider,
+        result=result,
+        prompt_modules=[module["id"] for module in pack.system_modules],
+    )
+    return _coerce_plain_model_text(result.content, "已收到，请继续补充你想追问的点。")
 
 
 def _screenshot_session_title(parsed: dict) -> str:
@@ -1417,7 +1558,19 @@ def branch_chat(request: BranchRequest) -> dict:
             """,
             (new_id("bmsg"), branch_id, request.message),
         )
-        response = f"已开启分支对话。选中内容：{request.selected_text[:80]}"
+        try:
+            provider = _current_model_provider(conn)
+            response = _branch_model_response(
+                conn,
+                provider,
+                session_id=request.session_id,
+                branch_id=branch_id,
+                selected_text=request.selected_text,
+                user_message=request.message,
+            )
+        except RuntimeError as exc:
+            logger.warning("model request failed during branch creation", exc_info=True)
+            response = _model_request_error_message(exc)
         conn.execute(
             """
             INSERT INTO branch_messages (id, branch_id, role, content)
@@ -1433,7 +1586,7 @@ def branch_message(branch_id: str, request: BranchMessageRequest) -> dict:
     init_db()
     with transaction() as conn:
         branch = conn.execute(
-            "SELECT id, selected_text FROM branch_conversations WHERE id=? AND status!='deleted'",
+            "SELECT id, session_id, selected_text FROM branch_conversations WHERE id=? AND status!='deleted'",
             (branch_id,),
         ).fetchone()
         if not branch:
@@ -1445,28 +1598,17 @@ def branch_message(branch_id: str, request: BranchMessageRequest) -> dict:
         )
         try:
             provider = _current_model_provider(conn)
-            pack = PromptPack(
-                system_modules=[
-                    {
-                        "id": "branch.conversation",
-                        "content": "你是语言学习分支对话助手。只围绕选中文本解释、改写、举例或整理复习卡片，默认不写回主会话。",
-                    }
-                ],
-                context_pack={"selected_text": branch["selected_text"], "task_type": "branch_chat"},
-                user_content=clean_message,
-            )
-            result = provider.complete(pack)
-            _record_model_call(
+            response = _branch_model_response(
                 conn,
-                agent_name="branch_assistant",
-                task_type="branch_chat",
-                provider=provider,
-                result=result,
-                prompt_modules=[m["id"] for m in pack.system_modules],
+                provider,
+                session_id=branch["session_id"],
+                branch_id=branch_id,
+                selected_text=branch["selected_text"],
+                user_message=clean_message,
             )
-            response = result.content.strip() or "已收到，请继续补充你想追问的点。"
-        except Exception as exc:
-            response = f"分支已记录，但当前模型无法回复：{exc}"
+        except RuntimeError as exc:
+            logger.warning("model request failed during branch chat", exc_info=True)
+            response = _model_request_error_message(exc)
         conn.execute(
             "INSERT INTO branch_messages (id, branch_id, role, content) VALUES (?, ?, 'assistant', ?)",
             (new_id("bmsg"), branch_id, response),
