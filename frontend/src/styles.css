@@ -1394,6 +1394,14 @@ body.panel-resize-active * {
   font-size: 0.82rem;
   line-height: 1.5;
 }
+.screenshot-result-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 2px;
+}
+.screenshot-result-actions .workbench-primary {
+  min-width: 156px;
+}
 .screenshot-review > span {
   color: var(--muted-strong);
   line-height: 1.5;

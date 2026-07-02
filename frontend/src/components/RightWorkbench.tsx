@@ -373,7 +373,7 @@ function ScreenshotImportPanel({
   const wordIdRef = useRef(0);
   const canParse = Boolean(text.trim() || queuedFiles.length) && !loading;
   const confirmedWordCount = editableWords.filter(isCompleteScreenshotWord).length;
-  const canImport = Boolean((text.trim() || confirmedWordCount) && !queuedFiles.length) && !loading;
+  const canImport = Boolean(parsed && confirmedWordCount && !queuedFiles.length) && !loading;
   const nextEditableWordId = () => {
     wordIdRef.current += 1;
     return `screenshot-word-${wordIdRef.current}`;
@@ -400,7 +400,7 @@ function ScreenshotImportPanel({
       return;
     }
     setLoading(true);
-    const shouldImportEditedWords = startDrill && Boolean(parsed?.words?.length) && editableWords.length > 0 && queuedFiles.length === 0;
+    const shouldImportEditedWords = startDrill && Boolean(parsed) && editableWords.length > 0 && queuedFiles.length === 0;
     if (!startDrill) {
       setParsed(null);
       setEditableWords([]);
@@ -583,7 +583,6 @@ function ScreenshotImportPanel({
         }} placeholder={"粘贴单词列表或题目文本，例如：collision\nn. 碰撞；冲突"} /></label>
         <div className="workbench-actions">
           <button className="workbench-primary" onClick={() => void parse(false)} disabled={!canParse}>{loading ? "解析中..." : "解析文本"}</button>
-          <button onClick={() => void parse(true)} disabled={!canImport}>{loading ? "处理中..." : "导入并开始练习"}</button>
         </div>
         <p className="status-line">{status}</p>
       </div>
@@ -626,6 +625,9 @@ function ScreenshotImportPanel({
                 已跳过 {parsed.diagnostics.skipped_count} 行，修复 {parsed.diagnostics.repaired_count} 个疑似截断词。
               </p>
             )}
+            <div className="screenshot-result-actions">
+              <button className="workbench-primary" onClick={() => void parse(true)} disabled={!canImport}>{loading ? "处理中..." : "导入并开始练习"}</button>
+            </div>
           </div>
         </div>
       )}
