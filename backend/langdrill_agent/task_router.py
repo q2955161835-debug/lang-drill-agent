@@ -21,9 +21,16 @@ _EXPLANATION_KEYWORDS = (
     "hint", "give me a hint",
 )
 
-_SETTINGS_KEYWORDS = (
-    "设置", "供应商", "模型", "更改目标", "修改背景",
-    "配置", "调整人格", "切换供应商",
+_SETTINGS_MUTATION_PATTERN = re.compile(
+    r"(?:打开|进入|跳到|前往|更改|修改|配置|调整|切换|新增|添加|删除|移除|填写|填入|保存)"
+    r".{0,18}(?:设置|设置页|供应商|模型|目标|背景|人格|权限|上下文|数据库|MinerU|api\s*key|apikey|密钥)"
+    r"|(?:设置页|供应商|模型|目标|背景|人格|权限|上下文|数据库|MinerU|api\s*key|apikey|密钥)"
+    r".{0,18}(?:打开|进入|更改|修改|配置|调整|切换|新增|添加|删除|移除|填写|填入|保存)"
+    r"|(?:把|将).{0,28}(?:目标|背景|人格|模型|供应商|权限|上下文).{0,12}"
+    r"(?:改成|改为|设为|设置为|换成|切到|调整为)"
+    r"|(?:设置|设定).{0,3}(?:供应商|模型|目标|背景|人格|权限|上下文|数据库|MinerU|api\s*key|apikey|密钥)"
+    r"|(?<!已)(?:开启|关闭|启用|禁用).{0,18}(?:联网|截图|词表|数据库|真题|模型|密钥|权限|Skill|Skills|skill|skills)",
+    re.IGNORECASE,
 )
 _PAST_PAPER_SETTINGS_PATTERN = re.compile(
     r"(?:真题|试卷|样卷|past paper|paper).{0,24}(?:导入|填入|填写|填表|设置|保存|解析)"
@@ -100,8 +107,8 @@ class TaskRouter:
         if has_active_question and selected_option and selected_option.strip().upper() in {"A", "B", "C", "D"}:
             return TaskType.answer_question
 
-        # 3. 设置：匹配设置关键词
-        if any(keyword in text for keyword in _SETTINGS_KEYWORDS) or _PAST_PAPER_SETTINGS_PATTERN.search(text):
+        # 3. 设置：只有明确修改、打开或导入设置时才进入设置流程。
+        if _SETTINGS_MUTATION_PATTERN.search(text) or _PAST_PAPER_SETTINGS_PATTERN.search(text):
             return TaskType.settings
 
         # 4. 总结：匹配总结关键词

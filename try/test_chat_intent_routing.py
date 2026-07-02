@@ -27,6 +27,28 @@ def test_advice_question_does_not_start_drill() -> None:
     assert practice_advice is TaskType.general_chat
 
 
+def test_saved_settings_questions_route_as_general_chat() -> None:
+    router = TaskRouter()
+
+    assert (
+        router.route(
+            "请直接依据我的学习设置回答：我的目标是什么、学习背景是什么？另外列出当前已开启权限中你能使用的学习工具说明。",
+            has_active_question=False,
+        )
+        is TaskType.general_chat
+    )
+    assert router.route("当前模型和已开启权限是什么？", has_active_question=False) is TaskType.general_chat
+
+
+def test_settings_mutations_still_route_to_settings() -> None:
+    router = TaskRouter()
+
+    assert router.route("请把学习目标改成四级600分", has_active_question=False) is TaskType.settings
+    assert router.route("帮我配置一个自定义模型 mimo-v2.5", has_active_question=False) is TaskType.settings
+    assert router.route("请开启联网功能权限", has_active_question=False) is TaskType.settings
+    assert router.route("导入 2025 年四级真题并解析", has_active_question=False) is TaskType.settings
+
+
 def test_explicit_drill_requests_still_start_drill() -> None:
     router = TaskRouter()
 
@@ -114,6 +136,50 @@ def test_general_chat_prompt_includes_runtime_context(tmp_path: Path, monkeypatc
     assert skills["builtin_web_search"]["behavior"]
     assert skills["web_search_skill"]["behavior"]
     assert skills["enabled_skill_guidance"]
+
+
+def test_saved_settings_question_calls_model_with_runtime_context(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "settings-question-context.db"
+    monkeypatch.setenv("LANGDRILL_DB_PATH", str(db_path))
+    monkeypatch.setenv("LANGDRILL_DEFAULT_PROVIDER", "mock")
+    monkeypatch.setenv("LANGDRILL_DEFAULT_MODEL", "mock-tutor-v1")
+    init_db(db_path)
+    with transaction(db_path) as conn:
+        ProfileService(conn).update(
+            UserProfile(
+                learning_goal="四级600分",
+                learning_background="高中英语，阅读和长难句偏弱",
+                deadline="2026-07-14T09:00",
+            )
+        )
+
+    captured = {}
+
+    def fake_complete(self, pack):
+        captured["pack"] = pack
+        return ModelResult(content="已读取学习设置上下文", input_tokens=10, output_tokens=4, latency_ms=1, model=self.model)
+
+    monkeypatch.setattr(ModelProvider, "complete", fake_complete)
+    client = TestClient(app)
+    response = client.post(
+        "/api/chat",
+        json={
+            "content": "请直接依据我的学习设置回答：我的目标是什么、学习背景是什么？另外列出当前已开启权限中你能使用的学习工具说明。",
+            "force_new_session": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["message"]["content"] == "已读取学习设置上下文"
+    pack = captured["pack"]
+    assert pack.context_pack["task_type"] == "general_chat"
+    assert pack.context_pack["profile"]["learning_goal"] == "四级600分"
+    assert pack.context_pack["profile"]["learning_background"] == "高中英语，阅读和长难句偏弱"
+    assert any(
+        item["feature_id"] == "profile_exam"
+        for item in pack.context_pack["agent_permissions"]["enabled_tool_guidance"]
+    )
 
 
 def test_question_explanation_prompt_uses_runtime_context(tmp_path: Path, monkeypatch) -> None:
