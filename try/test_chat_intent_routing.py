@@ -90,9 +90,21 @@ def test_greeting_chat_calls_model_without_generating_questions(tmp_path: Path, 
 
 def test_general_chat_prompt_includes_runtime_context(tmp_path: Path, monkeypatch) -> None:
     db_path = tmp_path / "general-context.db"
+    skills_root = tmp_path / "skills"
+    skill_dir = skills_root / "multi-search-engine"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: multi-search-engine\n"
+        "description: Generate auditable search URLs without API keys.\n"
+        "---\n"
+        "This skill does not require API keys.\n",
+        encoding="utf-8",
+    )
     monkeypatch.setenv("LANGDRILL_DB_PATH", str(db_path))
     monkeypatch.setenv("LANGDRILL_DEFAULT_PROVIDER", "mock")
     monkeypatch.setenv("LANGDRILL_DEFAULT_MODEL", "mock-tutor-v1")
+    monkeypatch.setenv("LANGDRILL_SKILLS_ROOTS", str(skills_root))
     init_db(db_path)
     with transaction(db_path) as conn:
         ProfileService(conn).update(
