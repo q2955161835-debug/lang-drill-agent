@@ -16,6 +16,7 @@ API_URL = os.getenv("LANGDRILL_ACCEPTANCE_API", "http://127.0.0.1:8000")
 RUN_ID = int(time.time())
 CUSTOM_MODEL_ID = f"browser-acceptance-model-{RUN_ID}"
 CUSTOM_MODEL_LABEL = f"Browser Acceptance Model {RUN_ID}"
+BRANCH_WORDS = "meal: 一餐\nsteal: 偷盗\nsave: 节省；救助\nemerge: 出现\ndish: 菜肴"
 
 
 def fail(message: str) -> None:
@@ -119,6 +120,37 @@ def assert_acceptance_skill_root(page: Page) -> None:
         )
 
 
+def prepare_learning_state(page: Page) -> None:
+    model_response = page.request.post(
+        f"{API_URL}/api/model-config",
+        data={
+            "provider_id": "mock",
+            "base_url": "",
+            "model": "mock-tutor-v1",
+            "api_format": "mock",
+            "thinking_level": "",
+            "vision": False,
+        },
+        timeout=10000,
+    )
+    if not model_response.ok:
+        fail(f"Mock Provider 配置失败：{model_response.status}")
+    parse_response = page.request.post(
+        f"{API_URL}/api/screenshot/parse",
+        data={
+            "text": BRANCH_WORDS,
+            "session_id": None,
+            "import_to_session": True,
+            "auto_start_drill": True,
+            "force_new_session": True,
+            "source_image_path": "browser-acceptance-inline-words.txt",
+        },
+        timeout=15000,
+    )
+    if not parse_response.ok:
+        fail(f"浏览器验收学习状态准备失败：{parse_response.status}")
+
+
 def main() -> None:
     word_file, paper_file = prepare_runtime_files()
     console_issues: list[str] = []
@@ -141,6 +173,7 @@ def main() -> None:
         page.on("dialog", lambda dialog: dialog.accept())
 
         assert_acceptance_skill_root(page)
+        prepare_learning_state(page)
         page.goto(APP_URL, wait_until="domcontentloaded")
         expect_visible(page.get_by_text("Lang Drill").first, "首页品牌")
         page.locator("button").filter(has_text="设置").first.click()
@@ -235,11 +268,44 @@ def main() -> None:
             fail("题型勾选状态没有变化")
         wait_post(page, "/api/past-papers/question-types", first_question_type.click)
 
+        click_tab(page, "数据")
+        data_section = section_by_heading(page, "题目数据库")
+        data_status = page.request.get(f"{API_URL}/api/data-paths", timeout=10000)
+        if not data_status.ok:
+            fail(f"/api/data-paths 接口不可用：{data_status.status}")
+        counts: dict[str, int] = data_status.json().get("counts", {})
+        expected_counts = {
+            "题目": counts.get("questions", 0),
+            "作答": counts.get("attempts", 0),
+            "会话": counts.get("study_sessions", 0),
+            "知识项": counts.get("knowledge_items", 0),
+        }
+        for _ in range(20):
+            data_text = data_section.inner_text()
+            if all(f"{label}\n{value}" in data_text for label, value in expected_counts.items()):
+                break
+            page.wait_for_timeout(250)
+        else:
+            fail(f"数据页计数未刷新到后端真实值：{expected_counts}")
+
         page.locator(".modal-head .icon-button").click()
         page.locator(".settings-modal").wait_for(state="detached", timeout=7000)
+        page.locator("button.session-link").filter(has_text="截图词表练习").first.click()
+        expect_visible(page.get_by_text("当前题目：第 1 题 / 共 5 题"), "当前题卡")
         expand_right = page.get_by_role("button", name="展开右侧工作台")
         if expand_right.is_visible():
             expand_right.click()
+        page.get_by_role("tab", name="分支").click()
+        branch_panel = page.locator("section.workbench-form").filter(has_text="分支对话").first
+        expect_visible(branch_panel, "分支面板")
+        create_branch_button = branch_panel.get_by_role("button", name="基于当前题创建分支")
+        expect_visible(create_branch_button, "当前题分支创建按钮")
+        wait_post(page, "/api/branch", create_branch_button.click)
+        expect_visible(branch_panel.get_by_text("当前分支："), "分支编号")
+        branch_panel.locator("textarea").fill("请用一句话解释正确答案。")
+        wait_post(page, "/api/branch/", lambda: branch_panel.get_by_role("button", name="发送分支消息").click())
+        expect_visible(branch_panel.get_by_text("请用一句话解释正确答案。"), "分支追问")
+
         page.get_by_role("tab", name="截图导入").click()
         screenshot_panel = page.locator("section.workbench-form").filter(has_text="截图导入").first
         expect_visible(screenshot_panel, "截图导入面板")

@@ -27,6 +27,9 @@ type RightWorkbenchProps = {
   onTabChange: (tab: WorkbenchTab) => void;
   onResizeStart?: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onResizeKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void;
+  branchSourceAvailable: boolean;
+  branchCreateLabel: string;
+  onCreateBranch: () => void;
   onSendBranchMessage: (content: string) => void;
   onDailyPanelChange: (panel: DailyPanel) => void;
   onScreenshotImportComplete: (result: ScreenshotImportResult) => void;
@@ -70,6 +73,9 @@ export function RightWorkbench({
   onTabChange,
   onResizeStart,
   onResizeKeyDown,
+  branchSourceAvailable,
+  branchCreateLabel,
+  onCreateBranch,
   onSendBranchMessage,
   onDailyPanelChange,
   onScreenshotImportComplete,
@@ -126,6 +132,9 @@ export function RightWorkbench({
             branchId={branchId}
             branchMessages={branchMessages}
             branchSending={branchSending}
+            branchSourceAvailable={branchSourceAvailable}
+            branchCreateLabel={branchCreateLabel}
+            onCreateBranch={onCreateBranch}
             onSendBranchMessage={onSendBranchMessage}
           />
         </div>
@@ -151,15 +160,22 @@ function BranchPanel({
   branchId,
   branchMessages,
   branchSending,
+  branchSourceAvailable,
+  branchCreateLabel,
+  onCreateBranch,
   onSendBranchMessage
 }: {
   branchId: string | null;
   branchMessages: Message[];
   branchSending: boolean;
+  branchSourceAvailable: boolean;
+  branchCreateLabel: string;
+  onCreateBranch: () => void;
   onSendBranchMessage: (content: string) => void;
 }) {
   const [draft, setDraft] = useState("");
   const canSend = Boolean(branchId && draft.trim() && !branchSending);
+  const canCreateBranch = Boolean(!branchId && branchSourceAvailable && !branchSending);
 
   const sendDraft = () => {
     if (!canSend) return;
@@ -174,6 +190,13 @@ function BranchPanel({
         <span>分支对话</span>
       </div>
       <p className="hint">{branchId ? `当前分支：${branchId}` : "选中主聊天文本后，可以在这里展开解释，不污染主线学习记录。"}</p>
+      {!branchId && (
+        <div className="workbench-actions">
+          <button type="button" className="workbench-primary" onClick={onCreateBranch} disabled={!canCreateBranch}>
+            {branchSending ? "创建中..." : branchCreateLabel}
+          </button>
+        </div>
+      )}
       <div className="branch-thread" aria-live="polite">
         {branchMessages.length === 0 ? (
           <p className="empty-copy">这里会显示分支对话记录。</p>

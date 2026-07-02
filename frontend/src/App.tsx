@@ -457,6 +457,17 @@ const DEFAULT_DATA_PATHS: DataPathsStatus = {
   }
 };
 
+function normalizeDataPaths(paths: DataPathsStatus | undefined): DataPathsStatus {
+  return {
+    ...DEFAULT_DATA_PATHS,
+    ...paths,
+    counts: {
+      ...DEFAULT_DATA_PATHS.counts,
+      ...(paths?.counts || {})
+    }
+  };
+}
+
 const DEFAULT_MINERU_CONFIG: MinerUConfig = {
   token_url: "https://mineru.net/apiManage/token",
   docs_url: "https://mineru.net/apiManage/docs",
@@ -789,6 +800,23 @@ function selectedLetterForQuestion(question: AnsweredQuestion) {
   return index >= 0 ? optionLetter(index) : "";
 }
 
+function branchSourceFromQuestion(question: Question) {
+  const optionLines = question.options.map((option, index) => `${optionLetter(index)}. ${option}`).join("\n");
+  return [
+    `第 ${question.sequence || 1} 题`,
+    question.prompt,
+    optionLines
+  ].filter(Boolean).join("\n\n");
+}
+
+function latestBranchableMessage(messages: Message[]) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const content = messages[index].content.trim();
+    if (content) return content;
+  }
+  return "";
+}
+
 function correctLetterForQuestion(question: Question) {
   const directLetter = (question.answer?.letter || "").trim().toUpperCase();
   if (/^[A-D]$/.test(directLetter)) return directLetter;
@@ -1049,6 +1077,19 @@ export default function App() {
   const currentModelVision = quickProvider.id === modelConfig.provider_id && quickCurrentModel === modelConfig.model
     ? Boolean(modelConfig.vision)
     : modelSupportsVision(quickProvider, quickCurrentModel);
+  const branchSource = useMemo(() => {
+    if (activeQuestion) {
+      return {
+        label: "基于当前题创建分支",
+        text: branchSourceFromQuestion(activeQuestion)
+      };
+    }
+    const latestMessage = latestBranchableMessage(messages);
+    return {
+      label: latestMessage ? "基于最新消息创建分支" : "基于当前内容创建分支",
+      text: latestMessage
+    };
+  }, [activeQuestion, messages]);
   const appShellStyle = {
     "--left-rail-width": `${panelSizes.left}px`,
     "--right-rail-width": `${panelSizes.right}px`
@@ -1251,7 +1292,7 @@ export default function App() {
         setPastPaperStatus(data.past_paper_status || DEFAULT_PAST_PAPER_STATUS);
         setSessions(data.sessions);
         setTokenUsage({ ...DEFAULT_TOKEN_USAGE, ...data.token_usage });
-        setDataPaths(data.data_paths || DEFAULT_DATA_PATHS);
+        setDataPaths(normalizeDataPaths(data.data_paths));
         setMineruConfig({ ...DEFAULT_MINERU_CONFIG, ...data.mineru_config });
         setAgentPermissions(data.agent_permissions || DEFAULT_AGENT_PERMISSIONS);
         setSkillsStatus(normalizeSkillsStatus(data.skills_status));
@@ -1519,6 +1560,10 @@ export default function App() {
   const startBranch = useCallback(async () => {
     await createBranchFromText(selectedTextRef.current || selectedText);
   }, [createBranchFromText, selectedText]);
+
+  const startBranchFromCurrentContext = useCallback(async () => {
+    await createBranchFromText(branchSource.text);
+  }, [branchSource.text, createBranchFromText]);
 
   const sendBranchMessage = useCallback(async (content: string) => {
     const cleanContent = content.trim();
@@ -1917,6 +1962,9 @@ export default function App() {
         onToggle={() => setRightOpen((value) => !value)}
         onResizeStart={(event) => startPanelResize("right", event)}
         onResizeKeyDown={(event) => resizePanelWithKeyboard("right", event)}
+        branchSourceAvailable={Boolean(activeSessionId && branchSource.text.trim())}
+        branchCreateLabel={branchSource.label}
+        onCreateBranch={() => void startBranchFromCurrentContext()}
         onSendBranchMessage={(content) => void sendBranchMessage(content)}
         onDailyPanelChange={setDailyPanel}
         onScreenshotImportComplete={handleScreenshotImportComplete}
@@ -1953,7 +2001,7 @@ export default function App() {
           onProvidersChange={setProviders}
           onLearningStatsChange={setLearningStats}
           onTokenUsageChange={(nextUsage) => setTokenUsage({ ...DEFAULT_TOKEN_USAGE, ...nextUsage })}
-          onDataPathsChange={(nextPaths) => setDataPaths({ ...DEFAULT_DATA_PATHS, ...nextPaths })}
+          onDataPathsChange={(nextPaths) => setDataPaths(normalizeDataPaths(nextPaths))}
           onMinerUConfigChange={(nextConfig) => setMineruConfig({ ...DEFAULT_MINERU_CONFIG, ...nextConfig })}
           onAgentPermissionsChange={setAgentPermissions}
           onSkillsStatusChange={setSkillsStatus}
@@ -2322,7 +2370,7 @@ function SettingsDialog({
   const [reviewIntensity, setReviewIntensity] = useState(3);
   const [saveState, setSaveState] = useState("");
   const [contextLimit, setContextLimit] = useState(tokenUsage.context_limit || DEFAULT_CONTEXT_LIMIT);
-  const [dataPathDraft, setDataPathDraft] = useState<DataPathsStatus>(dataPaths);
+  const [dataPathDraft, setDataPathDraft] = useState<DataPathsStatus>(() => normalizeDataPaths(dataPaths));
   const [mineruDraft, setMineruDraft] = useState<MinerUConfig>({ ...DEFAULT_MINERU_CONFIG, ...mineruConfig });
   const [mineruToken, setMineruToken] = useState("");
   const [mineruMessage, setMineruMessage] = useState("");
@@ -2403,6 +2451,30 @@ function SettingsDialog({
   useEffect(() => {
     setSkillsDraft(normalizeSkillsStatus(skillsStatus));
   }, [skillsStatus]);
+  useEffect(() => {
+    if (activeSettingsTab !== "data") return;
+    let cancelled = false;
+    const refreshDataPaths = async () => {
+      try {
+        const nextPaths = normalizeDataPaths(await apiGet<DataPathsStatus>("/api/data-paths"));
+        if (cancelled) return;
+        setDataPathDraft(nextPaths);
+        setQuestionDbFolder((current) => {
+          const trimmed = current.trim();
+          return !trimmed || trimmed === dataPaths.user_data_dir ? nextPaths.user_data_dir || "" : current;
+        });
+        setDataPathMessage("");
+      } catch (err) {
+        if (!cancelled) {
+          setDataPathMessage(err instanceof Error ? err.message : "数据库统计刷新失败");
+        }
+      }
+    };
+    void refreshDataPaths();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSettingsTab, dataPaths.user_data_dir]);
   useEffect(() => {
     if (!pendingPaperDraft) return;
     applyPaperDraftToForm(pendingPaperDraft, "已由会话 Agent 填入试卷导入草稿，保存前可继续修改。");
@@ -2992,7 +3064,7 @@ function SettingsDialog({
         migrate: migrateQuestionDb,
         overwrite: overwriteQuestionDb
       });
-      const nextPaths = { ...DEFAULT_DATA_PATHS, ...data.data_paths };
+      const nextPaths = normalizeDataPaths(data.data_paths);
       setDataPathDraft(nextPaths);
       setQuestionDbFolder(nextPaths.user_data_dir || questionDbFolder);
       onDataPathsChange(nextPaths);
