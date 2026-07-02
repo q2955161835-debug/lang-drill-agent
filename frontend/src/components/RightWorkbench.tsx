@@ -9,9 +9,10 @@ import {
   GitBranch,
   ImageSquare,
   MicrophoneStage,
+  Plus,
   X,
 } from "@phosphor-icons/react";
-import type { DailyPanel, Message, ScreenshotImportResult } from "../types";
+import type { DailyPanel, Message, ScreenshotImportResult, ScreenshotWord } from "../types";
 import { apiGet, apiPost } from "../api";
 import { appendImportedText, extractTextFromFiles } from "../fileImport";
 import { MarkdownText } from "./MarkdownText";
@@ -54,6 +55,8 @@ type PhoneMirrorStatus = {
   recommended_project?: { name: string; url: string; reason: string };
 };
 
+type EditableScreenshotWord = ScreenshotWord & { id: string };
+
 function queuedFileSourceLabel(files: File[]) {
   return files.map((file) => file.name).join("、");
 }
@@ -62,6 +65,17 @@ function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function isCompleteScreenshotWord(word: ScreenshotWord) {
+  return Boolean(word.term.trim() && word.meaning.trim());
+}
+
+function serializeEditableWords(words: ScreenshotWord[]) {
+  return words
+    .filter(isCompleteScreenshotWord)
+    .map((word) => `${word.term.trim()}: ${word.meaning.trim()}`)
+    .join("\n");
 }
 
 export function RightWorkbench({
@@ -294,9 +308,31 @@ function ScreenshotImportPanel({
   const [loading, setLoading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [queuedFiles, setQueuedFiles] = useState<File[]>([]);
+  const [editableWords, setEditableWords] = useState<EditableScreenshotWord[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const wordIdRef = useRef(0);
   const canParse = Boolean(text.trim() || queuedFiles.length) && !loading;
-  const canImport = Boolean(text.trim() && !queuedFiles.length) && !loading;
+  const confirmedWordCount = editableWords.filter(isCompleteScreenshotWord).length;
+  const canImport = Boolean((text.trim() || confirmedWordCount) && !queuedFiles.length) && !loading;
+  const nextEditableWordId = () => {
+    wordIdRef.current += 1;
+    return `screenshot-word-${wordIdRef.current}`;
+  };
+  const toEditableWords = (words: ScreenshotWord[] | undefined) =>
+    (words || []).map((word) => ({
+      id: nextEditableWordId(),
+      term: word.term,
+      meaning: word.meaning,
+    }));
+  const updateEditableWord = (id: string, field: keyof ScreenshotWord, value: string) => {
+    setEditableWords((current) => current.map((word) => word.id === id ? { ...word, [field]: value } : word));
+  };
+  const removeEditableWord = (id: string) => {
+    setEditableWords((current) => current.filter((word) => word.id !== id));
+  };
+  const addEditableWord = () => {
+    setEditableWords((current) => [...current, { id: nextEditableWordId(), term: "", meaning: "" }]);
+  };
   const parse = async (startDrill: boolean) => {
     if (loading) return;
     if (!text.trim() && !queuedFiles.length) {
@@ -304,7 +340,11 @@ function ScreenshotImportPanel({
       return;
     }
     setLoading(true);
-    setParsed(null);
+    const shouldImportEditedWords = startDrill && Boolean(parsed?.words?.length) && editableWords.length > 0 && queuedFiles.length === 0;
+    if (!startDrill) {
+      setParsed(null);
+      setEditableWords([]);
+    }
     let generationTimer: number | undefined;
     let resolvedText = text;
     let sourceImagePath = imagePath;
@@ -323,6 +363,13 @@ function ScreenshotImportPanel({
         setImagePath(sourceImagePath);
         setQueuedFiles([]);
       }
+      if (shouldImportEditedWords) {
+        const confirmedText = serializeEditableWords(editableWords);
+        if (!confirmedText) {
+          throw new Error("请至少保留一个同时包含单词和释义的词条。");
+        }
+        resolvedText = confirmedText;
+      }
       if (!resolvedText.trim()) {
         throw new Error("请先填写或解析出截图识别文本。");
       }
@@ -339,6 +386,7 @@ function ScreenshotImportPanel({
         source_image_path: sourceImagePath,
       });
       setParsed(data);
+      setEditableWords(toEditableWords(data.words));
       if (data.daily_panel) onDailyPanelChange(data.daily_panel);
       if (startDrill) {
         onScreenshotImportComplete(data);
@@ -366,6 +414,7 @@ function ScreenshotImportPanel({
     const nextSource = queuedFileSourceLabel(nextFiles);
     setQueuedFiles(nextFiles);
     setParsed(null);
+    setEditableWords([]);
     setImagePath((current) => {
       const trimmed = current.trim();
       return !trimmed || trimmed === currentSource ? nextSource : current;
@@ -383,6 +432,7 @@ function ScreenshotImportPanel({
     const nextSource = queuedFileSourceLabel(nextFiles);
     setQueuedFiles(nextFiles);
     setParsed(null);
+    setEditableWords([]);
     setImagePath((current) => current.trim() === currentSource ? nextSource : current);
     setStatus(nextFiles.length ? `待解析文件还剩 ${nextFiles.length} 个。` : "已清空待解析文件，可重新拖入或粘贴文本。");
   };
@@ -391,6 +441,7 @@ function ScreenshotImportPanel({
     const currentSource = queuedFileSourceLabel(queuedFiles);
     setQueuedFiles([]);
     setParsed(null);
+    setEditableWords([]);
     setImagePath((current) => current.trim() === currentSource ? "" : current);
     setStatus("已清空待解析文件，可重新拖入或粘贴文本。");
   };
@@ -467,6 +518,7 @@ function ScreenshotImportPanel({
       <label>截图识别文本<textarea value={text} onChange={(event) => {
         setText(event.target.value);
         setParsed(null);
+        setEditableWords([]);
       }} placeholder={"粘贴单词列表或题目文本，例如：collision\nn. 碰撞；冲突"} /></label>
       <div className="workbench-actions">
         <button className="workbench-primary" onClick={() => void parse(false)} disabled={!canParse}>{loading ? "解析中..." : "解析文本"}</button>
@@ -474,11 +526,43 @@ function ScreenshotImportPanel({
       </div>
       <p className="status-line">{status}</p>
       {parsed && (
-        <div className="preview-card">
-          <p>识别类型：{parsed.confidence}</p>
-          <strong>{parsed.prompt}</strong>
-          {parsed.words?.slice(0, 10).map((word) => <span key={word.term}>{word.term}：{word.meaning}</span>)}
+        <div className="screenshot-review">
+          <div className="screenshot-review-head">
+            <div>
+              <p>识别类型：{parsed.confidence}</p>
+              <strong>{parsed.prompt}</strong>
+            </div>
+            {editableWords.length > 0 && <span>{confirmedWordCount}/{editableWords.length} 可导入</span>}
+          </div>
+          {editableWords.length > 0 && (
+            <div className="screenshot-word-list" aria-label="可编辑词条">
+              {editableWords.map((word, index) => (
+                <div className="screenshot-word-card" key={word.id}>
+                  <div className="screenshot-word-index">{index + 1}</div>
+                  <label>单词<input value={word.term} onChange={(event) => updateEditableWord(word.id, "term", event.target.value)} /></label>
+                  <label>释义<textarea value={word.meaning} onChange={(event) => updateEditableWord(word.id, "meaning", event.target.value)} /></label>
+                  <button
+                    type="button"
+                    className="icon-button screenshot-word-remove"
+                    onClick={() => removeEditableWord(word.id)}
+                    aria-label={`删除词条 ${word.term || index + 1}`}
+                    title={`删除词条 ${word.term || index + 1}`}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+              <button type="button" className="screenshot-add-word" onClick={addEditableWord}>
+                <Plus size={14} /> 添加词条
+              </button>
+            </div>
+          )}
           {parsed.options.map((option, index) => <span key={option}>{String.fromCharCode(65 + index)}. {option}</span>)}
+          {parsed.diagnostics && (parsed.diagnostics.skipped_count > 0 || parsed.diagnostics.repaired_count > 0) && (
+            <p className="screenshot-diagnostics">
+              已跳过 {parsed.diagnostics.skipped_count} 行，修复 {parsed.diagnostics.repaired_count} 个疑似截断词。
+            </p>
+          )}
         </div>
       )}
     </section>

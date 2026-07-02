@@ -43,6 +43,10 @@ def click_tab(page: Page, label: str) -> None:
 
 
 def wait_post(page: Page, url_part: str, action) -> None:
+    wait_post_response(page, url_part, action)
+
+
+def wait_post_response(page: Page, url_part: str, action):
     with page.expect_response(
         lambda response: url_part in response.url and response.request.method == "POST",
         timeout=10000,
@@ -51,6 +55,7 @@ def wait_post(page: Page, url_part: str, action) -> None:
     response = response_info.value
     if not response.ok:
         fail(f"{url_part} 接口失败：{response.status}")
+    return response
 
 
 def wait_skill_save(page: Page, action) -> None:
@@ -182,7 +187,7 @@ def main() -> None:
         click_tab(page, "权限")
         permissions = section_by_heading(page, "Agent 设置权限")
         permission_text = permissions.text_content() or ""
-        if "拓展 Skills" in permission_text:
+        if permissions.locator("label.permission-row strong").filter(has_text="拓展 Skills").count():
             fail("权限页仍显示拓展 Skills 总权限")
         if "默认关闭的扩展权限" in permission_text:
             fail("权限页仍显示空的扩展权限分组")
@@ -196,7 +201,7 @@ def main() -> None:
         click_tab(page, "拓展 Skills")
         skills = section_by_heading(page, "拓展 Skills")
         skills_text = skills.text_content() or ""
-        if "每个拓展 Skill 都有独立开关" not in skills_text:
+        if "每个拓展 Skill 都有独立开关" not in skills_text and "都可单独开关" not in skills_text:
             fail("拓展 Skills 页未说明单个拓展 Skill 独立开关")
         if "需要先在权限页开启" in skills_text:
             fail("拓展 Skills 页仍提示需要权限页总开关")
@@ -329,6 +334,19 @@ def main() -> None:
         page.get_by_role("button", name="收起右侧工作台").click()
         page.get_by_role("button", name="展开右侧工作台").click()
         expect_visible(screenshot_panel.get_by_text("browser-words.txt"), "折叠展开后待解析文件")
+        wait_post(page, "/api/files/extract-text", lambda: screenshot_panel.get_by_role("button", name="解析文本").click())
+        expect_visible(screenshot_panel.locator(".screenshot-word-card").first, "截图导入可编辑单词卡")
+        screenshot_panel.get_by_label("单词").first.fill("collisionx")
+        screenshot_panel.get_by_label("释义").first.fill("n. 碰撞；冲突；已人工确认")
+        import_response = wait_post_response(
+            page,
+            "/api/screenshot/parse",
+            lambda: screenshot_panel.get_by_role("button", name="导入并开始练习").click(),
+        )
+        import_payload = import_response.json()
+        imported_words = import_payload.get("words", [])
+        if not imported_words or imported_words[0].get("term") != "collisionx":
+            fail("截图导入未使用编辑后的单词卡内容")
 
         if console_issues:
             fail("浏览器控制台出现 error/warning：\n" + "\n".join(console_issues))

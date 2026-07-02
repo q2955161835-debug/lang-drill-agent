@@ -1187,6 +1187,114 @@ body.panel-resize-active * {
   font-size: 0.78rem;
 }
 .preview-card span { color: var(--muted-strong); line-height: 1.5; }
+.screenshot-review {
+  display: grid;
+  gap: 10px;
+}
+.screenshot-review-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  border: var(--border-thin);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: 12px;
+}
+.screenshot-review-head p {
+  margin: 0 0 5px;
+  color: var(--muted-strong);
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+.screenshot-review-head strong {
+  color: var(--text);
+  line-height: 1.45;
+}
+.screenshot-review-head > span {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 15%, var(--surface-strong));
+  color: var(--accent);
+  padding: 5px 8px;
+  font-size: 0.74rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+.screenshot-word-list {
+  display: grid;
+  gap: 8px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.screenshot-word-card {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+  border: var(--border-thin);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface) 88%, var(--surface-strong));
+  padding: 9px;
+}
+.screenshot-word-index {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--tag-bg);
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+.screenshot-word-card label {
+  min-width: 0;
+  gap: 5px;
+  font-size: 0.78rem;
+}
+.screenshot-word-card label:nth-of-type(2) {
+  grid-column: 2 / -1;
+}
+.screenshot-word-card input,
+.screenshot-word-card textarea {
+  padding: 8px 9px;
+  font-size: 0.86rem;
+}
+.screenshot-word-card textarea {
+  min-height: 58px;
+}
+.screenshot-word-remove {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+.screenshot-add-word {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  border: var(--border-thin);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 8px 10px;
+  font-weight: 800;
+}
+.screenshot-add-word svg {
+  color: var(--accent);
+}
+.screenshot-diagnostics {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+.screenshot-review > span {
+  color: var(--muted-strong);
+  line-height: 1.5;
+}
 .status-line { font-size: 0.86rem; }
 
 .context-menu {
