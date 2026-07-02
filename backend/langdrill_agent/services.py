@@ -225,8 +225,10 @@ class SkillRegistryService:
         "requires_api_key": False,
         "requires_token": False,
         "permission_feature_id": "web_search_import",
-        "reason": "适合为真题、考纲和来源网站生成可核验搜索入口，避免绑定需要个人申请的搜索 API。",
+        "default_enabled": True,
+        "reason": "默认启用，用于为真题、考纲和来源网站生成可核验搜索入口；它不直接抓取网页摘要，也不会替代内置联网检索。",
     }
+    DEFAULT_ENABLED_SKILL_IDS = (RECOMMENDED_WEB_SEARCH_SKILL["id"],)
 
     def __init__(self, skills_roots: list[Path] | None = None, conn: sqlite3.Connection | None = None):
         self.conn = conn
@@ -295,7 +297,7 @@ class SkillRegistryService:
             "web_search_skill": web_search_skill,
             "permission_feature_id": "skill_toggles",
             "web_search_permission_feature_id": "web_search_import",
-            "message": "内置联网检索是始终开启的内置工具；multi-search-engine 仅作为可选拓展 Skill，默认不启用。",
+            "message": "内置联网检索是始终开启的内置工具；multi-search-engine 是默认启用的无密钥拓展 Skill，用于生成可审计搜索入口。",
         }
 
     def save_enabled(self, skill_id: str, enabled: bool) -> dict[str, Any]:
@@ -305,7 +307,7 @@ class SkillRegistryService:
         known_ids = {str(skill["id"]) for skill in self.installed_skills()}
         if clean_id not in known_ids:
             raise ValueError("未找到指定 Skill。")
-        enabled_ids = self._enabled_skill_ids()
+        enabled_ids = [item for item in self._enabled_skill_ids() if item in known_ids]
         if enabled and clean_id not in enabled_ids:
             enabled_ids.append(clean_id)
         if not enabled:
@@ -389,13 +391,18 @@ class SkillRegistryService:
 
     def _enabled_skill_ids(self) -> list[str]:
         if self.conn is None:
-            return []
+            return self._default_enabled_skill_ids()
         row = self.conn.execute(
             "SELECT value_json FROM app_settings WHERE key=?",
             (self.SETTINGS_KEY,),
         ).fetchone()
+        if not row:
+            return self._default_enabled_skill_ids()
         data = loads(row["value_json"], {}) if row else {}
         return [str(item) for item in data.get("enabled_skill_ids", []) if str(item).strip()]
+
+    def _default_enabled_skill_ids(self) -> list[str]:
+        return list(self.DEFAULT_ENABLED_SKILL_IDS)
 
     def _web_search_permission_enabled(self) -> bool:
         if self.conn is None:

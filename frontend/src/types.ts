@@ -115,6 +115,7 @@ export type SkillInfo = {
   builtin?: boolean;
   locked?: boolean;
   always_enabled?: boolean;
+  default_enabled?: boolean;
   permission_enabled?: boolean;
   permission_feature_id?: string;
   reason?: string;

@@ -121,8 +121,10 @@ This skill does not require API keys.
     assert status["builtin_web_search"]["requires_token"] is False
     assert status["web_search_skill"]["id"] == "multi-search-engine"
     assert status["web_search_skill"]["installed"] is True
-    assert status["web_search_skill"]["enabled"] is False
+    assert status["web_search_skill"]["enabled"] is True
+    assert status["web_search_skill"]["default_enabled"] is True
     assert status["web_search_skill"]["requires_api_key"] is False
+    assert status["enabled_skill_ids"] == ["multi-search-engine"]
     assert "multi-search-engine" in status["no_key_skill_ids"]
 
     enabled = service.save_enabled("multi-search-engine", True)
@@ -180,7 +182,9 @@ def test_skills_status_api_reports_recommended_no_key_skill(tmp_path: Path, monk
     assert status["web_search_skill"]["id"] == "multi-search-engine"
     assert status["web_search_skill"]["requires_api_key"] is False
     assert status["web_search_skill"]["requires_token"] is False
-    assert status["web_search_skill"]["enabled"] is False
+    assert status["web_search_skill"]["enabled"] is bool(status["web_search_skill"]["installed"])
+    if status["web_search_skill"]["installed"]:
+        assert "multi-search-engine" in status["enabled_skill_ids"]
 
 
 def test_skill_toggle_api_saves_enabled_state(tmp_path: Path, monkeypatch) -> None:
@@ -196,6 +200,11 @@ def test_skill_toggle_api_saves_enabled_state(tmp_path: Path, monkeypatch) -> No
     monkeypatch.setenv("LANGDRILL_SKILLS_ROOTS", str(skills_root))
     init_db(db_path)
     client = TestClient(_api_app())
+
+    default_status = client.get("/api/skills")
+    assert default_status.status_code == 200
+    assert default_status.json()["skills_status"]["enabled_skill_ids"] == ["multi-search-engine"]
+    assert default_status.json()["skills_status"]["web_search_skill"]["enabled"] is True
 
     enabled = client.post("/api/skills/enabled", json={"skill_id": "multi-search-engine", "enabled": True})
     assert enabled.status_code == 200

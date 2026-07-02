@@ -345,7 +345,7 @@ def _general_chat_response(
                 "content": (
                     "联网功能权限已关闭，所以我不能执行网页检索。\n\n"
                     "请在设置里的「权限」页开启「联网功能」。该权限独立于拓展 Skills；"
-                    "Multi Search Engine 这类拓展 Skill 未启用不会阻止内置联网检索。"
+                    "Multi Search Engine 这类拓展 Skill 的开关不会阻止内置联网检索。"
                 ),
                 "web_search": {
                     "id": "builtin-web-search",
@@ -363,7 +363,7 @@ def _general_chat_response(
                 "content": (
                     f"联网检索失败：{exc}\n\n"
                     "这不是拓展 Skills 开关冲突；内置联网检索工具始终可用，实际调用只受「联网功能」权限控制。"
-                    "可以稍后重试，或到拓展 Skills 页启用 Multi Search Engine 生成可手动核验的搜索入口。"
+                    "可以稍后重试，或到拓展 Skills 页使用 Multi Search Engine 生成可手动核验的搜索入口。"
                 ),
                 "web_search": {
                     "id": "builtin-web-search",

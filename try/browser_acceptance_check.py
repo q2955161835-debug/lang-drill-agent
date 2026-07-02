@@ -211,6 +211,10 @@ def main() -> None:
         expect_visible(demo_card, "Browser Acceptance Skill 卡片")
         multi_toggle = multi_card.locator("input[type='checkbox']")
         demo_toggle = demo_card.locator("input[type='checkbox']")
+        if not multi_toggle.is_checked():
+            fail("Multi Search Engine 默认未启用")
+        if demo_toggle.is_checked():
+            fail("非推荐拓展 Skill 默认应关闭")
         set_skill_toggle(page, multi_toggle, False)
         set_skill_toggle(page, demo_toggle, False)
         set_skill_toggle(page, multi_toggle, True)

@@ -618,10 +618,11 @@ const DEFAULT_SKILLS_STATUS: SkillsStatus = {
     id: "multi-search-engine",
     name: "multi-search-engine",
     label: "Multi Search Engine",
-    description: "生成可审计的多搜索引擎查询 URL；不需要个人 API Key 或 token。",
+    description: "生成可审计的多搜索引擎查询 URL；不抓取网页摘要，不需要个人 API Key 或 token。",
     homepage: "https://clawhub.com/skills/multi-search-engine",
     requires_api_key: false,
     requires_token: false,
+    default_enabled: true,
     installed: false,
     enabled: false,
     permission_feature_id: "web_search_import"
@@ -4017,12 +4018,12 @@ function SettingsDialog({
             )}
             {activeSettingsTab === "skills" && (
               <SettingSection title="拓展 Skills">
-                <p className="hint">每个拓展 Skill 都有独立开关，默认关闭；内置必备工具始终开启，不受拓展 Skills 开关影响。</p>
+                <p className="hint">内置联网检索和拓展 Skills 分开管理。Multi Search Engine 默认启用；其它拓展 Skill 默认关闭，并且都可单独开关。</p>
                 <div className="skill-highlight">
                   <div>
                     <strong>{skillsDraft.builtin_web_search.label || "内置联网检索"}</strong>
                     <span>{skillsDraft.builtin_web_search.description}</span>
-                    <small>普通聊天中明确要求联网、搜索或最新信息时生效；工具始终开启，是否调用仍遵守联网权限。</small>
+                    <small>普通聊天中明确要求联网、搜索或最新信息时执行真实网页检索并返回摘要来源；工具始终开启，是否调用仍遵守联网权限。</small>
                   </div>
                   <div className="skill-badges">
                     <span className="skill-ok">内置工具始终开启</span>
@@ -4037,7 +4038,7 @@ function SettingsDialog({
                   <div>
                     <strong>{skillsDraft.web_search_skill.label || skillsDraft.web_search_skill.name}</strong>
                     <span>{skillsDraft.web_search_skill.description}</span>
-                    {skillsDraft.web_search_skill.reason && <small>{skillsDraft.web_search_skill.reason}</small>}
+                    <small>{skillsDraft.web_search_skill.reason || "默认启用；用于生成可人工核验的搜索入口，不替代内置联网检索。"}</small>
                   </div>
                   <div className="skill-badges">
                     <span className={skillsDraft.web_search_skill.installed ? "skill-ok" : "skill-warn"}>
@@ -4046,6 +4047,7 @@ function SettingsDialog({
                     <span className={skillsDraft.web_search_skill.enabled ? "skill-ok" : "skill-warn"}>
                       {skillsDraft.web_search_skill.enabled ? "已启用" : "未启用"}
                     </span>
+                    {skillsDraft.web_search_skill.default_enabled && <span className="skill-ok">默认启用</span>}
                     <span className="skill-ok">无需 API Key</span>
                     <span className="skill-ok">无需 token</span>
                   </div>

@@ -13,7 +13,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - 右侧分支页必须同时支持右键/选中文本创建分支和普通点击路径；当前会话有待答题题卡时，应能直接基于当前题目创建分支，避免分支功能依赖浏览器右键或文本拖选能力。
 - 模型配置支持默认四个真实供应商 OpenAI/GPT、Claude、DeepSeek（深度求索）、MiMo（小米米魔）和保存后才出现的自定义供应商；设置页可按当前 Base URL（基础网址）、API 格式和 API Key（接口密钥）从供应商模型列表接口自动获取可调用模型，并给每个模型维护聊天栏显示/隐藏开关，默认全部显示；若供应商未开放模型列表接口，刷新必须保留内置或已保存模型列表，不得把 404 HTML（超文本标记语言）错误页直接展示给用户；设置页允许在当前供应商下手动添加自定义模型，记录模型 ID、显示名、上下文容量和视觉能力，自定义模型可删除，内置或 API 返回模型不可删除；聊天栏模型选择只暴露已启用、已配置 API Key 且未隐藏的真实供应商/模型，Mock Provider（本地模拟供应商）只保留给自动测试和离线调试。
 - 设置页必须维护 Agent 设置权限；截图导入、学习数据库写入、历年真题草稿、联网功能、考试目标和上下文容量等非敏感权限默认开启；模型配置、配置自定义模型、密钥、数据迁移、MinerU token 等敏感设置集中放在下方并默认关闭，开启后会话 Agent 也只能生成可确认草稿或打开对应设置动作，关键保存仍必须由用户确认执行。
-- 联网功能必须与拓展 Skills（拓展技能）拆分：内置联网检索是始终开启的内置工具，不需要个人 API Key（接口密钥）或 token（令牌）；实际联网调用仍受“联网功能”权限控制。拓展 Skills 不再有全局总权限，每个拓展 Skill 默认关闭并由“拓展 Skills”页的单项开关独立控制，不能影响内置工具是否可用。
+- 联网功能必须与拓展 Skills（拓展技能）拆分：内置联网检索是始终开启的内置工具，不需要个人 API Key（接口密钥）或 token（令牌）；实际联网调用仍受“联网功能”权限控制。拓展 Skills 不再有全局总权限，Multi Search Engine（多搜索引擎）默认启用用于生成可审计搜索入口，其它拓展 Skill 默认关闭；所有拓展 Skill 都由“拓展 Skills”页的单项开关独立控制，不能影响内置工具是否可用。
 - 设置页模型配置可声明当前模型是否具备视觉能力；聊天栏拖入图片时，具备视觉能力的模型直接接收图片附件，不具备视觉能力时前端必须走文件抽取链路交给 MinerU/RapidOCR（文档解析/本地文字识别）提取文本。
 - 思考等级必须跟随当前模型的原生 reasoning（推理）配置；禁止把思考等级降级为提示词控制。没有原生档位或未自定义添加档位的模型，不在聊天栏暴露思考等级选择；聊天栏只保留思考等级选择器作为当前思考状态入口，不额外显示“当前：开启”这类重复状态标签。切换模型时必须按新模型能力刷新档位；内置原生档位不得删除，用户新增的自定义档位可删除并自动回退到当前模型默认档位；自定义模型默认无思考档位，用户可在当前模型下另行添加自定义思考档位。
 - OpenAI/GPT 官方 provider（供应商）可使用 Chat Completions（聊天补全）中的 `developer` role（角色）承载上下文；DeepSeek（深度求索）、本地模型和自定义 OpenAI-compatible（OpenAI 兼容）供应商必须只发送兼容的 `system`/`user` 消息，把上下文合并进 user 内容，避免供应商拒收 `developer` role。
@@ -55,7 +55,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - `backend/langdrill_agent/cli.py`：辅助命令行入口，保留 init（初始化）、serve（启动服务）、status（状态）、chat（终端聊天）、data-paths（数据路径）和 backup-user-data（备份用户数据）等既有功能，用于维护、调试和自动化兜底。
 - `backend/langdrill_agent/services.py`：学习状态机、题组推进、作答写入、掌握度更新、会话生命周期、Agent 设置权限、拓展 Skills（拓展技能）状态、试卷导入草稿和业务编排。
 - `backend/langdrill_agent/services.py` 中的 `PastPaperService`：历年真题试卷资产、默认近三年选择、题型开关、手动导入和重新解析；英语四/六级默认真题来源网站为 `https://www.guojiya.cn/#exams`。
-- `backend/langdrill_agent/services.py` 中的 `SkillRegistryService`：发现拓展 Skills（拓展技能）并维护单个拓展 Skill 开启/关闭状态；默认不启用任何拓展 Skill；状态中单独返回始终开启的内置必备工具。
+- `backend/langdrill_agent/services.py` 中的 `SkillRegistryService`：发现拓展 Skills（拓展技能）并维护单个拓展 Skill 开启/关闭状态；Multi Search Engine（多搜索引擎）作为无密钥推荐技能默认启用，其它拓展 Skill 默认关闭；状态中单独返回始终开启的内置必备工具。
 - `backend/langdrill_agent/web_search.py`：内置无密钥联网检索实现，普通聊天明确请求联网、搜索或最新信息时由 API（接口）注入可核验网页来源；该内置工具始终可用，实际调用受“联网功能”权限控制，不依赖拓展 Skills 开关。
 - `backend/langdrill_agent/paper_assets.py`：历年真题目录、原始文件保存、PDF（Portable Document Format，便携式文档格式）/DOCX（Word 文档格式）/Markdown（Markdown 文本格式）/图片文件文本抽取、解析 JSON（JSON 数据交换格式）生成和短摘录提取；配置 `MINERU_TOKEN` 时使用 MinerU 精准解析，否则使用 MinerU 轻量解析；图片 OCR（文字识别）失败时回退 RapidOCR（本地文字识别），复杂文档依赖可选 MinerU CLI。
 - `backend/langdrill_agent/learning_stats.py`：长期学习统计服务，按当前考试聚合题目完成、词汇掌握和整体正确率。
