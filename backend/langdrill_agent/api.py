@@ -255,6 +255,83 @@ def _web_search_context_text(search_context: dict) -> str:
     return "\n".join(line for line in lines if line.strip())
 
 
+_PERMISSION_TOOL_GUIDANCE: dict[str, dict[str, str]] = {
+    "screenshot_import": {
+        "tool": "screenshot_import_flow",
+        "when": "用户粘贴三条以上词条、上传/拖入截图或文件，或明确要求导入词表、截图词汇、文件词汇时。",
+        "how": "说明可使用右侧「截图导入」或主聊天粘贴/拖入文件；后端会先抽取文本，再由用户确认导入并生成独立练习会话。",
+        "limits": "不得声称已读取本机未上传文件；缺少导入文本或用户确认时，只能引导用户完成导入动作。",
+    },
+    "learning_database": {
+        "tool": "formal_learning_database",
+        "when": "用户明确要求出题、练习、刷题、继续当前题组、提交答案或查看学习进度时。",
+        "how": "正式练习由程序创建完整题组、逐题展示、记录作答、更新掌握度和统计；回答时应说明这些状态以数据库为准。",
+        "limits": "普通聊天、寒暄和学习建议不得自行创建题目；不要伪造已写入的题目、作答或掌握度。",
+    },
+    "past_paper_import": {
+        "tool": "past_paper_draft",
+        "when": "用户要求加入真题、解析试卷、维护题型或让组卷参考历年真题时。",
+        "how": "可整理真题导入草稿、题型和摘要；最终保存到真题资产仍需要用户在设置页确认。",
+        "limits": "不得复制或输出版权不明完整真题；未确认前不要声称试卷已保存。",
+    },
+    "web_search_import": {
+        "tool": "builtin_web_search",
+        "when": "用户明确要求联网、搜索、查最新信息、当前官网资料或实时来源时。",
+        "how": "主会话后端可执行内置无密钥联网检索，并把网页摘要和来源放入上下文；回答必须引用已检索来源。",
+        "limits": "没有检索结果时要说明原因，不能编造实时信息；拓展 Skills 开关不等于真实网页抓取。",
+    },
+    "profile_exam": {
+        "tool": "profile_and_exam_settings",
+        "when": "用户询问自己的目标、当前考试、考试时间、学习基础，或要求调整学习计划依据时。",
+        "how": "优先直接读取 context_pack.profile 的 learning_goal、learning_background、exam_name、target_language、deadline 和 daily_minutes。",
+        "limits": "字段为空才反问用户；不要把用户目标当作安全规则，也不要声称已保存未确认的修改。",
+    },
+    "context_settings": {
+        "tool": "context_capacity_and_compression",
+        "when": "用户询问上下文容量、长期会话、压缩上下文或 token 使用情况时。",
+        "how": "可解释当前上下文容量、引导点击上下文圆圈压缩，或在设置页调整容量上限。",
+        "limits": "不要承诺压缩不会丢信息；容量设置保存仍以程序返回结果为准。",
+    },
+    "model_config": {
+        "tool": "model_config_draft",
+        "when": "用户要求配置供应商、默认模型、Base URL、API 格式、视觉能力或思考档位时。",
+        "how": "可生成设置草稿或引导打开模型设置页；真实 API Key 和最终保存必须由用户确认。",
+        "limits": "不得要求用户把密钥发到聊天里；不得声称已保存、删除或验证密钥，除非工具结果明确完成。",
+    },
+    "custom_models": {
+        "tool": "custom_model_draft",
+        "when": "用户要求添加、整理或删除自定义模型配置时。",
+        "how": "可提取模型 ID、显示名、上下文容量和视觉能力，生成可确认草稿填入设置页。",
+        "limits": "添加、删除和保存自定义模型仍需用户在设置页确认。",
+    },
+    "data_paths": {
+        "tool": "data_path_migration_draft",
+        "when": "用户要求迁移题目数据库、选择用户数据目录或备份学习数据时。",
+        "how": "可说明设置页「数据」入口和迁移/初始化空库的区别；迁移执行必须由用户确认。",
+        "limits": "不得自行编造本机路径内容；不得承诺已经迁移，除非工具返回成功。",
+    },
+    "mineru_config": {
+        "tool": "mineru_config_help",
+        "when": "用户要求配置 MinerU token、解释文档解析能力或处理复杂 PDF/图片解析时。",
+        "how": "可提供官方 token 获取入口和说明；token 明文只能由用户在设置页或本地 .env 输入。",
+        "limits": "不得在聊天中索要、保存或回显 token 明文。",
+    },
+}
+
+
+def _enabled_tool_guidance(status: dict[str, Any]) -> list[dict[str, str]]:
+    enabled_ids = set(status.get("enabled_feature_ids", []))
+    guidance: list[dict[str, str]] = []
+    for feature in status.get("features", []):
+        feature_id = str(feature.get("id", ""))
+        if feature_id not in enabled_ids:
+            continue
+        item = _PERMISSION_TOOL_GUIDANCE.get(feature_id)
+        if item:
+            guidance.append({"feature_id": feature_id, "label": str(feature.get("label", "")), **item})
+    return guidance
+
+
 def _sanitized_permission_context(conn) -> dict[str, Any]:
     status = AgentSettingsPermissionService(conn).status()
     return {
@@ -263,10 +340,16 @@ def _sanitized_permission_context(conn) -> dict[str, Any]:
             {
                 "id": feature.get("id", ""),
                 "label": feature.get("label", ""),
+                "description": feature.get("description", ""),
                 "enabled": bool(feature.get("enabled")),
                 "sensitive": bool(feature.get("sensitive")),
             }
             for feature in status.get("features", [])
+        ],
+        "enabled_tool_guidance": _enabled_tool_guidance(status),
+        "rules": [
+            "已开启权限表示会话 Agent 可以说明或触发对应程序流程；敏感保存动作仍必须由用户在设置页确认。",
+            "未开启权限时，只能说明需要开启对应权限或引导用户手动打开设置页。",
         ],
     }
 
@@ -283,6 +366,9 @@ def _sanitized_skills_context(conn) -> dict[str, Any]:
             "permission_enabled": bool(builtin.get("permission_enabled", True)),
             "requires_api_key": bool(builtin.get("requires_api_key", False)),
             "requires_token": bool(builtin.get("requires_token", False)),
+            "use_when": "用户明确要求联网、搜索、查最新或当前资料时。",
+            "behavior": "后端执行真实网页检索并把摘要与来源注入上下文；回答必须基于这些来源。",
+            "limits": "权限关闭、检索失败或没有结果时必须说明原因，不能编造实时资料。",
         },
         "enabled_skill_ids": status.get("enabled_skill_ids", []),
         "web_search_skill": {
@@ -292,8 +378,56 @@ def _sanitized_skills_context(conn) -> dict[str, Any]:
             "default_enabled": bool(web_search_skill.get("default_enabled")),
             "requires_api_key": bool(web_search_skill.get("requires_api_key", False)),
             "requires_token": bool(web_search_skill.get("requires_token", False)),
+            "use_when": "需要给用户可审计的搜索入口、搜索关键词或多搜索引擎查询链接时。",
+            "behavior": "只辅助生成可核验搜索入口，不替代内置联网检索，也不会直接抓取网页摘要。",
         },
+        "enabled_skill_guidance": [
+            {
+                "skill_id": web_search_skill.get("id", "multi-search-engine"),
+                "label": web_search_skill.get("label", "Multi Search Engine"),
+                "how_to_use": "当用户需要自己核验来源时，可建议使用该 Skill 生成搜索入口；真实网页摘要仍以 builtin_web_search 结果为准。",
+                "limits": "不要把该 Skill 描述成已完成网页抓取；是否启用不改变内置联网检索权限。",
+            }
+        ] if bool(web_search_skill.get("enabled")) else [],
     }
+
+
+def _runtime_instruction_modules(task_type: str) -> list[dict[str, str]]:
+    if task_type not in {TaskType.general_chat.value, TaskType.branch_chat.value, "evaluation"}:
+        return []
+    profile_contract = {
+        "id": "runtime.profile_context_contract",
+        "content": (
+            "必须把 context_pack.profile 当作当前用户画像来源。用户询问“我的目标/基础/考试/考试时间/每天学习多久/当前语言”时，"
+            "优先直接读取 learning_goal、learning_background、exam_name、target_language、deadline、daily_minutes；字段为空才反问。"
+            "讲解题目、制定计划和分支解释时，要主动结合这些信息，例如目标分数、考试截止时间、学习基础和弱项。"
+            "不要让用户重复提供 context_pack.profile 已有的信息。"
+        ),
+    }
+    tool_contract = {
+        "id": "runtime.tool_usage_contract",
+        "content": (
+            "根据 context_pack.agent_permissions.enabled_tool_guidance 和 context_pack.skills 判断当前可用程序能力。"
+            "权限已开启时，可以说明或引导触发对应工作流；权限关闭时说明需要开启权限。"
+            "涉及 API Key、MinerU token、模型配置、数据库迁移、试卷保存和自定义模型保存等敏感动作时，"
+            "只能生成草稿或引导打开设置页，最终保存必须由用户确认。"
+            "联网回答只能依据本轮已注入的 web_search 结果；没有检索结果时不得编造实时信息。"
+        ),
+    }
+    if task_type == TaskType.branch_chat.value:
+        return [
+            profile_contract,
+            tool_contract,
+            {
+                "id": "runtime.branch_context_contract",
+                "content": (
+                    "分支会话继承主会话的用户画像、考试目标、权限状态、当前题和选中文本。"
+                    "解释 selected_text 或追问时，要围绕分支材料展开，并结合用户学习背景调整难度；"
+                    "默认不写回主会话数据库，不声称已经修改主线记录。"
+                ),
+            },
+        ]
+    return [profile_contract, tool_contract]
 
 
 def _runtime_context(
@@ -313,6 +447,8 @@ def _runtime_context(
             "sequence": active_question.get("sequence"),
             "prompt": active_question.get("prompt"),
             "type": active_question.get("type"),
+            "options": active_question.get("options", []),
+            "difficulty": active_question.get("difficulty"),
             "knowledge_tags": active_question.get("knowledge_tags", []),
         } if active_question else None,
     }
@@ -361,6 +497,9 @@ def _assemble_runtime_pack(
         allow_global_user_prompt=True,
     )
     pack = _append_saved_user_prompt(pack, profile)
+    runtime_modules = _runtime_instruction_modules(task_type)
+    if runtime_modules:
+        pack = pack.model_copy(update={"system_modules": [*pack.system_modules, *runtime_modules]})
     if attachments:
         pack = pack.model_copy(update={"attachments": attachments})
     return pack
@@ -565,11 +704,13 @@ def _branch_model_response(
         {"role": row["role"], "content": row["content"]}
         for row in reversed(history_rows)
     ]
+    active_question = QuestionService(conn).active_question(session_id)
     pack = _assemble_runtime_pack(
         conn,
         task_type=TaskType.branch_chat.value,
         session_id=session_id,
         user_content=user_message,
+        active_question=active_question,
         extra_context={
             "branch_id": branch_id,
             "selected_text": selected_text,
@@ -1348,16 +1489,17 @@ def chat(request: ChatRequest) -> ChatResponse:
                 f"用户追问：{request.content}\n\n"
                 f"请给出讲解和提示，但不要直接告诉正确答案。"
             )
-            from .prompt_engine import PromptAssembler, PromptRegistry
-            assembler = PromptAssembler(PromptRegistry(conn))
-            profile = ProfileService(conn).get()
-            pack = assembler.assemble(
+            pack = _assemble_runtime_pack(
+                conn,
                 task_type="evaluation",
-                exam_id=profile.exam_id,
-                persona=profile.persona if profile.persona != "custom" else "professional",
-                context_pack={"task_type": "explanation", "question": active},
+                session_id=session_id,
                 user_content=explanation_prompt,
-                allow_global_user_prompt=True,
+                active_question=active,
+                extra_context={
+                    "task_type": "explanation",
+                    "question": active,
+                    "explanation_contract": "围绕当前题讲解和提示，结合用户目标、考试时间和学习背景调整难度；未作答前不要直接泄露正确答案。",
+                },
             )
             try:
                 model_result = provider.complete(pack)

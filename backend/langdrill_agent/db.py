@@ -132,19 +132,24 @@ def seed_prompt_modules(conn: sqlite3.Connection) -> None:
         ),
         (
             "task.evaluator",
-            "1.0.0",
+            "1.1.0",
             "task",
             "evaluation",
             "any",
             700,
             1200,
             "core.safety",
-            "先判断对错，再解释原因，再指出知识点归因，最后给出下一步建议。简单选择题可由程序判定。",
+            (
+                "先判断对错，再解释原因，再指出知识点归因，最后给出下一步建议。"
+                "讲解必须结合 context_pack.profile 中的目标考试、目标分数、考试时间、学习背景和弱项调整难度；"
+                "如果用户正在追问题目且尚未作答，可以给提示和思路，但不要直接泄露正确答案。"
+                "简单选择题可由程序判定。"
+            ),
             1,
         ),
         (
             "task.general_chat",
-            "1.0.0",
+            "1.1.0",
             "task",
             "general_chat",
             "any",
@@ -155,13 +160,16 @@ def seed_prompt_modules(conn: sqlite3.Connection) -> None:
                 "普通主会话必须由当前模型回复。根据 context_pack 中的学习目标、学习背景、权限状态、"
                 "拓展 Skills 状态、当前题目和联网检索状态自然回答。不要因为寒暄或学习建议而生成题组；"
                 "只有用户明确要求出题、练习、刷题、截图词表导入或文件导入时，才应引导进入对应程序流程。"
-                "如果模型上下文显示联网请求未执行，说明原因并避免编造实时信息。"
+                "用户询问自己的目标、基础、当前考试、考试时间或学习计划依据时，必须优先读取 context_pack.profile 直接回答，"
+                "不要泛泛反问已经存在的信息。讲解题目和制定建议时，要结合用户目标、考试截止时间和学习背景。"
+                "如果模型上下文显示联网请求未执行，说明原因并避免编造实时信息；"
+                "已开启权限对应的工具说明以 context_pack.agent_permissions.enabled_tool_guidance 和 context_pack.skills 为准。"
             ),
             1,
         ),
         (
             "task.branch_chat",
-            "1.0.0",
+            "1.1.0",
             "task",
             "branch_chat",
             "any",
@@ -170,7 +178,8 @@ def seed_prompt_modules(conn: sqlite3.Connection) -> None:
             "core.safety,core.product_capabilities",
             (
                 "分支对话必须由当前模型回复。只围绕 context_pack.selected_text 和分支历史解释、改写、举例、"
-                "拆解语法、整理复习卡片或回答追问；默认不写回主会话，不声称已修改主线学习记录。"
+                "拆解语法、整理复习卡片或回答追问；同时继承 context_pack.profile 中的学习目标、考试时间和学习背景，"
+                "并结合 context_pack.active_question 调整题目讲解。默认不写回主会话，不声称已修改主线学习记录。"
             ),
             1,
         ),
