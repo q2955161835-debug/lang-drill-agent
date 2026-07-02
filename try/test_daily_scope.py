@@ -57,6 +57,39 @@ def test_daily_panel_aggregates_same_day_same_exam(tmp_path: Path) -> None:
     assert first_panel == second_panel
 
 
+def test_daily_panel_deduplicates_imported_words_and_vocabulary_question_tags(tmp_path: Path) -> None:
+    db_path = tmp_path / "daily-import.db"
+    init_db(db_path)
+
+    with transaction(db_path) as conn:
+        ProfileService(conn).update(UserProfile(exam_id="cet4", exam_name="大学英语四级"))
+        sessions = SessionService(conn)
+        session_id = sessions.ensure_session(None, "screenshot words", force_new=True)
+        conn.executemany(
+            """
+            INSERT INTO knowledge_items
+            (id, kind, term, meaning, notes, exam_id, source_scope, mastery_score)
+            VALUES (?, 'word', ?, ?, '{}', 'cet4', 'screenshot_import', 0.2)
+            """,
+            [
+                ("kn_skin", "skin", "n. 皮肤"),
+                ("kn_hence", "hence", "adv. 因此"),
+            ],
+        )
+        questions = QuestionService(conn)
+        questions.save_question(_question(session_id, "q_skin", 1, "vocabulary:skin"))
+        questions.save_question(_question(session_id, "q_hence", 2, "vocabulary:hence"))
+        questions.mark_answered("q_skin")
+
+        panel = sessions.daily_panel(session_id)
+
+    assert panel["questions_total"] == 2
+    assert panel["questions_done"] == 1
+    assert panel["knowledge_total"] == 2
+    assert panel["knowledge_done"] == 1
+    assert panel["knowledge_terms"] == ["hence", "skin"]
+
+
 def test_sessions_are_scoped_to_active_exam(tmp_path: Path) -> None:
     db_path = tmp_path / "exam.db"
     init_db(db_path)

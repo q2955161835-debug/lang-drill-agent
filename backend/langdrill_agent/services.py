@@ -845,6 +845,15 @@ class SessionService:
         return merged
 
     def _knowledge_progress(self, date: str, exam_id: str) -> dict[str, Any]:
+        def normalize_knowledge_label(value: str) -> str:
+            label = value.strip()
+            if not label:
+                return ""
+            prefix, separator, term = label.partition(":")
+            if separator and prefix.lower() in {"vocabulary", "vocab", "word", "words"}:
+                return term.strip() or label
+            return label
+
         question_rows = self.conn.execute(
             """
             SELECT q.knowledge_tags_json, q.status
@@ -857,7 +866,11 @@ class SessionService:
         all_tags: list[str] = []
         answered_tags: list[str] = []
         for row in question_rows:
-            tags = [str(tag) for tag in loads(row["knowledge_tags_json"], []) if str(tag).strip()]
+            tags = [
+                normalized
+                for tag in loads(row["knowledge_tags_json"], [])
+                if (normalized := normalize_knowledge_label(str(tag)))
+            ]
             all_tags.extend(tags)
             if row["status"] == "answered":
                 answered_tags.extend(tags)

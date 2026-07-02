@@ -181,8 +181,8 @@ def test_screenshot_import_persists_words_and_updates_daily_panel(tmp_path: Path
         conn.execute(
             """
             INSERT INTO knowledge_items
-            (id, kind, term, meaning, notes, exam_id, source_scope, mastery_score)
-            VALUES ('kn_stale_auto_test', 'word', 'legacy', '旧会话污染项', '{}', 'cet4', 'chat_input', 0.1)
+            (id, kind, term, meaning, notes, exam_id, source_scope, mastery_score, created_at)
+            VALUES ('kn_stale_auto_test', 'word', 'legacy', '旧会话污染项', '{}', 'cet4', 'chat_input', 0.1, DATETIME('now', '-1 day'))
             """
         )
 
@@ -226,7 +226,7 @@ def test_screenshot_import_persists_words_and_updates_daily_panel(tmp_path: Path
     assert rows[0]["term"] == "cultivate"
     assert rows[0]["exam_id"] == "cet4"
     assert rows[0]["source_scope"] == "screenshot_import"
-    assert panel["knowledge_total"] >= 10
+    assert panel["knowledge_total"] == payload["imported_count"]
 
 
 def test_imported_vocabulary_can_seed_fallback_question_and_mastery_update(tmp_path: Path) -> None:
