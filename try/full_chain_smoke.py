@@ -6,6 +6,10 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+import langdrill_agent.config as config_module
+import langdrill_agent.db as db_module
+import langdrill_agent.paper_assets as paper_assets_module
+import langdrill_agent.services as services_module
 from langdrill_agent.agents import EvaluatorTutorAgent, QuestionAuthorAgent, token_totals
 from langdrill_agent.api import app
 from langdrill_agent.config import load_settings
@@ -57,11 +61,52 @@ n. 忠诚，忠心
 """
 
 
+def isolate_smoke_runtime() -> dict[str, Path]:
+    runtime_root = Path(os.getenv("LANGDRILL_SMOKE_RUNTIME", "try/.cache/full-chain-smoke")).resolve()
+    project_root = Path(os.getenv("LANGDRILL_SMOKE_PROJECT_ROOT", runtime_root / "project")).resolve()
+    user_data_dir = Path(os.getenv("LANGDRILL_USER_DATA_DIR", runtime_root / "user-data")).resolve()
+    db_path = Path(os.getenv("LANGDRILL_DB_PATH", user_data_dir / "data" / "langdrill_agent.db")).resolve()
+    paper_root = Path(os.getenv("LANGDRILL_PAPER_ROOT", runtime_root / "papers")).resolve()
+
+    project_root.mkdir(parents=True, exist_ok=True)
+    user_data_dir.mkdir(parents=True, exist_ok=True)
+    paper_root.mkdir(parents=True, exist_ok=True)
+
+    os.environ["LANGDRILL_USER_DATA_DIR"] = str(user_data_dir)
+    os.environ["LANGDRILL_DB_PATH"] = str(db_path)
+    os.environ["LANGDRILL_PAPER_ROOT"] = str(paper_root)
+    os.environ.setdefault("LANGDRILL_MIGRATE_LEGACY_DB", "0")
+
+    if os.getenv("LANGDRILL_SMOKE_ALLOW_REAL_ENV", "").strip() != "1":
+        for key in list(os.environ):
+            if (
+                key == "MINERU_TOKEN"
+                or key == "LANGDRILL_PROVIDER_API_KEY"
+                or key.startswith("LANGDRILL_PROVIDER_API_KEY_")
+            ):
+                os.environ.pop(key, None)
+
+    config_module.PROJECT_ROOT = project_root
+    db_module.PROJECT_ROOT = project_root
+    services_module.PROJECT_ROOT = project_root
+    paper_assets_module.PROJECT_ROOT = project_root
+    return {
+        "runtime_root": runtime_root,
+        "project_root": project_root,
+        "user_data_dir": user_data_dir,
+        "db_path": db_path,
+        "paper_root": paper_root,
+    }
+
+
 def main() -> None:
+    runtime = isolate_smoke_runtime()
     logging_paths = configure_logging(force=True)
     settings = load_settings()
     db_path = init_db()
     report: dict[str, object] = {
+        "runtime_root": str(runtime["runtime_root"]),
+        "project_root": str(runtime["project_root"]),
         "db_path": str(db_path),
         "user_data_dir": str(settings.user_data_dir),
         "log_file": str(logging_paths["log_file"]),

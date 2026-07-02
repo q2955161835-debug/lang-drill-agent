@@ -74,6 +74,8 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - `scripts/dev/`：开发期启动与维护脚本。`start-dev.ps1` 是一键启动主逻辑，`start.bat` 只作为 Windows 双击入口。
 - `src-tauri/`：Tauri（桌面壳）Windows 桌面封装骨架。
 - `doc/`：项目地图、验收标准、人工验收清单、桌面打包说明和进展记录。
+- `doc/README-full.md`：长版完整维护说明，保存原 README（项目说明文档）中的详细产品设定、运行边界、模型配置和安全说明；根目录 `README.md` 作为面向招聘/公开展示的短版入口。
+- `doc/screenshots/`：脱敏公开截图资产，用于根目录短版 README（项目说明文档）展示项目界面。
 - `doc/进展记录/`：阶段性工作记录，包含完成内容、文件清单、错误汇报、验证结果和回退方案。
 - `try/`：自动测试、调试脚本和临时验证文件；该目录内文件必须只服务于测试/调试，可清理后不影响项目运行。
 - `测试数据/`：从正式运行路径迁出的开发/联调/污染数据，按时间戳分类保存；该目录禁止提交，可清理但清理前应确认不再需要回溯。
@@ -165,6 +167,16 @@ py try/browser_acceptance_check.py
 ```powershell
 py -m pytest try/test_startup_scripts.py -q
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\dev\start-dev.ps1 -NoBrowser -SkipInstall
+```
+
+CI（持续集成）：
+
+```powershell
+# GitHub Actions 在 push 和 pull_request 时运行
+py -m ruff check backend try
+py -m pytest try -q
+cd frontend
+npm run build
 ```
 
 ## 允许修改范围
