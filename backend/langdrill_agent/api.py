@@ -344,8 +344,8 @@ def _general_chat_response(
             return {
                 "content": (
                     "联网功能权限已关闭，所以我不能执行网页检索。\n\n"
-                    "请在设置里的「权限」页开启「联网功能」。该权限独立于 Skills；"
-                    "Multi Search Engine 这类本地 Skill 未启用不会阻止内置联网检索。"
+                    "请在设置里的「权限」页开启「联网功能」。该权限独立于拓展 Skills；"
+                    "Multi Search Engine 这类拓展 Skill 未启用不会阻止内置联网检索。"
                 ),
                 "web_search": {
                     "id": "builtin-web-search",
@@ -362,8 +362,8 @@ def _general_chat_response(
             return {
                 "content": (
                     f"联网检索失败：{exc}\n\n"
-                    "这不是 Skills 开关冲突；内置联网检索只受「联网功能」权限控制。"
-                    "可以稍后重试，或到 Skills 页启用 Multi Search Engine 生成可手动核验的搜索入口。"
+                    "这不是拓展 Skills 开关冲突；内置联网检索工具始终可用，实际调用只受「联网功能」权限控制。"
+                    "可以稍后重试，或到拓展 Skills 页启用 Multi Search Engine 生成可手动核验的搜索入口。"
                 ),
                 "web_search": {
                     "id": "builtin-web-search",
@@ -381,7 +381,7 @@ def _general_chat_response(
                 "content": (
                     "你是 Lang Drill Agent 的语言学习聊天助手，了解本程序能力：普通学习聊天、题组练习、答题讲解、"
                     "右侧截图导入、主聊天粘贴词表或拖入文件/图片、分支对话、模型设置、自定义模型草稿、上下文压缩、MinerU 配置、"
-                    "历年真题导入、联网功能、本地 Skills 和本地数据库目录设置。普通寒暄、学习建议、澄清问题只自然回复；"
+                    "历年真题导入、联网功能、拓展 Skills 和本地数据库目录设置。普通寒暄、学习建议、澄清问题只自然回复；"
                     "不要生成正式题组，不要声称已经入库题目，不要输出 JSON。如果用户问你是否能导入单词、截图或题目，"
                     "不要说没有后台题库权限；应说明可以在权限开启时通过右侧截图导入、主聊天粘贴词表、"
                     "拖入 TXT/Markdown/PDF/DOCX/图片，或打开联网来源辅助用户手动导入。"

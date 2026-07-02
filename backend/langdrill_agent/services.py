@@ -58,7 +58,7 @@ class AgentSettingsPermissionService:
         {
             "id": "web_search_import",
             "label": "联网功能",
-            "description": "允许会话 Agent 打开或引用联网来源。该权限独立于 Skills，默认开启。",
+            "description": "允许会话 Agent 打开或引用联网来源。该权限独立于拓展 Skills，默认开启。",
             "sensitive": False,
             "default_enabled": True,
         },
@@ -205,11 +205,14 @@ class SkillRegistryService:
         "id": "builtin-web-search",
         "name": "builtin-web-search",
         "label": "内置联网检索",
-        "description": "普通聊天中用户明确要求联网、搜索或最新信息时，由后端直接检索网页摘要；只受「联网功能」权限控制，不依赖本地 Skills 开关。",
+        "description": "普通聊天中用户明确要求联网、搜索或最新信息时，由后端直接检索网页摘要；工具始终可用，实际调用仍遵守「联网功能」权限，不依赖拓展 Skills 开关。",
         "homepage": "",
         "requires_api_key": False,
         "requires_token": False,
         "installed": True,
+        "builtin": True,
+        "locked": True,
+        "always_enabled": True,
         "permission_feature_id": "web_search_import",
         "reason": "这是 Lang Drill Agent 内置能力，用于给模型提供当前网页来源，避免模型只按静态知识回答。",
     }
@@ -275,7 +278,8 @@ class SkillRegistryService:
         ]
         builtin_web_search = {
             **self.BUILTIN_WEB_SEARCH,
-            "enabled": self._builtin_web_search_enabled(),
+            "enabled": True,
+            "permission_enabled": self._web_search_permission_enabled(),
         }
         return {
             "skills_roots": [str(path) for path in self.skills_roots],
@@ -291,12 +295,12 @@ class SkillRegistryService:
             "web_search_skill": web_search_skill,
             "permission_feature_id": "skill_toggles",
             "web_search_permission_feature_id": "web_search_import",
-            "message": "内置联网检索独立于 Skills；multi-search-engine 仅作为可选搜索 URL 辅助技能，默认不启用。",
+            "message": "内置联网检索是始终开启的内置工具；multi-search-engine 仅作为可选拓展 Skill，默认不启用。",
         }
 
     def save_enabled(self, skill_id: str, enabled: bool) -> dict[str, Any]:
         if self.conn is None:
-            raise ValueError("保存 Skills 状态需要数据库连接。")
+            raise ValueError("保存拓展 Skills 状态需要数据库连接。")
         clean_id = skill_id.strip()
         known_ids = {str(skill["id"]) for skill in self.installed_skills()}
         if clean_id not in known_ids:
@@ -393,7 +397,7 @@ class SkillRegistryService:
         data = loads(row["value_json"], {}) if row else {}
         return [str(item) for item in data.get("enabled_skill_ids", []) if str(item).strip()]
 
-    def _builtin_web_search_enabled(self) -> bool:
+    def _web_search_permission_enabled(self) -> bool:
         if self.conn is None:
             return True
         return AgentSettingsPermissionService(self.conn).is_enabled("web_search_import")

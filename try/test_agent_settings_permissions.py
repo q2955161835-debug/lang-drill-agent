@@ -114,6 +114,9 @@ This skill does not require API keys.
     assert status["installed_count"] == 1
     assert status["builtin_web_search"]["id"] == "builtin-web-search"
     assert status["builtin_web_search"]["enabled"] is True
+    assert status["builtin_web_search"]["always_enabled"] is True
+    assert status["builtin_web_search"]["locked"] is True
+    assert status["builtin_web_search"]["permission_enabled"] is True
     assert status["builtin_web_search"]["requires_api_key"] is False
     assert status["builtin_web_search"]["requires_token"] is False
     assert status["web_search_skill"]["id"] == "multi-search-engine"
@@ -130,6 +133,13 @@ This skill does not require API keys.
     disabled = service.save_enabled("multi-search-engine", False)
     assert disabled["enabled_skill_ids"] == []
     assert disabled["builtin_web_search"]["enabled"] is True
+
+    AgentSettingsPermissionService(conn).save([])
+    permission_blocked = service.status()
+    assert permission_blocked["builtin_web_search"]["enabled"] is True
+    assert permission_blocked["builtin_web_search"]["always_enabled"] is True
+    assert permission_blocked["builtin_web_search"]["permission_enabled"] is False
+    assert permission_blocked["web_search_skill"]["enabled"] is False
 
 
 def test_agent_permissions_api_round_trip(tmp_path: Path, monkeypatch) -> None:
@@ -162,6 +172,9 @@ def test_skills_status_api_reports_recommended_no_key_skill(tmp_path: Path, monk
     status = response.json()["skills_status"]
     assert status["builtin_web_search"]["id"] == "builtin-web-search"
     assert status["builtin_web_search"]["enabled"] is True
+    assert status["builtin_web_search"]["always_enabled"] is True
+    assert status["builtin_web_search"]["locked"] is True
+    assert status["builtin_web_search"]["permission_enabled"] is True
     assert status["builtin_web_search"]["requires_api_key"] is False
     assert status["builtin_web_search"]["requires_token"] is False
     assert status["web_search_skill"]["id"] == "multi-search-engine"

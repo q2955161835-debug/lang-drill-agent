@@ -510,7 +510,7 @@ const DEFAULT_AGENT_PERMISSIONS: AgentSettingsPermissionsStatus = {
     {
       id: "web_search_import",
       label: "联网功能",
-      description: "允许会话 Agent 打开或引用联网来源。该权限独立于 Skills，默认开启。",
+      description: "允许会话 Agent 打开或引用联网来源。该权限独立于拓展 Skills，默认开启。",
       enabled: true,
       default_enabled: true
     },
@@ -594,12 +594,16 @@ const DEFAULT_SKILLS_STATUS: SkillsStatus = {
     id: "builtin-web-search",
     name: "builtin-web-search",
     label: "内置联网检索",
-    description: "普通聊天中用户明确要求联网、搜索或最新信息时，由后端直接检索网页摘要；只受「联网功能」权限控制，不依赖本地 Skills 开关。",
+    description: "普通聊天中用户明确要求联网、搜索或最新信息时，由后端直接检索网页摘要；工具始终可用，实际调用仍遵守「联网功能」权限，不依赖拓展 Skills 开关。",
     homepage: "",
     requires_api_key: false,
     requires_token: false,
     installed: true,
     enabled: true,
+    builtin: true,
+    locked: true,
+    always_enabled: true,
+    permission_enabled: true,
     permission_feature_id: "web_search_import"
   },
   web_search_skill: {
@@ -3138,19 +3142,19 @@ function SettingsDialog({
     }
   };
   const refreshSkillsStatus = async () => {
-    setSkillsMessage("正在刷新 Skills 状态...");
+    setSkillsMessage("正在刷新拓展 Skills 状态...");
     try {
       const data = await apiGet<{ skills_status: SkillsStatus }>("/api/skills");
       const nextStatus = normalizeSkillsStatus(data.skills_status);
       setSkillsDraft(nextStatus);
       onSkillsStatusChange(nextStatus);
-      setSkillsMessage("Skills 状态已刷新。");
+      setSkillsMessage("拓展 Skills 状态已刷新。");
     } catch (err) {
-      setSkillsMessage(err instanceof Error ? err.message : "Skills 状态刷新失败。");
+      setSkillsMessage(err instanceof Error ? err.message : "拓展 Skills 状态刷新失败。");
     }
   };
   const toggleSkillEnabled = async (skillId: string, enabled: boolean) => {
-    setSkillsMessage(enabled ? "正在启用 Skill..." : "正在关闭 Skill...");
+    setSkillsMessage(enabled ? "正在启用拓展 Skill..." : "正在关闭拓展 Skill...");
     try {
       const data = await apiPost<{ skills_status: SkillsStatus }>("/api/skills/enabled", {
         skill_id: skillId,
@@ -3159,9 +3163,9 @@ function SettingsDialog({
       const nextStatus = normalizeSkillsStatus(data.skills_status);
       setSkillsDraft(nextStatus);
       onSkillsStatusChange(nextStatus);
-      setSkillsMessage(enabled ? "Skill 已启用。" : "Skill 已关闭。");
+      setSkillsMessage(enabled ? "拓展 Skill 已启用。" : "拓展 Skill 已关闭。");
     } catch (err) {
-      setSkillsMessage(err instanceof Error ? err.message : "Skill 状态保存失败。");
+      setSkillsMessage(err instanceof Error ? err.message : "拓展 Skill 状态保存失败。");
     }
   };
   const permissionGroups = (
@@ -3201,7 +3205,7 @@ function SettingsDialog({
     { id: "tokens", label: "令牌", icon: Brain },
     { id: "data", label: "数据", icon: Database },
     { id: "permissions", label: "权限", icon: ShieldCheck },
-    { id: "skills", label: "Skills", icon: Sparkle },
+    { id: "skills", label: "拓展 Skills", icon: Sparkle },
     { id: "study", label: "学习", icon: ShieldCheck },
     { id: "appearance", label: "外观", icon: Moon }
   ];
@@ -3994,17 +3998,18 @@ function SettingsDialog({
               </SettingSection>
             )}
             {activeSettingsTab === "skills" && (
-              <SettingSection title="Skills 功能">
-                <p className="hint">每个本地 Skill 都有独立开关，默认关闭；联网功能是独立权限，默认开启，不受本地 Skills 开关影响。</p>
+              <SettingSection title="拓展 Skills">
+                <p className="hint">每个拓展 Skill 都有独立开关，默认关闭；内置必备工具始终开启，不受拓展 Skills 开关影响。</p>
                 <div className="skill-highlight">
                   <div>
                     <strong>{skillsDraft.builtin_web_search.label || "内置联网检索"}</strong>
                     <span>{skillsDraft.builtin_web_search.description}</span>
-                    <small>普通聊天中明确要求联网、搜索或最新信息时生效；不依赖本地 Skills 是否开启。</small>
+                    <small>普通聊天中明确要求联网、搜索或最新信息时生效；工具始终开启，是否调用仍遵守联网权限。</small>
                   </div>
                   <div className="skill-badges">
-                    <span className={skillsDraft.builtin_web_search.enabled ? "skill-ok" : "skill-warn"}>
-                      {skillsDraft.builtin_web_search.enabled ? "联网功能已开启" : "联网功能已关闭"}
+                    <span className="skill-ok">内置工具始终开启</span>
+                    <span className={skillsDraft.builtin_web_search.permission_enabled !== false ? "skill-ok" : "skill-warn"}>
+                      {skillsDraft.builtin_web_search.permission_enabled !== false ? "联网权限已开启" : "联网权限已关闭"}
                     </span>
                     <span className="skill-ok">无需 API Key</span>
                     <span className="skill-ok">无需 token</span>
@@ -4029,14 +4034,14 @@ function SettingsDialog({
                 </div>
                 <div className="inline-row wrap-row">
                   <button className="inline-action" onClick={() => void refreshSkillsStatus()}>
-                    <ArrowClockwise size={16} /> 刷新 Skills 状态
+                    <ArrowClockwise size={16} /> 刷新拓展 Skills 状态
                   </button>
                   {skillsDraft.web_search_skill.homepage && (
                     <a className="inline-link" href={skillsDraft.web_search_skill.homepage} target="_blank" rel="noreferrer">打开技能来源</a>
                   )}
                 </div>
                 <div className="settings-summary-line">
-                  已发现 {skillsDraft.installed_count} 个本地 Skills；已启用 {skillsDraft.enabled_skill_ids.length} 个；其中 {skillsDraft.no_key_skill_ids.length} 个未声明需要个人密钥。
+                  已发现 {skillsDraft.installed_count} 个拓展 Skills；已启用 {skillsDraft.enabled_skill_ids.length} 个；其中 {skillsDraft.no_key_skill_ids.length} 个未声明需要个人密钥。
                 </div>
                 <div className="skill-root-list">
                   {skillsDraft.skills_roots.map((root) => (
@@ -4066,7 +4071,7 @@ function SettingsDialog({
                       </div>
                     </div>
                   ))}
-                  {!skillsDraft.installed.length && <p className="hint">当前未发现本地 Skills。确认技能目录存在后点击刷新。</p>}
+                  {!skillsDraft.installed.length && <p className="hint">当前未发现拓展 Skills。确认技能目录存在后点击刷新。</p>}
                 </div>
                 {skillsMessage && <p className="hint strong-hint">{skillsMessage}</p>}
               </SettingSection>

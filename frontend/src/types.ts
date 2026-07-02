@@ -112,6 +112,10 @@ export type SkillInfo = {
   requires_token?: boolean;
   installed?: boolean;
   enabled?: boolean;
+  builtin?: boolean;
+  locked?: boolean;
+  always_enabled?: boolean;
+  permission_enabled?: boolean;
   permission_feature_id?: string;
   reason?: string;
 };

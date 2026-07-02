@@ -112,7 +112,7 @@ def assert_acceptance_skill_root(page: Page) -> None:
     required_ids = {"multi-search-engine", "browser-acceptance-skill"}
     if expected_root not in roots or not required_ids.issubset(installed_ids):
         fail(
-            "浏览器验收需要服务端使用临时 Skills 根目录启动。\n"
+            "浏览器验收需要服务端使用临时拓展 Skills 根目录启动。\n"
             "先设置环境变量后重启服务：\n"
             f"$env:LANGDRILL_DB_PATH='{RUNTIME_DIR / 'langdrill-agent.db'}'\n"
             f"$env:LANGDRILL_USER_DATA_DIR='{RUNTIME_DIR}'\n"
@@ -182,8 +182,8 @@ def main() -> None:
         click_tab(page, "权限")
         permissions = section_by_heading(page, "Agent 设置权限")
         permission_text = permissions.text_content() or ""
-        if "Skills 功能" in permission_text:
-            fail("权限页仍显示 Skills 总权限")
+        if "拓展 Skills" in permission_text:
+            fail("权限页仍显示拓展 Skills 总权限")
         if "默认关闭的扩展权限" in permission_text:
             fail("权限页仍显示空的扩展权限分组")
         web_permission = permissions.locator("label.permission-row").filter(has_text="联网功能").locator("input[type='checkbox']")
@@ -193,15 +193,17 @@ def main() -> None:
         if custom_model_permission.is_checked():
             fail("配置自定义模型默认应关闭")
 
-        click_tab(page, "Skills")
-        skills = section_by_heading(page, "Skills 功能")
+        click_tab(page, "拓展 Skills")
+        skills = section_by_heading(page, "拓展 Skills")
         skills_text = skills.text_content() or ""
-        if "每个本地 Skill 都有独立开关" not in skills_text:
-            fail("Skills 页未说明单个 Skill 独立开关")
+        if "每个拓展 Skill 都有独立开关" not in skills_text:
+            fail("拓展 Skills 页未说明单个拓展 Skill 独立开关")
         if "需要先在权限页开启" in skills_text:
-            fail("Skills 页仍提示需要权限页总开关")
-        if "联网功能已开启" not in skills_text:
-            fail("Skills 页未显示内置联网开启状态")
+            fail("拓展 Skills 页仍提示需要权限页总开关")
+        if "内置工具始终开启" not in skills_text:
+            fail("拓展 Skills 页未显示内置工具始终开启状态")
+        if "联网权限已开启" not in skills_text:
+            fail("拓展 Skills 页未显示联网权限状态")
 
         multi_card = skills.locator(".skill-card").filter(has_text="Multi Search Engine").first
         demo_card = skills.locator(".skill-card").filter(has_text="Browser Acceptance Skill").first

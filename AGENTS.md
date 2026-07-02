@@ -13,7 +13,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - 右侧分支页必须同时支持右键/选中文本创建分支和普通点击路径；当前会话有待答题题卡时，应能直接基于当前题目创建分支，避免分支功能依赖浏览器右键或文本拖选能力。
 - 模型配置支持默认四个真实供应商 OpenAI/GPT、Claude、DeepSeek（深度求索）、MiMo（小米米魔）和保存后才出现的自定义供应商；设置页可按当前 Base URL（基础网址）、API 格式和 API Key（接口密钥）从供应商模型列表接口自动获取可调用模型，并给每个模型维护聊天栏显示/隐藏开关，默认全部显示；若供应商未开放模型列表接口，刷新必须保留内置或已保存模型列表，不得把 404 HTML（超文本标记语言）错误页直接展示给用户；设置页允许在当前供应商下手动添加自定义模型，记录模型 ID、显示名、上下文容量和视觉能力，自定义模型可删除，内置或 API 返回模型不可删除；聊天栏模型选择只暴露已启用、已配置 API Key 且未隐藏的真实供应商/模型，Mock Provider（本地模拟供应商）只保留给自动测试和离线调试。
 - 设置页必须维护 Agent 设置权限；截图导入、学习数据库写入、历年真题草稿、联网功能、考试目标和上下文容量等非敏感权限默认开启；模型配置、配置自定义模型、密钥、数据迁移、MinerU token 等敏感设置集中放在下方并默认关闭，开启后会话 Agent 也只能生成可确认草稿或打开对应设置动作，关键保存仍必须由用户确认执行。
-- 联网功能必须与 Skills（技能）拆分：内置联网检索只受“联网功能”权限控制，默认开启且不需要个人 API Key（接口密钥）或 token（令牌）；本地 Skills 不再有全局总权限，每个 Skill 默认关闭并由 Skills 页的单项开关独立控制，不能影响内置联网检索是否可用。
+- 联网功能必须与拓展 Skills（拓展技能）拆分：内置联网检索是始终开启的内置工具，不需要个人 API Key（接口密钥）或 token（令牌）；实际联网调用仍受“联网功能”权限控制。拓展 Skills 不再有全局总权限，每个拓展 Skill 默认关闭并由“拓展 Skills”页的单项开关独立控制，不能影响内置工具是否可用。
 - 设置页模型配置可声明当前模型是否具备视觉能力；聊天栏拖入图片时，具备视觉能力的模型直接接收图片附件，不具备视觉能力时前端必须走文件抽取链路交给 MinerU/RapidOCR（文档解析/本地文字识别）提取文本。
 - 思考等级必须跟随当前模型的原生 reasoning（推理）配置；禁止把思考等级降级为提示词控制。没有原生档位或未自定义添加档位的模型，不在聊天栏暴露思考等级选择；聊天栏只保留思考等级选择器作为当前思考状态入口，不额外显示“当前：开启”这类重复状态标签。切换模型时必须按新模型能力刷新档位；内置原生档位不得删除，用户新增的自定义档位可删除并自动回退到当前模型默认档位；自定义模型默认无思考档位，用户可在当前模型下另行添加自定义思考档位。
 - OpenAI/GPT 官方 provider（供应商）可使用 Chat Completions（聊天补全）中的 `developer` role（角色）承载上下文；DeepSeek（深度求索）、本地模型和自定义 OpenAI-compatible（OpenAI 兼容）供应商必须只发送兼容的 `system`/`user` 消息，把上下文合并进 user 内容，避免供应商拒收 `developer` role。
@@ -28,7 +28,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - 右侧“截图导入”和设置页“手动导入试卷”必须支持拖拽文件和点击“选择文件”打开本机文件管理器：截图导入选择或拖入文件后进入待解析队列，支持多张图片/多个文件继续追加；只有用户点击“解析文本”后才抽取 OCR（文字识别）/文本并填入识别文本框；设置页主动加入试卷必须先点击“加入试卷”展开导入栏和详细信息，再选择/拖入试卷文件或填写文本；确认加入后上传到后端，保存到 `papers/<考试>/raw` 并生成 `papers/<考试>/parsed` 解析 JSON（JSON 数据交换格式）。
 - 答题提交后必须让 Evaluator Tutor（判题讲解 Agent）结合当前会话上下文、用户背景和程序判定生成个性化讲解；模型不可用时才回退基础判题，且不得丢失作答记录。刚答完的题目必须作为普通聊天回顾卡片保留，显示用户选择、正确答案和对错状态；只有当前待答题使用置顶/吸附题卡。
 - 聊天输入区需要展示当前上下文容量占用，默认上限 1,000,000 token（令牌），上下文容量上限设置放在设置页“模型”页签，令牌页只展示使用台账；支持主动压缩上下文；LLMLingua（提示词压缩库）作为可选增强，默认使用本地抽取式摘要兜底。
-- 内置系统提示词必须让模型知道 Lang Drill Agent 的真实功能和权限边界：可解释截图导入、主聊天词表/文件导入、题组生成、答题讲解、分支、联网来源、Skills（技能）、设置草稿和上下文压缩；不得声称“无法访问题库”而忽略程序流程；模型配置、API Key（接口密钥）、MinerU token、数据库迁移和试卷保存仍必须由用户确认。
+- 内置系统提示词必须让模型知道 Lang Drill Agent 的真实功能和权限边界：可解释截图导入、主聊天词表/文件导入、题组生成、答题讲解、分支、联网来源、拓展 Skills（拓展技能）、设置草稿和上下文压缩；不得声称“无法访问题库”而忽略程序流程；模型配置、API Key（接口密钥）、MinerU token、数据库迁移和试卷保存仍必须由用户确认。
 - 主聊天和右侧分支消息必须通过安全的 Markdown（标记语言）渲染组件展示基础格式，包括加粗、内联代码、列表、标题和代码块；禁止用不可信模型内容直接写入 HTML（超文本标记语言）。
 - 历年真题以 `exam_assets` 中的试卷记录和 `papers/<考试>/raw`、`papers/<考试>/parsed` 中的原始/解析资产为准，默认选择近 3 年真题；出题 Agent（智能体）必须参考当前选中的真题解析结果和已勾选题型，但不得复刻或长段引用完整真题原文。
 - 用户题目数据库支持自定义用户数据文件夹和迁移：模型生成给用户作答的题目、会话、作答、知识项和统计仍写入同一个 SQLite（轻量数据库）运行库；Web（网页）设置页“数据”页签是推荐迁移入口，需提供本机文件夹选择按钮辅助填写目录，并在打开数据页时刷新 `/api/data-paths`，保证题目、作答、会话和知识项计数与当前数据库一致；CLI（命令行接口）保留同等迁移和初始化能力用于维护脚本与调试。
@@ -52,10 +52,10 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - `backend/langdrill_agent/`：共享后端核心。API（接口）、服务层、Agent（智能体）、模型配置、学习算法和数据库访问都在这里；CLI（命令行接口）只作为同一后端核心的辅助维护入口。
 - `backend/langdrill_agent/api.py`：FastAPI（Web API 框架）入口，负责 bootstrap（初始化加载）、chat（聊天学习）、branch（分支）、profile（用户档案）、model-config（模型配置）、MinerU 配置、exam/syllabus（考试与考纲）、phone-mirror（手机映像）、screenshot（截图导入）、文件文本抽取和数据路径选择接口。
 - `backend/langdrill_agent/cli.py`：辅助命令行入口，保留 init（初始化）、serve（启动服务）、status（状态）、chat（终端聊天）、data-paths（数据路径）和 backup-user-data（备份用户数据）等既有功能，用于维护、调试和自动化兜底。
-- `backend/langdrill_agent/services.py`：学习状态机、题组推进、作答写入、掌握度更新、会话生命周期、Agent 设置权限、Skills（技能）状态、试卷导入草稿和业务编排。
+- `backend/langdrill_agent/services.py`：学习状态机、题组推进、作答写入、掌握度更新、会话生命周期、Agent 设置权限、拓展 Skills（拓展技能）状态、试卷导入草稿和业务编排。
 - `backend/langdrill_agent/services.py` 中的 `PastPaperService`：历年真题试卷资产、默认近三年选择、题型开关、手动导入和重新解析；英语四/六级默认真题来源网站为 `https://www.guojiya.cn/#exams`。
-- `backend/langdrill_agent/services.py` 中的 `SkillRegistryService`：发现本地 Skills（技能）并维护单个 Skill 开启/关闭状态；默认不启用任何 Skill。
-- `backend/langdrill_agent/web_search.py`：内置无密钥联网检索实现，普通聊天明确请求联网、搜索或最新信息时由 API（接口）注入可核验网页来源；该能力不依赖 Skills 开关。
+- `backend/langdrill_agent/services.py` 中的 `SkillRegistryService`：发现拓展 Skills（拓展技能）并维护单个拓展 Skill 开启/关闭状态；默认不启用任何拓展 Skill；状态中单独返回始终开启的内置必备工具。
+- `backend/langdrill_agent/web_search.py`：内置无密钥联网检索实现，普通聊天明确请求联网、搜索或最新信息时由 API（接口）注入可核验网页来源；该内置工具始终可用，实际调用受“联网功能”权限控制，不依赖拓展 Skills 开关。
 - `backend/langdrill_agent/paper_assets.py`：历年真题目录、原始文件保存、PDF（Portable Document Format，便携式文档格式）/DOCX（Word 文档格式）/Markdown（Markdown 文本格式）/图片文件文本抽取、解析 JSON（JSON 数据交换格式）生成和短摘录提取；配置 `MINERU_TOKEN` 时使用 MinerU 精准解析，否则使用 MinerU 轻量解析；图片 OCR（文字识别）失败时回退 RapidOCR（本地文字识别），复杂文档依赖可选 MinerU CLI。
 - `backend/langdrill_agent/learning_stats.py`：长期学习统计服务，按当前考试聚合题目完成、词汇掌握和整体正确率。
 - `backend/langdrill_agent/context.py`：上下文容量、会话上下文快照、主动压缩、使用统计和 token（令牌）统计口径。
@@ -68,7 +68,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - `backend/langdrill_agent/migrations/`：SQLite（轻量数据库）schema（数据库结构）初始化脚本。
 - `frontend/`：React（前端框架）+ TypeScript（类型化 JavaScript）+ Vite（前端构建工具）网页前端。
 - `frontend/public/assets/`：前端静态资源目录，当前保存深色主题生成背景图等无需打包导入的公开资产。
-- `frontend/src/App.tsx`：前端主入口，负责可拖拽三栏布局、聊天、设置、初始化、当前题吸附显示、已答题回顾卡片、上下文容量圆环、Agent 设置权限、Skills（技能）状态页和右侧工作台接入。
+- `frontend/src/App.tsx`：前端主入口，负责可拖拽三栏布局、聊天、设置、初始化、当前题吸附显示、已答题回顾卡片、上下文容量圆环、Agent 设置权限、拓展 Skills（拓展技能）状态页和右侧工作台接入。
 - `frontend/src/components/`：前端可复用组件，当前重点是 `RightWorkbench.tsx`、`ContextMenu.tsx` 和 `MarkdownText.tsx`；`RightWorkbench.tsx` 折叠和页签切换必须隐藏但不卸载内部面板状态。
 - `papers/`：按考试类型分开的历年真题资产目录骨架；`raw/` 存原始试卷或粘贴文本，`parsed/` 存解析 JSON（JSON 数据交换格式），实际导入内容默认不提交。
 - `scripts/dev/`：开发期启动与维护脚本。`start-dev.ps1` 是一键启动主逻辑，`start.bat` 只作为 Windows 双击入口。
@@ -92,7 +92,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 4. Question Author（出题 Agent）一次生成完整题组，Validator（校验器）通过后写入数据库；截图词表自动练习只使用本次截图词表作为优先内容池，避免旧会话词汇污染选项。
 5. 组卷阶段读取当前考试的考纲版本、已选择历年真题试卷、解析章节、短摘录和已勾选题型；提示词只携带来源、题型、解析摘要和必要短摘录，禁止把完整真题作为默认发布内容。
 6. 聊天栏图片输入按当前模型 `vision` 能力分流：视觉模型走多模态模型调用；非视觉模型走 `/api/files/extract-text` 并由 MinerU/RapidOCR 提取文本后再进入普通聊天或截图词表流程。
-7. 普通聊天明确请求联网、搜索或最新信息时，API（接口）在“联网功能”权限开启下调用内置联网检索，把网页摘要和来源注入模型上下文；Skills（技能）开关不参与该内置能力判断。
+7. 普通聊天明确请求联网、搜索或最新信息时，API（接口）在“联网功能”权限开启下调用内置联网检索，把网页摘要和来源注入模型上下文；拓展 Skills（拓展技能）开关不参与该内置能力判断。
 8. 前端以吸附题卡展示当前待答题；用户作答后写入 attempts（作答记录），更新 questions（题目状态）和 mastery（掌握度），并把上一题结构化快照写入助手消息 payload（附加数据）供回顾。
 9. 简单题由程序判分，复杂题进入 Evaluator Tutor（判题讲解 Agent）。
 10. 答题讲解统一由 Evaluator Tutor（判题讲解 Agent）基于程序判定、当前题、用户背景和会话上下文生成；若模型不可用，回退基础讲解但仍保存作答；前端在讲解消息中渲染已答题回顾卡片，不把已答题继续置顶。
@@ -160,7 +160,7 @@ npm run build
 py try/browser_acceptance_check.py
 ```
 
-`try/browser_acceptance_check.py` 用 Playwright（浏览器自动化工具）验证设置页权限、Skills 单项开关、自定义模型增删、真题设置和截图导入状态保持；运行前需用 `LANGDRILL_DB_PATH=try\.cache\browser-acceptance\langdrill-agent.db`、`LANGDRILL_USER_DATA_DIR=try\.cache\browser-acceptance` 和 `LANGDRILL_SKILLS_ROOTS=try\.cache\browser-acceptance\skills` 启动服务，并确保 `http://127.0.0.1:8000` 与 `http://127.0.0.1:5173` 可访问。浏览器验收的临时文件统一写入 `try/.cache/`。
+`try/browser_acceptance_check.py` 用 Playwright（浏览器自动化工具）验证设置页权限、拓展 Skills 单项开关、自定义模型增删、真题设置和截图导入状态保持；运行前需用 `LANGDRILL_DB_PATH=try\.cache\browser-acceptance\langdrill-agent.db`、`LANGDRILL_USER_DATA_DIR=try\.cache\browser-acceptance` 和 `LANGDRILL_SKILLS_ROOTS=try\.cache\browser-acceptance\skills` 启动服务，并确保 `http://127.0.0.1:8000` 与 `http://127.0.0.1:5173` 可访问。浏览器验收的临时文件统一写入 `try/.cache/`。
 
 针对启动脚本：
 
