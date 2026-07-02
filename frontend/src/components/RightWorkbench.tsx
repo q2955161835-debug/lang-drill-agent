@@ -4,10 +4,12 @@ import {
   CaretRight,
   ChatsCircle,
   DeviceMobile,
+  FileText,
   FolderOpen,
   GitBranch,
   ImageSquare,
   MicrophoneStage,
+  X,
 } from "@phosphor-icons/react";
 import type { DailyPanel, Message, ScreenshotImportResult } from "../types";
 import { apiGet, apiPost } from "../api";
@@ -415,9 +417,15 @@ function ScreenshotImportPanel({
           void handleDropFiles(Array.from(event.dataTransfer.files || []));
         }}
       >
-        <ImageSquare size={20} />
-        <strong>拖入或选择多张截图/文本文件</strong>
-        <span>PNG / JPG / TXT / MD / PDF / DOCX；先进入待解析列表</span>
+        <div className="drop-zone-main">
+          <span className="drop-zone-icon" aria-hidden="true">
+            <ImageSquare size={20} />
+          </span>
+          <span className="drop-zone-copy">
+            <strong>拖入截图或文件</strong>
+            <span>图片、文本、PDF、DOCX，先入队</span>
+          </span>
+        </div>
         <input
           ref={fileInputRef}
           className="hidden-file-input"
@@ -433,14 +441,24 @@ function ScreenshotImportPanel({
       {queuedFiles.length > 0 && (
         <div className="queued-file-list" aria-label="待解析文件列表">
           <div className="queued-file-list-head">
-            <strong>待解析文件</strong>
+            <strong>待解析文件 <span>{queuedFiles.length}</span></strong>
             <button type="button" onClick={clearQueuedFiles} disabled={loading}>清空</button>
           </div>
           {queuedFiles.map((file, index) => (
             <div className="queued-file-row" key={`${file.name}-${file.size}-${file.lastModified}-${index}`}>
+              <FileText size={16} aria-hidden="true" />
               <span title={file.name}>{file.name}</span>
               <small>{formatFileSize(file.size)}</small>
-              <button type="button" onClick={() => removeQueuedFile(index)} disabled={loading} aria-label={`移除 ${file.name}`}>移除</button>
+              <button
+                type="button"
+                className="queued-file-remove"
+                onClick={() => removeQueuedFile(index)}
+                disabled={loading}
+                aria-label={`移除 ${file.name}`}
+                title={`移除 ${file.name}`}
+              >
+                <X size={14} />
+              </button>
             </div>
           ))}
         </div>

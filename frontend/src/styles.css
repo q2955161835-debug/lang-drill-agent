@@ -1017,13 +1017,74 @@ body.panel-resize-active * {
 }
 .drop-zone-action:hover { background: var(--surface-strong); }
 .drop-zone-action svg { color: var(--accent); }
+.screenshot-drop {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-height: 0;
+  padding: 12px;
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--line));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent 58%),
+    color-mix(in srgb, var(--surface) 78%, var(--tag-bg));
+}
+.screenshot-drop .drop-zone-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.screenshot-drop .drop-zone-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  color: var(--accent);
+}
+.screenshot-drop .drop-zone-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.screenshot-drop .drop-zone-copy strong {
+  font-size: 0.92rem;
+  line-height: 1.25;
+}
+.screenshot-drop .drop-zone-copy span {
+  max-width: 100%;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.screenshot-drop .drop-zone-action {
+  grid-column: auto;
+  flex: 0 0 auto;
+  min-width: 104px;
+  justify-content: center;
+  min-height: 36px;
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--line));
+  background: color-mix(in srgb, var(--surface-strong) 74%, var(--tag-bg));
+}
+.screenshot-drop.drag-over {
+  border-color: var(--accent);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 18%, transparent), transparent 62%),
+    color-mix(in srgb, var(--tag-bg) 72%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+}
 .queued-file-list {
   display: grid;
-  gap: 8px;
+  gap: 7px;
   border: var(--border-thin);
   border-radius: var(--radius-sm);
-  background: var(--surface);
-  padding: 10px;
+  background: color-mix(in srgb, var(--surface) 86%, var(--surface-strong));
+  padding: 9px;
+  max-height: 188px;
+  overflow-y: auto;
 }
 .queued-file-list-head,
 .queued-file-row {
@@ -1037,6 +1098,17 @@ body.panel-resize-active * {
   color: var(--text);
   font-size: 0.88rem;
 }
+.queued-file-list-head strong span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  min-height: 22px;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  color: var(--accent);
+  font-size: 0.76rem;
+}
 .queued-file-list-head button,
 .queued-file-row button {
   min-height: 30px;
@@ -1049,12 +1121,16 @@ body.panel-resize-active * {
   font-weight: 750;
 }
 .queued-file-row {
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  min-height: 36px;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  min-height: 40px;
   border: var(--border-thin);
   border-radius: 9px;
-  background: var(--surface-strong);
-  padding: 6px 8px;
+  background: color-mix(in srgb, var(--surface-strong) 82%, var(--surface));
+  padding: 6px;
+}
+.queued-file-row > svg {
+  color: var(--accent);
+  opacity: 0.88;
 }
 .queued-file-row span {
   min-width: 0;
@@ -1073,6 +1149,15 @@ body.panel-resize-active * {
   background: var(--tag-bg);
   color: var(--accent);
   padding: 4px 7px;
+}
+.queued-file-row .queued-file-remove {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  padding: 0;
+}
+.queued-file-row .queued-file-remove svg {
+  color: var(--muted-strong);
 }
 .option-pills { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .option-pills button, .workbench-actions button, .workbench-primary {
