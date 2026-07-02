@@ -6,9 +6,9 @@ from fastapi.testclient import TestClient
 
 from langdrill_agent.api import app
 from langdrill_agent.db import init_db, transaction
-from langdrill_agent.models import TaskType, UserProfile
+from langdrill_agent.models import Question, TaskType, UserProfile
 from langdrill_agent.providers import ModelProvider, ModelResult
-from langdrill_agent.services import ProfileService, SessionService
+from langdrill_agent.services import ProfileService, QuestionService, SessionService
 from langdrill_agent.task_router import TaskRouter
 
 
@@ -77,6 +77,7 @@ def test_general_chat_prompt_includes_runtime_context(tmp_path: Path, monkeypatc
             UserProfile(
                 learning_goal="四级 550 分",
                 learning_background="高中英语基础，阅读弱",
+                deadline="2026-12-12T09:00",
                 global_user_prompt="回答先给结论。",
             )
         )
@@ -100,10 +101,72 @@ def test_general_chat_prompt_includes_runtime_context(tmp_path: Path, monkeypatc
     assert "task.general_chat" in module_ids
     assert "persona.professional" in module_ids
     assert "profile.saved_user_prompt" in module_ids
+    assert "runtime.profile_context_contract" in module_ids
+    assert "runtime.tool_usage_contract" in module_ids
     assert pack.context_pack["profile"]["learning_goal"] == "四级 550 分"
     assert pack.context_pack["profile"]["learning_background"] == "高中英语基础，阅读弱"
-    assert "agent_permissions" in pack.context_pack
-    assert "skills" in pack.context_pack
+    assert pack.context_pack["profile"]["deadline"] == "2026-12-12T09:00"
+    permissions = pack.context_pack["agent_permissions"]
+    assert "profile_exam" in permissions["enabled_feature_ids"]
+    assert any(item["feature_id"] == "profile_exam" for item in permissions["enabled_tool_guidance"])
+    assert any(item["feature_id"] == "web_search_import" for item in permissions["enabled_tool_guidance"])
+    skills = pack.context_pack["skills"]
+    assert skills["builtin_web_search"]["behavior"]
+    assert skills["web_search_skill"]["behavior"]
+    assert skills["enabled_skill_guidance"]
+
+
+def test_question_explanation_prompt_uses_runtime_context(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "question-explanation-context.db"
+    monkeypatch.setenv("LANGDRILL_DB_PATH", str(db_path))
+    monkeypatch.setenv("LANGDRILL_DEFAULT_PROVIDER", "mock")
+    monkeypatch.setenv("LANGDRILL_DEFAULT_MODEL", "mock-tutor-v1")
+    init_db(db_path)
+    with transaction(db_path) as conn:
+        ProfileService(conn).update(
+            UserProfile(
+                learning_goal="四级 600 分",
+                learning_background="高中英语，语法薄弱",
+                deadline="2026-12-12T09:00",
+            )
+        )
+        session_id = SessionService(conn).ensure_session(None, "题目追问", force_new=True)
+        QuestionService(conn).save_question(
+            Question(
+                id="q_explain_runtime",
+                session_id=session_id,
+                sequence=1,
+                type="multiple_choice",
+                prompt="Which option best completes the sentence: She ____ the deadline by one day.",
+                options=["extended", "extensive", "extension", "extent"],
+                answer={"letter": "A", "correct": "extended"},
+                explanation="extended means made longer in time.",
+                knowledge_tags=["vocabulary:extend"],
+                difficulty=0.4,
+            )
+        )
+
+    captured = {}
+
+    def fake_complete(self, pack):
+        captured["pack"] = pack
+        return ModelResult(content="提示回复", input_tokens=10, output_tokens=4, latency_ms=1, model=self.model)
+
+    monkeypatch.setattr(ModelProvider, "complete", fake_complete)
+    client = TestClient(app)
+    response = client.post("/api/chat", json={"session_id": session_id, "content": "给点提示，不要告诉答案"})
+
+    assert response.status_code == 200
+    pack = captured["pack"]
+    module_ids = [module["id"] for module in pack.system_modules]
+    assert "task.evaluator" in module_ids
+    assert "runtime.profile_context_contract" in module_ids
+    assert "runtime.tool_usage_contract" in module_ids
+    assert pack.context_pack["task_type"] == "explanation"
+    assert pack.context_pack["profile"]["learning_goal"] == "四级 600 分"
+    assert pack.context_pack["profile"]["learning_background"] == "高中英语，语法薄弱"
+    assert pack.context_pack["active_question"]["options"] == ["extended", "extensive", "extension", "extent"]
+    assert any(item["feature_id"] == "learning_database" for item in pack.context_pack["agent_permissions"]["enabled_tool_guidance"])
 
 
 def test_branch_create_and_message_call_model(tmp_path: Path, monkeypatch) -> None:
@@ -113,7 +176,28 @@ def test_branch_create_and_message_call_model(tmp_path: Path, monkeypatch) -> No
     monkeypatch.setenv("LANGDRILL_DEFAULT_MODEL", "mock-tutor-v1")
     init_db(db_path)
     with transaction(db_path) as conn:
+        ProfileService(conn).update(
+            UserProfile(
+                learning_goal="四级 600 分",
+                learning_background="高中英语，阅读弱",
+                deadline="2026-12-12T09:00",
+            )
+        )
         session_id = SessionService(conn).ensure_session(None, "分支源会话", force_new=True)
+        QuestionService(conn).save_question(
+            Question(
+                id="q_branch_runtime",
+                session_id=session_id,
+                sequence=1,
+                type="multiple_choice",
+                prompt="Choose the word closest in meaning to altogether in this sentence.",
+                options=["completely", "rarely", "separately", "briefly"],
+                answer={"letter": "A", "correct": "completely"},
+                explanation="altogether can mean completely.",
+                knowledge_tags=["vocabulary:altogether"],
+                difficulty=0.3,
+            )
+        )
 
     captured_packs = []
 
@@ -137,7 +221,19 @@ def test_branch_create_and_message_call_model(tmp_path: Path, monkeypatch) -> No
     assert message_response.json()["message"] == "分支模型回复"
     assert len(captured_packs) == 2
     assert captured_packs[0].context_pack["selected_text"] == "altogether"
-    assert "task.branch_chat" in [module["id"] for module in captured_packs[0].system_modules]
+    branch_module_ids = [module["id"] for module in captured_packs[0].system_modules]
+    assert "task.branch_chat" in branch_module_ids
+    assert "runtime.profile_context_contract" in branch_module_ids
+    assert "runtime.tool_usage_contract" in branch_module_ids
+    assert "runtime.branch_context_contract" in branch_module_ids
+    assert captured_packs[0].context_pack["profile"]["learning_goal"] == "四级 600 分"
+    assert captured_packs[0].context_pack["profile"]["deadline"] == "2026-12-12T09:00"
+    assert captured_packs[0].context_pack["active_question"]["prompt"].startswith("Choose the word")
+    assert captured_packs[0].context_pack["active_question"]["options"] == ["completely", "rarely", "separately", "briefly"]
+    assert any(
+        item["feature_id"] == "profile_exam"
+        for item in captured_packs[0].context_pack["agent_permissions"]["enabled_tool_guidance"]
+    )
 
     with transaction(db_path) as conn:
         model_call_count = conn.execute("SELECT COUNT(*) AS total FROM model_calls WHERE task_type='branch_chat'").fetchone()["total"]
