@@ -406,6 +406,7 @@ const DEFAULT_LEARNING_STATS: LearningStats = {
 
 const DRAFT_SESSION_ID = "__draft_new_chat__";
 const DEFAULT_CONTEXT_LIMIT = 1_000_000;
+const DEFAULT_BRANCH_PROMPT = "请围绕引用内容解释、举例，并判断是否适合整理成复习卡片。";
 const DEFAULT_TOKEN_USAGE: TokenUsage = {
   input: 0,
   output: 0,
@@ -667,6 +668,11 @@ type PanelSizes = {
 };
 
 type ResizablePanel = "left" | "right";
+
+type BranchQuoteDraft = {
+  sourceText: string;
+  sourceLabel: string;
+};
 
 type PanelResizeSnapshot = {
   panel: ResizablePanel;
@@ -1050,6 +1056,7 @@ export default function App() {
   });
   const [selectedText, setSelectedText] = useState("");
   const [branchId, setBranchId] = useState<string | null>(null);
+  const [branchQuoteDraft, setBranchQuoteDraft] = useState<BranchQuoteDraft | null>(null);
   const [branchMessages, setBranchMessages] = useState<Message[]>([]);
   const [branchSending, setBranchSending] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
@@ -1540,22 +1547,35 @@ export default function App() {
     }
   }, []);
 
-  const createBranchFromText = useCallback(async (text: string) => {
+  const stageBranchQuote = useCallback((text: string, sourceLabel = "引用内容") => {
     const cleanText = text.trim();
     if (!activeSessionId || !cleanText || branchSending) return;
-    const userMessage: Message = { id: `branch-create-${Date.now()}`, role: "user", content: cleanText };
     setBranchId(null);
+    setBranchQuoteDraft({ sourceText: cleanText, sourceLabel });
     setRightOpen(true);
     setWorkbenchTab("branch");
+    setBranchMessages([]);
+    setSelectedText("");
+    selectedTextRef.current = "";
+    window.getSelection()?.removeAllRanges();
+  }, [activeSessionId, branchSending]);
+
+  const submitBranchQuote = useCallback(async (content: string) => {
+    const quoteDraft = branchQuoteDraft;
+    const cleanText = quoteDraft?.sourceText.trim() || "";
+    if (!activeSessionId || !cleanText || branchSending) return;
+    const cleanContent = content.trim() || DEFAULT_BRANCH_PROMPT;
+    const userMessage: Message = { id: `branch-create-${Date.now()}`, role: "user", content: cleanContent };
     setBranchMessages([userMessage]);
     setBranchSending(true);
     try {
       const data = await apiPost<{ branch_id: string; message: string }>("/api/branch", {
         session_id: activeSessionId,
         selected_text: cleanText,
-        message: "解释这段内容，并指出是否应写回复习卡片。"
+        message: cleanContent
       });
       setBranchId(data.branch_id);
+      setBranchQuoteDraft(null);
       setBranchMessages((current) => [
         ...current,
         { id: `${data.branch_id}-a`, role: "assistant", content: data.message }
@@ -1568,15 +1588,21 @@ export default function App() {
     } finally {
       setBranchSending(false);
     }
-  }, [activeSessionId, branchSending]);
+  }, [activeSessionId, branchQuoteDraft, branchSending]);
 
-  const startBranch = useCallback(async () => {
-    await createBranchFromText(selectedTextRef.current || selectedText);
-  }, [createBranchFromText, selectedText]);
+  const startBranch = useCallback(() => {
+    stageBranchQuote(selectedTextRef.current || selectedText, "选中文本");
+  }, [selectedText, stageBranchQuote]);
 
-  const startBranchFromCurrentContext = useCallback(async () => {
-    await createBranchFromText(branchSource.text);
-  }, [branchSource.text, createBranchFromText]);
+  const startBranchFromCurrentContext = useCallback(() => {
+    stageBranchQuote(branchSource.text, branchSource.label);
+  }, [branchSource.label, branchSource.text, stageBranchQuote]);
+
+  const clearBranchQuote = useCallback(() => {
+    if (branchSending) return;
+    setBranchQuoteDraft(null);
+    if (!branchId) setBranchMessages([]);
+  }, [branchId, branchSending]);
 
   const sendBranchMessage = useCallback(async (content: string) => {
     const cleanContent = content.trim();
@@ -1695,13 +1721,13 @@ export default function App() {
       },
       {
         label: "开启分支对话",
-        hint: activeSessionId ? "基于这条消息" : "需要先发送主会话消息",
+        hint: activeSessionId ? "引用这条消息" : "需要先发送主会话消息",
         disabled: !activeSessionId,
-        onSelect: () => void createBranchFromText(message.content)
+        onSelect: () => stageBranchQuote(message.content, "消息引用")
       }
     ];
     setContextMenu({ x: event.clientX, y: event.clientY, items });
-  }, [activeSessionId, copyText, createBranchFromText]);
+  }, [activeSessionId, copyText, stageBranchQuote]);
 
   return (
     <div className={`app-shell ${resizingPanel ? `resizing-panels resizing-${resizingPanel}` : ""}`} ref={appRef} style={appShellStyle}>
@@ -1969,6 +1995,8 @@ export default function App() {
         branchId={branchId}
         branchMessages={branchMessages}
         branchSending={branchSending}
+        branchQuoteText={branchQuoteDraft?.sourceText || ""}
+        branchQuoteLabel={branchQuoteDraft?.sourceLabel || ""}
         sessionId={activeSessionId}
         activeTab={workbenchTab}
         onTabChange={setWorkbenchTab}
@@ -1978,6 +2006,8 @@ export default function App() {
         branchSourceAvailable={Boolean(activeSessionId && branchSource.text.trim())}
         branchCreateLabel={branchSource.label}
         onCreateBranch={() => void startBranchFromCurrentContext()}
+        onSubmitBranchQuote={(prompt) => void submitBranchQuote(prompt)}
+        onClearBranchQuote={clearBranchQuote}
         onSendBranchMessage={(content) => void sendBranchMessage(content)}
         onDailyPanelChange={setDailyPanel}
         onScreenshotImportComplete={handleScreenshotImportComplete}

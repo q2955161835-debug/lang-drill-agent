@@ -42,14 +42,14 @@ def click_tab(page: Page, label: str) -> None:
     page.get_by_role("button", name=label, exact=True).click()
 
 
-def wait_post(page: Page, url_part: str, action) -> None:
-    wait_post_response(page, url_part, action)
+def wait_post(page: Page, url_part: str, action, timeout: int = 10000) -> None:
+    wait_post_response(page, url_part, action, timeout=timeout)
 
 
-def wait_post_response(page: Page, url_part: str, action):
+def wait_post_response(page: Page, url_part: str, action, timeout: int = 10000):
     with page.expect_response(
         lambda response: url_part in response.url and response.request.method == "POST",
-        timeout=10000,
+        timeout=timeout,
     ) as response_info:
         action()
     response = response_info.value
@@ -317,10 +317,14 @@ def main() -> None:
         expect_visible(branch_panel, "分支面板")
         create_branch_button = branch_panel.get_by_role("button", name="基于当前题创建分支")
         expect_visible(create_branch_button, "当前题分支创建按钮")
-        wait_post(page, "/api/branch", create_branch_button.click)
+        create_branch_button.click()
+        expect_visible(branch_panel.locator(".branch-quote-card"), "分支引用卡")
+        if branch_panel.get_by_text("当前分支：").is_visible():
+            fail("点击创建分支后不应立即发送引用内容并生成分支")
+        wait_post(page, "/api/branch", lambda: branch_panel.get_by_role("button", name="提交分支引用").click(), timeout=60000)
         expect_visible(branch_panel.get_by_text("当前分支："), "分支编号")
         branch_panel.locator("textarea").fill("请用一句话解释正确答案。")
-        wait_post(page, "/api/branch/", lambda: branch_panel.get_by_role("button", name="发送分支消息").click())
+        wait_post(page, "/api/branch/", lambda: branch_panel.get_by_role("button", name="发送分支消息").click(), timeout=60000)
         expect_visible(branch_panel.get_by_text("请用一句话解释正确答案。"), "分支追问")
 
         page.get_by_role("tab", name="截图导入").click()
@@ -342,6 +346,7 @@ def main() -> None:
             page,
             "/api/screenshot/parse",
             lambda: screenshot_panel.get_by_role("button", name="导入并开始练习").click(),
+            timeout=120000,
         )
         import_payload = import_response.json()
         imported_words = import_payload.get("words", [])

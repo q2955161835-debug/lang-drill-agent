@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
   CaretLeft,
   CaretRight,
@@ -9,6 +9,7 @@ import {
   GitBranch,
   ImageSquare,
   MicrophoneStage,
+  PaperPlaneTilt,
   Plus,
   X,
 } from "@phosphor-icons/react";
@@ -24,6 +25,8 @@ type RightWorkbenchProps = {
   branchId: string | null;
   branchMessages: Message[];
   branchSending: boolean;
+  branchQuoteText: string;
+  branchQuoteLabel: string;
   sessionId: string | null;
   onToggle: () => void;
   activeTab: WorkbenchTab;
@@ -33,6 +36,8 @@ type RightWorkbenchProps = {
   branchSourceAvailable: boolean;
   branchCreateLabel: string;
   onCreateBranch: () => void;
+  onSubmitBranchQuote: (prompt: string) => void;
+  onClearBranchQuote: () => void;
   onSendBranchMessage: (content: string) => void;
   onDailyPanelChange: (panel: DailyPanel) => void;
   onScreenshotImportComplete: (result: ScreenshotImportResult) => void;
@@ -83,6 +88,8 @@ export function RightWorkbench({
   branchId,
   branchMessages,
   branchSending,
+  branchQuoteText,
+  branchQuoteLabel,
   sessionId,
   onToggle,
   activeTab,
@@ -92,6 +99,8 @@ export function RightWorkbench({
   branchSourceAvailable,
   branchCreateLabel,
   onCreateBranch,
+  onSubmitBranchQuote,
+  onClearBranchQuote,
   onSendBranchMessage,
   onDailyPanelChange,
   onScreenshotImportComplete,
@@ -148,9 +157,13 @@ export function RightWorkbench({
             branchId={branchId}
             branchMessages={branchMessages}
             branchSending={branchSending}
+            branchQuoteText={branchQuoteText}
+            branchQuoteLabel={branchQuoteLabel}
             branchSourceAvailable={branchSourceAvailable}
             branchCreateLabel={branchCreateLabel}
             onCreateBranch={onCreateBranch}
+            onSubmitBranchQuote={onSubmitBranchQuote}
+            onClearBranchQuote={onClearBranchQuote}
             onSendBranchMessage={onSendBranchMessage}
           />
         </div>
@@ -176,28 +189,48 @@ function BranchPanel({
   branchId,
   branchMessages,
   branchSending,
+  branchQuoteText,
+  branchQuoteLabel,
   branchSourceAvailable,
   branchCreateLabel,
   onCreateBranch,
+  onSubmitBranchQuote,
+  onClearBranchQuote,
   onSendBranchMessage
 }: {
   branchId: string | null;
   branchMessages: Message[];
   branchSending: boolean;
+  branchQuoteText: string;
+  branchQuoteLabel: string;
   branchSourceAvailable: boolean;
   branchCreateLabel: string;
   onCreateBranch: () => void;
+  onSubmitBranchQuote: (prompt: string) => void;
+  onClearBranchQuote: () => void;
   onSendBranchMessage: (content: string) => void;
 }) {
   const [draft, setDraft] = useState("");
-  const canSend = Boolean(branchId && draft.trim() && !branchSending);
-  const canCreateBranch = Boolean(!branchId && branchSourceAvailable && !branchSending);
+  const cleanQuote = branchQuoteText.trim();
+  const hasPendingQuote = Boolean(!branchId && cleanQuote);
+  const canSend = Boolean(!branchSending && (branchId ? draft.trim() : hasPendingQuote));
+  const canCreateBranch = Boolean(!branchId && !hasPendingQuote && branchSourceAvailable && !branchSending);
+
+  useEffect(() => {
+    setDraft("");
+  }, [branchId, cleanQuote]);
 
   const sendDraft = () => {
     if (!canSend) return;
-    onSendBranchMessage(draft);
+    if (branchId) {
+      onSendBranchMessage(draft);
+    } else {
+      onSubmitBranchQuote(draft);
+    }
     setDraft("");
   };
+  const composerDisabled = Boolean(branchSending || (!branchId && !hasPendingQuote));
+  const sendLabel = branchId ? "发送分支消息" : "提交分支引用";
 
   return (
     <section className="branch-panel workbench-form">
@@ -206,10 +239,28 @@ function BranchPanel({
         <span>分支对话</span>
       </div>
       <p className="hint">{branchId ? `当前分支：${branchId}` : "选中主聊天文本后，可以在这里展开解释，不污染主线学习记录。"}</p>
-      {!branchId && (
+      {hasPendingQuote && (
+        <div className="branch-quote-card" aria-label="分支引用内容">
+          <div className="branch-quote-head">
+            <span><GitBranch size={15} /> {branchQuoteLabel || "引用内容"}</span>
+            <button
+              type="button"
+              className="icon-button branch-quote-clear"
+              onClick={onClearBranchQuote}
+              disabled={branchSending}
+              aria-label="清除分支引用"
+              title="清除分支引用"
+            >
+              <X size={14} />
+            </button>
+          </div>
+          <blockquote>{cleanQuote}</blockquote>
+        </div>
+      )}
+      {!branchId && !hasPendingQuote && (
         <div className="workbench-actions">
           <button type="button" className="workbench-primary" onClick={onCreateBranch} disabled={!canCreateBranch}>
-            {branchSending ? "创建中..." : branchCreateLabel}
+            {branchSending ? "处理中..." : branchCreateLabel}
           </button>
         </div>
       )}
@@ -230,20 +281,29 @@ function BranchPanel({
           </div>
         )}
       </div>
-      <textarea
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.shiftKey) {
-            event.preventDefault();
-            sendDraft();
-          }
-        }}
-        placeholder="继续追问，或者让分支整理成复习卡片。"
-        disabled={branchSending}
-      />
-      <div className="workbench-actions">
-        <button className="workbench-primary" onClick={sendDraft} disabled={!canSend}>{branchSending ? "发送中..." : "发送分支消息"}</button>
+      <div className="branch-composer">
+        <textarea
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              sendDraft();
+            }
+          }}
+          placeholder={branchId ? "继续追问，或者让分支整理成复习卡片。" : "补充提示词；留空则按默认方式解释引用。"}
+          disabled={composerDisabled}
+        />
+        <button
+          type="button"
+          className="branch-send-button"
+          onClick={sendDraft}
+          disabled={!canSend}
+          aria-label={sendLabel}
+          title={sendLabel}
+        >
+          {branchSending ? <span className="spinner" /> : <PaperPlaneTilt size={18} weight="fill" />}
+        </button>
       </div>
     </section>
   );
