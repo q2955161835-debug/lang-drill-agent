@@ -1,6 +1,6 @@
 # Lang Drill Agent（语言学习训练 Agent）
 
-Lang Drill Agent（语言学习训练 Agent）是一个面向长期语言学习、刷题训练、错题复盘和考试备考的多 Agent（智能体）系统。它把 `语言学习-lang-drill-skill` 制作为可运行项目，同时支持 CLI（Command Line Interface，命令行接口）和 Web（网页）前端。
+Lang Drill Agent（语言学习训练 Agent）是一个面向长期语言学习、刷题训练、错题复盘和考试备考的多 Agent（智能体）系统。它把 `语言学习-lang-drill-skill` 制作为可运行项目，正式使用方式以 Web（网页）三栏学习工作台为核心；CLI（Command Line Interface，命令行接口）保留为开发、调试、自动化和数据维护辅助入口。
 
 当前公开定位重点面向英语四级/六级（CET-4/CET-6，大学英语四级/六级）、法语四级（CFT-4，大学法语四级）与日语四级/六级（CJT4/CJT6，大学日语四级/六级）备考：围绕考纲词汇、语法范围、阅读/听力/翻译/写作题型、真题试卷资产、错题回流和间隔复习，把“每天刷什么、怎么判题、错题何时回来”沉淀为可追踪的学习流程。
 
@@ -14,7 +14,7 @@ Lang Drill Agent（语言学习训练 Agent）不是单一巨型 prompt（提示
 - 用 Prompt Engine（提示词引擎）按任务动态组装规则，只注入当前任务需要的上下文。
 - 用 Validator（校验器）独立检查结构化题目质量，避免题目、答案、讲解和 knowledge_tags（知识标签）直接裸写入库。
 - 用 Token Accounting（令牌统计）记录模型、prompt_modules（提示词模块）、token（令牌）用量、耗时和校验结果，便于追踪质量问题。
-- 用 CLI（命令行接口）和 Web（网页）共享同一个后端内核，避免维护两套业务逻辑。
+- 用 Web（网页）作为普通学习、设置配置、截图导入、题目数据库迁移和验收的主入口；CLI（命令行接口）复用同一个后端内核，仅作为维护和调试兜底，避免维护两套业务逻辑。
 
 ## 核心能力
 
@@ -100,17 +100,15 @@ Web（网页）前端包含三个主区域：
 - 学习算法、联网检查、分支写回策略、字体大小、主题颜色和跟随系统主题。
 - 重新打开初始化设置入口。
 
-## CLI（命令行接口）
+## CLI（命令行接口）辅助入口
 
-CLI（命令行接口）适合脚本化、终端工作流和快速调试：
+CLI（命令行接口）已有功能继续保留，但不再作为普通学习的核心使用方式。日常学习、截图导入、模型配置和数据迁移请优先使用 Web（网页）；CLI（命令行接口）主要用于脚本化维护、状态检查、后台服务启动和调试：
 
 ```powershell
 py -m langdrill_agent.cli status
 py -m langdrill_agent.cli data-paths
 py -m langdrill_agent.cli set-question-db-folder "D:\LangDrill\user-data" --migrate
 py -m langdrill_agent.cli backup-user-data
-py -m langdrill_agent.cli chat "今天学习まで、から和に的区别"
-py -m langdrill_agent.cli import-skill --source "D:\1Folder\语言学习-lang-drill\语言学习-lang-drill-skill"
 ```
 
 ## 安装
@@ -215,7 +213,7 @@ npm install -g mineru-open-api
 - 安全规则总是注入；个性化人格仅在聊天和总结任务中注入。
 - 长期学习记录只以摘要、统计和相关检索片段形式进入 prompt（提示词）。
 - 默认用户状态写入当前系统用户主目录下的 `.langdrill-agent` 点目录；历史 `data/langdrill_agent.db` 只作为迁移来源，不再是默认正式状态库。
-- 当前用户运行库可通过设置页“数据”页签或 `set-question-db-folder` 迁移到自定义文件夹；迁移会复制当前 SQLite（轻量数据库），切换 `.env` 中的 `LANGDRILL_USER_DATA_DIR` 和 `LANGDRILL_DB_PATH`。
+- 当前用户运行库推荐通过 Web（网页）设置页“数据”页签迁移到自定义文件夹；CLI（命令行接口）`set-question-db-folder` 保留给维护脚本和调试场景。迁移会复制当前 SQLite（轻量数据库），切换 `.env` 中的 `LANGDRILL_USER_DATA_DIR` 和 `LANGDRILL_DB_PATH`。
 - 开发/联调/污染数据统一放入项目内 `测试数据/开发数据/<时间戳>/`，该目录被 `.gitignore` 排除，不提交。
 - 清空重测前可运行 `py -m langdrill_agent.cli backup-user-data`，把点目录数据备份到项目内 `data_backups/`；该目录不提交。
 - 后端日志默认写入 `~/.langdrill-agent/logs/langdrill-agent.log`，用于定位 API（接口）、模型、截图导入和数据库问题。
@@ -226,7 +224,7 @@ npm install -g mineru-open-api
 ## 项目目录
 
 ```text
-backend/langdrill_agent/        共享后端内核、API（接口）、CLI（命令行接口）、服务层和 Agent（智能体）
+backend/langdrill_agent/        共享后端内核、API（接口）、辅助 CLI（命令行接口）、服务层和 Agent（智能体）
 backend/langdrill_agent/migrations/ SQLite（轻量数据库）schema（结构定义）
 backend/langdrill_agent/data_paths.py 用户数据目录、题目数据库迁移和空库初始化
 frontend/                       React（前端框架）+ Vite（前端构建工具）网页前端
