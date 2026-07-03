@@ -578,6 +578,8 @@ def _runtime_instruction_modules(task_type: str) -> list[dict[str, str]]:
             "必须依据 context_pack.product_manual 和 context_pack.model_runtime 直接回答。"
             "供应商、模型、Base URL、API 格式、视觉能力、思考等级、上下文容量和密钥是否已配置可以说明；"
             "API Key、MinerU token、cookie 和数据库密码明文不可读取、索要或回显。"
+            "model_config 权限关闭不得作为拒绝回答 context_pack.model_runtime 中脱敏只读配置的理由；"
+            "该权限只限制帮助填写、保存或修改模型设置。"
         ),
     }
     profile_contract = {
@@ -595,6 +597,8 @@ def _runtime_instruction_modules(task_type: str) -> list[dict[str, str]]:
         "content": (
             "根据 context_pack.agent_permissions.enabled_tool_guidance 和 context_pack.skills 判断当前可用程序能力。"
             "权限已开启时，可以说明或引导触发对应工作流；权限关闭时说明需要开启权限。"
+            "但产品说明、当前模型供应商、模型名、Base URL、API 格式、视觉能力、思考等级、上下文容量和密钥是否已配置属于脱敏只读信息，"
+            "只要 context_pack.product_manual 或 context_pack.model_runtime 已提供，就必须直接回答，不受 model_config 权限开关限制。"
             "涉及 API Key、MinerU token、模型配置、数据库迁移、试卷保存和自定义模型保存等敏感动作时，"
             "只能生成草稿或引导打开设置页，最终保存必须由用户确认。"
             "联网回答只能依据本轮已注入的 web_search 结果；没有检索结果时不得编造实时信息。"
