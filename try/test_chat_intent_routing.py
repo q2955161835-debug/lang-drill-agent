@@ -8,7 +8,7 @@ from langdrill_agent.api import app
 from langdrill_agent.db import init_db, transaction
 from langdrill_agent.models import Question, TaskType, UserProfile
 from langdrill_agent.providers import ModelProvider, ModelResult
-from langdrill_agent.services import ProfileService, QuestionService, SessionService
+from langdrill_agent.services import AgentSettingsPermissionService, ProfileService, QuestionService, SessionService
 from langdrill_agent.task_router import TaskRouter
 
 
@@ -217,6 +217,9 @@ def test_product_question_includes_manual_and_sanitized_model_runtime(tmp_path: 
     monkeypatch.setenv("LANGDRILL_PROVIDER_BASE_URL", "https://api.xiaomimimo.com/anthropic")
     monkeypatch.setenv("LANGDRILL_PROVIDER_API_KEY_MIMO", "super-secret-mimo-key")
     init_db(db_path)
+    with transaction(db_path) as conn:
+        permissions = AgentSettingsPermissionService(conn).status()
+        assert "model_config" not in permissions["enabled_feature_ids"]
 
     client = TestClient(app)
 
@@ -236,6 +239,10 @@ def test_product_question_includes_manual_and_sanitized_model_runtime(tmp_path: 
     pack = captured["pack"]
     module_ids = [module["id"] for module in pack.system_modules]
     assert "runtime.product_manual_contract" in module_ids
+    product_module = next(module for module in pack.system_modules if module["id"] == "runtime.product_manual_contract")
+    tool_module = next(module for module in pack.system_modules if module["id"] == "runtime.tool_usage_contract")
+    assert "model_config 权限关闭不得作为拒绝回答" in product_module["content"]
+    assert "不受 model_config 权限开关限制" in tool_module["content"]
     assert pack.context_pack["product_manual"]["name"] == "Lang Drill Agent"
     current = pack.context_pack["model_runtime"]["current"]
     assert current["provider_id"] == "mimo"
