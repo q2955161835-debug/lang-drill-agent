@@ -3,7 +3,6 @@ import {
   ArrowRight,
   BookOpenText,
   Brain,
-  CaretDown,
   Cards,
   ChatsCircle,
   CheckCircle,
@@ -32,9 +31,9 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 
 gsap.registerPlugin(useGSAP, ScrollTrigger);
 
-type ThemeChoice = "system" | "light" | "dark";
+type ThemeChoice = "dark" | "light" | "system";
 type WorkbenchTab = "branch" | "import" | "skills" | "settings";
-type Message = {
+type ChatMessage = {
   role: "user" | "assistant";
   text: string;
 };
@@ -43,106 +42,120 @@ const GITHUB_URL = "https://github.com/q2955161835-debug/lang-drill-agent";
 const DOWNLOAD_URL =
   "https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v0.1.0/Lang.Drill.Agent_0.1.0_x64-setup.exe";
 
-const THEME_OPTIONS: Array<{ value: ThemeChoice; label: string }> = [
-  { value: "system", label: "跟随系统" },
-  { value: "light", label: "浅色" },
-  { value: "dark", label: "深色" },
-];
+const THEME_LABEL: Record<ThemeChoice, string> = {
+  dark: "深色",
+  light: "浅色",
+  system: "跟随系统",
+};
 
-const GALAXY_WORDS = [
-  ["achieve", "達成", "focus", "集中", "growth", "成長", "knowledge", "知識"],
-  ["challenge", "挑戦", "analyze", "分析", "practice", "練習", "review", "復習"],
-  ["efficient", "効率的", "context", "文脈", "mastery", "習得", "progress", "進歩"],
-  ["appropriate", "適切", "sustainable", "持続可能", "evaluate", "評価", "question", "問題"],
-].flat();
+const GALAXY_TERMS = [
+  "achieve",
+  "believe",
+  "growth",
+  "knowledge",
+  "focus",
+  "sustainable",
+  "efficient",
+  "strategy",
+  "analyze",
+  "evaluate",
+  "progress",
+  "commitment",
+  "appropriate",
+  "relevant",
+  "challenge",
+  "mastery",
+  "review",
+  "practice",
+  "context",
+  "output",
+  "努力",
+  "成长",
+  "可能性",
+  "挑战",
+  "自信",
+  "理解",
+  "表现",
+  "达成",
+  "持续",
+  "目标",
+  "学ぶ",
+  "進む",
+  "集中",
+  "分析",
+  "習得",
+  "練習",
+  "復習",
+  "挑戦",
+  "語彙",
+  "文脈",
+];
 
 const FLOW_WORDS = [
-  { term: "achieve", meaning: "v. 達成する" },
-  { term: "challenge", meaning: "n. 挑戦" },
-  { term: "appropriate", meaning: "adj. 適切な" },
-  { term: "efficient", meaning: "adj. 効率的な" },
-  { term: "sustainable", meaning: "adj. 持続可能な" },
+  { term: "achieve", pos: "v.", meaning: "達成する" },
+  { term: "challenge", pos: "n.", meaning: "挑戦" },
+  { term: "appropriate", pos: "adj.", meaning: "適切な" },
+  { term: "efficient", pos: "adj.", meaning: "効率的な" },
+  { term: "commitment", pos: "n.", meaning: "コミットメント" },
+  { term: "focus", pos: "n. v.", meaning: "集中する" },
+  { term: "sustainable", pos: "adj.", meaning: "持続可能な" },
+  { term: "analyze", pos: "v.", meaning: "分析する" },
+  { term: "relevant", pos: "adj.", meaning: "関連性のある" },
 ];
 
-const QUESTION_CARDS = [
-  {
-    type: "Fill in the Blank",
-    stem: "The team worked together to ___ the goal.",
-    answer: "achieve",
-  },
-  {
-    type: "Reading",
-    stem: "Which sentence best describes a sustainable plan?",
-    answer: "It can continue over time.",
-  },
-  {
-    type: "Synonym",
-    stem: "Choose the closest meaning of appropriate.",
-    answer: "suitable",
-  },
+const QUESTION_SETS = [
+  { title: "TOEIC Vocabulary Set", count: "20 questions", icon: BookOpenText },
+  { title: "JLPT N2 Set", count: "20 questions", icon: Cards },
+  { title: "English Grammar Set", count: "15 questions", icon: ListChecks },
+  { title: "Reading Comprehension", count: "15 questions", icon: BookOpenText },
+  { title: "Listening Practice", count: "10 questions", icon: DeviceMobile },
 ];
 
-const FEATURE_ROWS = [
-  {
-    title: "词表不再停在收藏夹",
-    body: "截图、文本、文件里的词条会进入真实练习会话，生成考试式题组，而不是只停留在静态单词卡。",
-    icon: BookOpenText,
-  },
-  {
-    title: "刷题结果回流到复习",
-    body: "每次作答都写入学习状态，错题、掌握度、讲解和后续题目可以围绕同一批词持续推进。",
-    icon: ListChecks,
-  },
-  {
-    title: "模型负责讲解，程序负责进度",
-    body: "Agent 生成题目和讲解，数据库负责落库、判分和统计，避免学习记录散落在聊天上下文里。",
-    icon: Brain,
-  },
+const DRILL_TYPES = [
+  { title: "Vocabulary", count: "4 questions" },
+  { title: "Fill in the Blank", count: "4 questions" },
+  { title: "Reading", count: "3 questions" },
+  { title: "Listening", count: "2 questions" },
+  { title: "Sentence Reorder", count: "3 questions" },
 ];
 
-const SCREENSHOTS = [
+const QUESTION_PREVIEWS = [
   {
-    src: "./assets/screenshots/dark-active-question.png",
-    title: "当前题吸附卡",
-    body: "中栏聊天和题卡在同一学习流里推进。",
+    title: "Vocabulary",
+    prompt: "Q. Which word means “達成する”?",
+    options: ["A. assess", "B. achieve", "C. approach", "D. advertise"],
+    selected: 1,
   },
   {
-    src: "./assets/screenshots/dark-screenshot-import-parsed.png",
-    title: "截图词表导入",
-    body: "OCR 后先编辑词条，再确认导入。",
+    title: "Fill in the Blank",
+    prompt: "The team worked together to ___ the goal.",
+    options: ["A. achieve", "B. achieved", "C. achieving", "D. achieves"],
+    selected: 0,
   },
   {
-    src: "./assets/screenshots/light-completed-day.png",
-    title: "当日学习同步",
-    body: "题目完成和词汇掌握保持同一口径。",
+    title: "Reading",
+    prompt: "Q. What is the main idea of the passage?",
+    options: ["A.", "B.", "C.", "D."],
+    selected: 1,
   },
   {
-    src: "./assets/screenshots/light-settings-model.png",
-    title: "模型配置",
-    body: "供应商、模型、视觉能力和上下文容量集中管理。",
+    title: "Listening",
+    prompt: "Q. What is the speaker mainly talking about?",
+    options: ["A.", "B.", "C.", "D."],
+    selected: 1,
   },
   {
-    src: "./assets/screenshots/dark-settings-skills.png",
-    title: "拓展 Skills",
-    body: "内置联网和可选拓展能力分开展示。",
-  },
-  {
-    src: "./assets/screenshots/light-mobile-home.png",
-    title: "移动视口",
-    body: "主流程保留响应式浏览能力。",
+    title: "Sentence Reorder",
+    prompt: "正しい順に並べ替えなさい。",
+    options: ["彼は", "毎日", "英語を", "勉強します"],
+    selected: -1,
   },
 ];
 
-const DEMO_SESSIONS = [
-  { date: "今天", label: "CET-4 截图词表", done: "8/12", words: "11 词" },
-  { date: "昨天", label: "CJT4 阅读语境", done: "18/18", words: "67 词" },
-  { date: "06-30", label: "错题复盘", done: "12/12", words: "55 词" },
-];
-
-const INITIAL_MESSAGES: Message[] = [
+const CHAT_SEED: ChatMessage[] = [
   {
     role: "assistant",
-    text: "把截图词表拖进右侧导入区，确认词条后我会生成完整题组，并逐题讲解。",
+    text: "把截图词表拖到右侧导入区，确认词条后我会先生成完整题组，再逐题推进。",
   },
   {
     role: "user",
@@ -150,32 +163,76 @@ const INITIAL_MESSAGES: Message[] = [
   },
   {
     role: "assistant",
-    text: "已创建演示题组。下面先看第 1 题，答完后会自动推进下一题。",
+    text: "已创建演示题组。下面是第 1 题，答完后会自动进入下一题。",
   },
 ];
 
-const SKILL_PLACEHOLDERS = [
+const SESSION_ROWS = [
+  { date: "今天", title: "截图词表练习：achieve", progress: "8/12", active: true },
+  { date: "昨天", title: "CJT4 阅读语境", progress: "18/18", active: false },
+  { date: "06-30", title: "错题复盘", progress: "12/12", active: false },
+];
+
+const SKILL_ROWS = [
   {
-    id: "skill1",
-    name: "skill1",
-    path: "~/LangDrill/skills/skill1",
+    name: "Multi Search Engine",
     state: "已启用",
-    body: "生成可审计搜索入口和学习材料索引。",
+    body: "生成可审计搜索入口，内置联网检索仍由权限控制。",
   },
   {
-    id: "skill2",
+    name: "skill1",
+    state: "已启用",
+    body: "示例拓展技能槽位，用于展示可开关的本地能力。",
+  },
+  {
     name: "skill2",
-    path: "~/LangDrill/skills/skill2",
     state: "待启用",
-    body: "为后续文档解析、外部题库或复习计划扩展预留。",
+    body: "预留给文档解析、外部题库或复习计划扩展。",
   },
 ];
 
-const QUESTION_OPTIONS = ["A. assess", "B. achieve", "C. approach", "D. advertise"];
+const GALAXY_WORDS = Array.from({ length: 260 }, (_, index) => {
+  const side = index % 2 === 0 ? "left" : "right";
+  const local = Math.floor(index / 2);
+  const arm = local % 5;
+  const ring = Math.floor(local / 5);
+  const angle = local * 0.34 + arm * 1.22;
+  const radius = 12 + ring * 1.95 + arm * 1.9;
+  const left = 50 + Math.cos(angle) * radius * 1.42;
+  const top = 50 + Math.sin(angle) * radius * 0.58;
+  const font = 9 + ((local + arm) % 6) * 1.65;
+  return {
+    side,
+    word: GALAXY_TERMS[index % GALAXY_TERMS.length],
+    style: cssVars({
+      "--x": `${Math.max(-8, Math.min(108, left))}%`,
+      "--y": `${Math.max(3, Math.min(97, top))}%`,
+      "--r": `${-18 + ((local * 17) % 36)}deg`,
+      "--s": `${font}px`,
+      "--o": `${0.34 + ((local * 13) % 42) / 100}`,
+      "--d": `${(local % 11) * -0.48}s`,
+    }),
+  };
+});
 
-function isThemeChoice(value: string | null): value is ThemeChoice {
-  return value === "system" || value === "light" || value === "dark";
-}
+const GALAXY_PARTICLES = Array.from({ length: 520 }, (_, index) => {
+  const side = index % 2 === 0 ? "left" : "right";
+  const local = Math.floor(index / 2);
+  const angle = local * 0.21 + (local % 7) * 0.72;
+  const radius = 8 + (local % 130) * 0.5;
+  const left = 50 + Math.cos(angle) * radius * 1.72;
+  const top = 50 + Math.sin(angle) * radius * 0.64;
+  return {
+    side,
+    style: cssVars({
+      "--x": `${Math.max(-10, Math.min(110, left))}%`,
+      "--y": `${Math.max(2, Math.min(98, top))}%`,
+      "--o": `${0.2 + ((local * 19) % 58) / 100}`,
+      "--d": `${(local % 13) * -0.36}s`,
+      "--size": `${1 + (local % 3) * 0.7}px`,
+    }),
+  };
+});
 
 function cssVars(vars: Record<string, string | number>): CSSProperties {
   return vars as CSSProperties;
@@ -185,15 +242,18 @@ function App() {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [themeChoice, setThemeChoice] = useState<ThemeChoice>(() => {
     if (typeof window === "undefined") {
-      return "system";
+      return "dark";
     }
     const stored = window.localStorage.getItem("langdrill-demo-theme");
-    return isThemeChoice(stored) ? stored : "system";
+    return stored === "light" || stored === "dark" || stored === "system" ? stored : "dark";
   });
-  const [activeTab, setActiveTab] = useState<WorkbenchTab>("skills");
-  const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
+  const [activeTab, setActiveTab] = useState<WorkbenchTab>("import");
+  const [messages, setMessages] = useState<ChatMessage[]>(CHAT_SEED);
   const [draft, setDraft] = useState("");
   const [answer, setAnswer] = useState<string | null>(null);
+  const [importParsed, setImportParsed] = useState(false);
+  const [leftOpen, setLeftOpen] = useState(true);
+  const [rightOpen, setRightOpen] = useState(true);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -206,10 +266,7 @@ function App() {
 
     applyTheme();
     media.addEventListener("change", applyTheme);
-
-    return () => {
-      media.removeEventListener("change", applyTheme);
-    };
+    return () => media.removeEventListener("change", applyTheme);
   }, [themeChoice]);
 
   useGSAP(
@@ -217,10 +274,11 @@ function App() {
       const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
       if (reduceMotion) {
-        gsap.set(".reveal, .flow-word, .generated-question, .question-flight", {
+        gsap.set(".reveal, .stream-word, .stream-question, .drill-output-card", {
           autoAlpha: 1,
           x: 0,
           y: 0,
+          scale: 1,
         });
         return;
       }
@@ -228,76 +286,104 @@ function App() {
       gsap.from(".hero-copy > *", {
         autoAlpha: 0,
         y: 18,
-        filter: "blur(6px)",
+        filter: "blur(7px)",
+        duration: 0.82,
         stagger: 0.08,
-        duration: 0.8,
+        ease: "power3.out",
+      });
+
+      gsap.from(".hero-product-frame", {
+        autoAlpha: 0,
+        y: 42,
+        scale: 0.985,
+        duration: 0.95,
+        delay: 0.18,
         ease: "power3.out",
       });
 
       gsap.to(".galaxy-word", {
-        x: (index) => (index % 2 === 0 ? 90 : -90),
-        y: (index) => (index % 3 === 0 ? -60 : 48),
+        x: (index) => (index % 2 === 0 ? 44 : -44),
+        y: (index) => (index % 3 === 0 ? -28 : 24),
         rotation: (index) => (index % 2 === 0 ? 8 : -8),
         scrollTrigger: {
           trigger: ".hero",
           start: "top top",
           end: "bottom top",
-          scrub: 1,
+          scrub: 0.7,
         },
       });
 
-      const workflowTimeline = gsap.timeline({
+      gsap.to(".galaxy-particle", {
+        y: (index) => (index % 2 === 0 ? -20 : 18),
+        autoAlpha: (index) => 0.28 + (index % 5) * 0.1,
         scrollTrigger: {
-          trigger: ".workflow-demo",
-          start: "top 75%",
-          end: "bottom 40%",
+          trigger: ".hero",
+          start: "top top",
+          end: "bottom top",
+          scrub: 0.9,
+        },
+      });
+
+      const stream = gsap.timeline({
+        scrollTrigger: {
+          trigger: ".stream-panel",
+          start: "top 78%",
+          end: "bottom 38%",
           scrub: 1,
         },
       });
 
-      workflowTimeline
+      stream
         .fromTo(
-          ".flow-word",
-          { autoAlpha: 0, x: -110, y: 12, scale: 0.96 },
-          { autoAlpha: 1, x: 0, y: 0, scale: 1, stagger: 0.05, ease: "power3.out" },
+          ".stream-word",
+          { autoAlpha: 0, x: -84, y: 10 },
+          { autoAlpha: 1, x: 0, y: 0, stagger: 0.04, ease: "power3.out" },
         )
-        .to(".flow-word", {
-          x: 245,
-          y: (index) => -38 + index * 18,
-          stagger: 0.04,
+        .to(".stream-word", {
+          x: (index) => 220 + index * 8,
+          y: (index) => -42 + index * 16,
+          stagger: 0.035,
           ease: "power2.inOut",
         })
         .fromTo(
-          ".generated-question",
-          { autoAlpha: 0, x: 140, scale: 0.96 },
-          { autoAlpha: 1, x: 0, scale: 1, stagger: 0.08, ease: "power3.out" },
-          "<0.15",
+          ".stream-core",
+          { scale: 0.86, boxShadow: "0 0 20px rgba(110, 124, 255, 0.28)" },
+          { scale: 1.08, boxShadow: "0 0 58px rgba(110, 124, 255, 0.78)", ease: "power2.inOut" },
+          "<0.2",
         )
         .fromTo(
-          ".question-flight",
-          { autoAlpha: 0, y: -36, scale: 0.96 },
-          { autoAlpha: 1, y: 0, scale: 1, stagger: 0.08, ease: "power3.out" },
-          ">-0.1",
+          ".stream-question",
+          { autoAlpha: 0, x: 120, scale: 0.96 },
+          { autoAlpha: 1, x: 0, scale: 1, stagger: 0.07, ease: "power3.out" },
+          "<0.16",
+        )
+        .fromTo(
+          ".drill-output-card",
+          { autoAlpha: 0, y: 26, scale: 0.96 },
+          { autoAlpha: 1, y: 0, scale: 1, stagger: 0.07, ease: "power3.out" },
+          ">-0.06",
         );
 
       ScrollTrigger.batch(".reveal", {
-        start: "top 82%",
+        start: "top 84%",
         once: true,
         onEnter: (elements) => {
           gsap.fromTo(
             elements,
-            { autoAlpha: 0, y: 22, filter: "blur(5px)" },
+            { autoAlpha: 0, y: 22, filter: "blur(6px)" },
             {
               autoAlpha: 1,
               y: 0,
               filter: "blur(0px)",
               duration: 0.75,
-              stagger: 0.08,
+              stagger: 0.06,
               ease: "power3.out",
             },
           );
         },
       });
+
+      window.requestAnimationFrame(() => ScrollTrigger.refresh());
 
       return () => {
         ScrollTrigger.getAll().forEach((trigger) => trigger.kill());
@@ -308,20 +394,19 @@ function App() {
 
   const cycleTheme = () => {
     setThemeChoice((current) => {
-      if (current === "system") {
+      if (current === "dark") {
         return "light";
       }
       if (current === "light") {
-        return "dark";
+        return "system";
       }
-      return "system";
+      return "dark";
     });
   };
 
   const handleDemoSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const trimmed = draft.trim();
-
     if (!trimmed) {
       return;
     }
@@ -332,73 +417,73 @@ function App() {
       {
         role: "assistant",
         text:
-          "我是 Lang Drill Agent 的展示版模拟回复。网页版使用正在开发中，暂不支持真实模型调用，敬请期待。你可以在当前网页中探索三栏工作台、题卡、截图导入、设置和拓展 Skills。",
+          "我是展示站的固定模拟回复。真实学习请启动 Lang Drill Agent，本页只演示三栏工作台、截图导入、题卡、分支和拓展 Skills 的交互。",
       },
     ]);
     setDraft("");
   };
 
   return (
-    <div className="app" ref={rootRef}>
+    <div className="site" ref={rootRef}>
       <SiteHeader themeChoice={themeChoice} onThemeCycle={cycleTheme} />
       <main>
         <HeroSection />
-        <WorkflowSection />
-        <FeatureSection />
-        <DemoSection
+        <FlowSection />
+        <QuestionTypesSection />
+        <AgentDemoSection
           activeTab={activeTab}
           answer={answer}
           draft={draft}
+          importParsed={importParsed}
+          leftOpen={leftOpen}
           messages={messages}
+          rightOpen={rightOpen}
           onAnswer={setAnswer}
           onDraftChange={setDraft}
+          onImportParsed={setImportParsed}
+          onLeftOpen={setLeftOpen}
+          onRightOpen={setRightOpen}
           onSubmit={handleDemoSubmit}
           onTabChange={setActiveTab}
-          themeChoice={themeChoice}
-          onThemeCycle={cycleTheme}
         />
-        <ScreenshotsSection />
         <InstallSection />
       </main>
-      <SiteFooter />
+      <footer className="site-footer">
+        <span>Lang Drill Agent</span>
+        <span>Vocabulary in. Exam drills out.</span>
+        <a href={GITHUB_URL} target="_blank" rel="noreferrer">
+          GitHub <ArrowRight size={15} />
+        </a>
+      </footer>
     </div>
   );
 }
 
-function SiteHeader({
-  themeChoice,
-  onThemeCycle,
-}: {
-  themeChoice: ThemeChoice;
-  onThemeCycle: () => void;
-}) {
-  const themeLabel = THEME_OPTIONS.find((option) => option.value === themeChoice)?.label ?? "跟随系统";
-
+function SiteHeader({ themeChoice, onThemeCycle }: { themeChoice: ThemeChoice; onThemeCycle: () => void }) {
   return (
     <header className="site-header">
-      <a className="brand-link" href="#top" aria-label="Lang Drill Agent 首页">
+      <a className="brand" href="#top" aria-label="Lang Drill Agent">
         <span className="brand-mark">
           <img className="brand-logo brand-logo-light" src="./assets/logo-light.png" alt="" />
           <img className="brand-logo brand-logo-dark" src="./assets/logo-dark.png" alt="" />
         </span>
         <span>Lang Drill Agent</span>
       </a>
-      <nav className="site-nav" aria-label="主导航">
-        <a href="#workflow">Workflow</a>
+      <nav className="site-nav" aria-label="Primary">
         <a href="#features">Features</a>
+        <a href="#flow">How it works</a>
+        <a href="#skills">Skills</a>
         <a href="#demo">Demo</a>
-        <a href="#screens">Screens</a>
-      </nav>
-      <div className="header-actions">
-        <button className="icon-button" type="button" onClick={onThemeCycle} aria-label={`主题：${themeLabel}`}>
-          {themeChoice === "system" ? <Monitor size={18} /> : themeChoice === "light" ? <Sun size={18} /> : <Moon size={18} />}
-        </button>
-        <a className="button ghost-button" href={GITHUB_URL} target="_blank" rel="noreferrer">
-          <GithubLogo size={18} />
+        <a href={GITHUB_URL} target="_blank" rel="noreferrer">
           GitHub
         </a>
-        <a className="button primary-button" href={DOWNLOAD_URL}>
-          <DownloadSimple size={18} />
+      </nav>
+      <div className="header-actions">
+        <button className="theme-button" type="button" onClick={onThemeCycle} aria-label={`主题：${THEME_LABEL[themeChoice]}`}>
+          {themeChoice === "dark" ? <Moon size={16} /> : themeChoice === "light" ? <Sun size={16} /> : <Monitor size={16} />}
+        </button>
+        <a className="download-button" href={DOWNLOAD_URL}>
+          <DownloadSimple size={16} />
           Download
         </a>
       </div>
@@ -412,23 +497,25 @@ function HeroSection() {
       <WordGalaxy />
       <div className="hero-copy">
         <h1>Lang Drill Agent</h1>
-        <p className="hero-subtitle">Words become drills</p>
+        <p className="hero-kicker">Words become drills</p>
         <p className="hero-body">
-          把背词截图、文本词表和文件材料变成考试式题组，让“记住单词”和“会做题”进入同一个闭环。
+          Unify vocabulary learning and exam practice.
+          <br />
+          From any source → intelligent drills → real results.
         </p>
         <div className="hero-actions">
-          <a className="button primary-button" href={DOWNLOAD_URL}>
+          <a className="hero-button secondary" href={GITHUB_URL} target="_blank" rel="noreferrer">
+            <GithubLogo size={22} weight="fill" />
+            GitHub
+          </a>
+          <a className="hero-button primary" href={DOWNLOAD_URL}>
             <DownloadSimple size={20} />
             Download
           </a>
-          <a className="button quiet-button" href={GITHUB_URL} target="_blank" rel="noreferrer">
-            <GithubLogo size={20} />
-            GitHub
-          </a>
         </div>
       </div>
-      <div className="hero-stage reveal">
-        <MiniWorkbench variant="hero" />
+      <div className="hero-product-frame reveal">
+        <ProductPipelinePanel />
       </div>
     </section>
   );
@@ -436,285 +523,397 @@ function HeroSection() {
 
 function WordGalaxy() {
   return (
-    <div className="word-galaxy" aria-hidden="true">
-      {GALAXY_WORDS.map((word, index) => {
-        const side = index % 2 === 0 ? -1 : 1;
-        const orbit = 1 + (index % 4);
-        const top = 16 + ((index * 11) % 68);
-        const left = side < 0 ? 4 + ((index * 7) % 31) : 62 + ((index * 5) % 29);
-        const delay = (index % 9) * -0.7;
-
-        return (
-          <span
-            className="galaxy-word"
-            key={`${word}-${index}`}
-            style={cssVars({
-              "--top": `${top}%`,
-              "--left": `${left}%`,
-              "--orbit": orbit,
-              "--delay": `${delay}s`,
-            })}
-          >
-            {word}
+    <div className="galaxy" aria-hidden="true">
+      <div className="galaxy-cluster galaxy-left">
+        {GALAXY_PARTICLES.filter((particle) => particle.side === "left").map((particle, index) => (
+          <span className="galaxy-particle" style={particle.style} key={`left-dot-${index}`} />
+        ))}
+        {GALAXY_WORDS.filter((word) => word.side === "left").map((word, index) => (
+          <span className="galaxy-word" style={word.style} key={`left-word-${index}`}>
+            {word.word}
           </span>
-        );
-      })}
-    </div>
-  );
-}
-
-function MiniWorkbench({ variant }: { variant: "hero" | "workflow" }) {
-  return (
-    <div className={`mini-workbench mini-workbench-${variant}`}>
-      <div className="mini-topbar">
-        <span className="mini-brand">
-          <Sparkle size={16} weight="fill" />
-          Lang Drill Agent
-        </span>
-        <span className="mini-topbar-actions">
-          <Moon size={15} />
-          <GearSix size={15} />
-        </span>
-      </div>
-      <div className="mini-grid">
-        <aside className="mini-panel mini-left">
-          <div className="mini-panel-title">
-            <span>1</span>
-            Vocabulary
-          </div>
-          <div className="mini-input-row">
-            <span>Add word...</span>
-            <button type="button">Add</button>
-          </div>
-          <div className="word-stack">
-            {FLOW_WORDS.map((word) => (
-              <div className="flow-word" key={word.term}>
-                <strong>{word.term}</strong>
-                <span>{word.meaning}</span>
-              </div>
-            ))}
-          </div>
-        </aside>
-        <section className="mini-panel mini-center">
-          <div className="mini-panel-title">
-            <span>2</span>
-            Generate
-          </div>
-          <div className="generator-core">
-            <Sparkle size={30} weight="fill" />
-          </div>
-          <div className="generator-lines">
-            <span />
-            <span />
-            <span />
-          </div>
-          <p>AI creates exam-style questions</p>
-        </section>
-        <aside className="mini-panel mini-right">
-          <div className="mini-panel-title">
-            <span>3</span>
-            Output
-          </div>
-          {QUESTION_CARDS.map((question) => (
-            <div className="generated-question" key={question.type}>
-              <Cards size={16} />
-              <div>
-                <strong>{question.type}</strong>
-                <span>{question.answer}</span>
-              </div>
-              <ArrowRight size={15} />
-            </div>
-          ))}
-        </aside>
-      </div>
-    </div>
-  );
-}
-
-function WorkflowSection() {
-  return (
-    <section className="workflow-section" id="workflow">
-      <div className="section-heading reveal">
-        <h2>从词条到题组，不再断层</h2>
-        <p>单词汇入左侧学习状态，经中栏组卷，再从右侧输出为可作答题卡。</p>
-      </div>
-      <div className="workflow-demo">
-        <MiniWorkbench variant="workflow" />
-        <div className="practice-strip">
-          {QUESTION_CARDS.map((question, index) => (
-            <article className="question-flight" key={question.type}>
-              <span className="question-index">0{index + 1}</span>
-              <p>{question.type}</p>
-              <strong>{question.stem}</strong>
-            </article>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function FeatureSection() {
-  return (
-    <section className="feature-section" id="features">
-      <div className="section-heading reveal">
-        <h2>核心痛点很简单：背词和刷题分离</h2>
-        <p>Lang Drill Agent 把导入、出题、作答、讲解、复盘和统计放进同一个本地学习工作台。</p>
-      </div>
-      <div className="feature-rows">
-        {FEATURE_ROWS.map((feature, index) => {
-          const Icon = feature.icon;
-          return (
-            <article className="feature-row reveal" key={feature.title}>
-              <span className="feature-number">0{index + 1}</span>
-              <Icon size={28} />
-              <div>
-                <h3>{feature.title}</h3>
-                <p>{feature.body}</p>
-              </div>
-            </article>
-          );
-        })}
-      </div>
-      <div className="concept-band reveal">
-        <img src="./assets/concept-langdrill-site.png" alt="Lang Drill Agent 视觉概念图" />
-        <div>
-          <h3>动态银河是叙事，不是装饰</h3>
-          <p>
-            英语和日语词条像粒子一样聚集到工作台，随后被转换为题目输出，直接表达产品的学习闭环。
-          </p>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function DemoSection({
-  activeTab,
-  answer,
-  draft,
-  messages,
-  onAnswer,
-  onDraftChange,
-  onSubmit,
-  onTabChange,
-  themeChoice,
-  onThemeCycle,
-}: {
-  activeTab: WorkbenchTab;
-  answer: string | null;
-  draft: string;
-  messages: Message[];
-  onAnswer: (answer: string) => void;
-  onDraftChange: (draft: string) => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onTabChange: (tab: WorkbenchTab) => void;
-  themeChoice: ThemeChoice;
-  onThemeCycle: () => void;
-}) {
-  return (
-    <section className="demo-section" id="demo">
-      <div className="section-heading reveal">
-        <h2>完整三栏工作台展示</h2>
-        <p>这是静态网站里的前端模拟器，保留主应用布局和控件，不连接真实后端。</p>
-      </div>
-      <div className="demo-shell reveal">
-        <DemoSidebar />
-        <DemoMain
-          answer={answer}
-          draft={draft}
-          messages={messages}
-          onAnswer={onAnswer}
-          onDraftChange={onDraftChange}
-          onSubmit={onSubmit}
-        />
-        <DemoWorkbench activeTab={activeTab} onTabChange={onTabChange} />
-      </div>
-      <div className="demo-toolbar reveal">
-        <label>
-          Provider
-          <select defaultValue="mimo">
-            <option value="mimo">Xiaomi MiMo</option>
-            <option value="openai">OpenAI GPT</option>
-            <option value="deepseek">DeepSeek</option>
-            <option value="claude">Claude</option>
-          </select>
-        </label>
-        <label>
-          Model
-          <select defaultValue="mimo-v2.5">
-            <option value="mimo-v2.5">mimo-v2.5</option>
-            <option value="gpt-4.1">gpt-4.1</option>
-            <option value="deepseek-chat">deepseek-chat</option>
-          </select>
-        </label>
-        <label>
-          Exam
-          <select defaultValue="cet4">
-            <option value="cet4">英语四级 CET-4</option>
-            <option value="cet6">英语六级 CET-6</option>
-            <option value="cjt4">日语四级 CJT4</option>
-          </select>
-        </label>
-        <label>
-          Syllabus
-          <select defaultValue="cet-2016">
-            <option value="cet-2016">全国大学英语四、六级考试大纲 2016</option>
-            <option value="cjt-2024">大学日语四级考试大纲 2024</option>
-            <option value="custom">自定义考试</option>
-          </select>
-        </label>
-        <button className="button quiet-button" type="button" onClick={onThemeCycle}>
-          {themeChoice === "system" ? <Monitor size={18} /> : themeChoice === "light" ? <Sun size={18} /> : <Moon size={18} />}
-          主题
-        </button>
-      </div>
-    </section>
-  );
-}
-
-function DemoSidebar() {
-  return (
-    <aside className="demo-sidebar">
-      <div className="workspace-title">
-        <Gauge size={18} />
-        <span>学习总览</span>
-      </div>
-      <div className="metric-grid">
-        <Metric label="题目" value="32/42" />
-        <Metric label="词汇" value="133" />
-        <Metric label="正确率" value="84%" />
-        <Metric label="Token" value="18.4k" />
-      </div>
-      <div className="session-list">
-        {DEMO_SESSIONS.map((session) => (
-          <button className="session-item" type="button" key={session.label}>
-            <span>{session.date}</span>
-            <strong>{session.label}</strong>
-            <small>
-              {session.done} · {session.words}
-            </small>
-          </button>
         ))}
       </div>
-      <button className="button primary-button sidebar-cta" type="button">
-        <UploadSimple size={18} />
-        当日导入
-      </button>
+      <div className="galaxy-cluster galaxy-right">
+        {GALAXY_PARTICLES.filter((particle) => particle.side === "right").map((particle, index) => (
+          <span className="galaxy-particle" style={particle.style} key={`right-dot-${index}`} />
+        ))}
+        {GALAXY_WORDS.filter((word) => word.side === "right").map((word, index) => (
+          <span className="galaxy-word" style={word.style} key={`right-word-${index}`}>
+            {word.word}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ProductPipelinePanel() {
+  return (
+    <div className="pipeline-window">
+      <div className="pipeline-topbar">
+        <span className="mini-brand">
+          <span className="brand-mark small">
+            <img className="brand-logo brand-logo-light" src="./assets/logo-light.png" alt="" />
+            <img className="brand-logo brand-logo-dark" src="./assets/logo-dark.png" alt="" />
+          </span>
+          Lang Drill Agent
+        </span>
+        <div className="window-controls">
+          <button type="button" aria-label="Dark mode">
+            <Moon size={14} />
+          </button>
+          <button type="button" aria-label="Settings">
+            <GearSix size={14} />
+          </button>
+          <button type="button" aria-label="Menu">
+            <span className="hamburger" />
+          </button>
+        </div>
+      </div>
+      <div className="pipeline-body">
+        <IconRail />
+        <div className="pipeline-grid">
+          <VocabularyColumn />
+          <GenerateColumn />
+          <OutputColumn />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function IconRail() {
+  const icons = [Sparkle, Cards, ChatsCircle, Brain, ListChecks, Database, GearSix];
+  return (
+    <aside className="icon-rail" aria-label="Demo rail">
+      {icons.map((Icon, index) => (
+        <button className={index === 1 ? "active" : ""} type="button" key={`rail-${index}`} aria-label={`Rail item ${index + 1}`}>
+          <Icon size={17} />
+        </button>
+      ))}
     </aside>
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function VocabularyColumn() {
   return (
-    <div className="metric">
-      <span>{label}</span>
-      <strong>{value}</strong>
+    <section className="pipeline-panel vocab-panel">
+      <PanelTitle number="1" title="Vocabulary" subtitle="Import & collect words" />
+      <div className="word-input">
+        <span>Add word...</span>
+        <button type="button">Add</button>
+      </div>
+      <div className="vocab-list">
+        {FLOW_WORDS.map((word) => (
+          <div className="vocab-row" key={word.term}>
+            <strong>{word.term}</strong>
+            <span>{word.pos}</span>
+            <em>{word.meaning}</em>
+          </div>
+        ))}
+      </div>
+      <small>1,248 words</small>
+    </section>
+  );
+}
+
+function GenerateColumn() {
+  return (
+    <section className="pipeline-panel generate-panel">
+      <PanelTitle number="2" title="Generate" subtitle="AI creates exam-style questions" />
+      <div className="generation-map">
+        <div className="map-word-list">
+          {FLOW_WORDS.slice(0, 7).map((word) => (
+            <span key={`map-${word.term}`}>{word.term}</span>
+          ))}
+        </div>
+        <div className="star-core">
+          <Sparkle size={34} weight="fill" />
+        </div>
+        <div className="type-stack">
+          {DRILL_TYPES.map((type) => (
+            <div className="type-card" key={type.title}>
+              <strong>{type.title}</strong>
+              <span>{type.count}</span>
+              <ArrowRight size={14} />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="generating-bar">
+        <span>Generating...</span>
+        <i />
+      </div>
+    </section>
+  );
+}
+
+function OutputColumn() {
+  return (
+    <section className="pipeline-panel output-panel">
+      <PanelTitle number="3" title="Output" subtitle="Drills ready to practice" />
+      <div className="set-list">
+        {QUESTION_SETS.map((set) => {
+          const Icon = set.icon;
+          return (
+            <article className="set-card" key={set.title}>
+              <Icon size={21} />
+              <div>
+                <strong>{set.title}</strong>
+                <span>{set.count}</span>
+              </div>
+              <ArrowRight size={15} />
+            </article>
+          );
+        })}
+      </div>
+      <small>5 sets · 80 questions</small>
+    </section>
+  );
+}
+
+function PanelTitle({ number, title, subtitle }: { number: string; title: string; subtitle: string }) {
+  return (
+    <div className="panel-title">
+      <span>{number}</span>
+      <div>
+        <strong>{title}</strong>
+        <small>{subtitle}</small>
+      </div>
     </div>
   );
 }
 
-function DemoMain({
+function FlowSection() {
+  return (
+    <section className="flow-section" id="flow">
+      <h2 className="reveal">From words to drills. Automatically.</h2>
+      <div className="stream-panel reveal">
+        <div className="step-label collect">
+          <span>1</span>
+          <strong>Collect</strong>
+          <small>Import words from anywhere</small>
+        </div>
+        <div className="step-label transform">
+          <span>2</span>
+          <strong>Transform</strong>
+          <small>AI turns words into exam-style questions</small>
+        </div>
+        <div className="step-label practice">
+          <span>3</span>
+          <strong>Practice</strong>
+          <small>Drills ready to strengthen your skills</small>
+        </div>
+        <div className="stream-source">
+          <BookOpenText size={42} />
+        </div>
+        <div className="stream-words">
+          {["believe", "努力", "growth", "挑战", "knowledge"].map((word) => (
+            <span className="stream-word" key={word}>
+              {word}
+            </span>
+          ))}
+        </div>
+        <div className="stream-core">
+          <Sparkle size={46} weight="fill" />
+        </div>
+        <div className="stream-questions">
+          {["Vocabulary", "Blank", "Reading"].map((question) => (
+            <div className="stream-question" key={question}>
+              <Cards size={15} />
+              <span>{question}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function QuestionTypesSection() {
+  return (
+    <section className="question-section" id="features">
+      <div className="section-title reveal">
+        <div>
+          <h2>Practice. Review. Improve.</h2>
+          <p>Multiple question types. Real exam experience.</p>
+        </div>
+        <a href="#demo">
+          See all question types
+          <ArrowRight size={17} />
+        </a>
+      </div>
+      <div className="question-grid">
+        {QUESTION_PREVIEWS.map((question) => (
+          <QuestionPreviewCard question={question} key={question.title} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function QuestionPreviewCard({
+  question,
+}: {
+  question: {
+    title: string;
+    prompt: string;
+    options: string[];
+    selected: number;
+  };
+}) {
+  return (
+    <article className="question-preview reveal">
+      <h3>{question.title}</h3>
+      {question.title === "Listening" ? <Waveform /> : null}
+      <p>{question.prompt}</p>
+      <div className={question.title === "Sentence Reorder" ? "reorder-list" : "preview-options"}>
+        {question.options.map((option, index) => (
+          <span className={index === question.selected ? "selected" : ""} key={`${question.title}-${option}`}>
+            {option}
+          </span>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function Waveform() {
+  return (
+    <div className="waveform" aria-hidden="true">
+      {Array.from({ length: 34 }, (_, index) => (
+        <i style={cssVars({ "--h": `${8 + ((index * 7) % 26)}px` })} key={`wave-${index}`} />
+      ))}
+    </div>
+  );
+}
+
+function AgentDemoSection({
+  activeTab,
+  answer,
+  draft,
+  importParsed,
+  leftOpen,
+  messages,
+  rightOpen,
+  onAnswer,
+  onDraftChange,
+  onImportParsed,
+  onLeftOpen,
+  onRightOpen,
+  onSubmit,
+  onTabChange,
+}: {
+  activeTab: WorkbenchTab;
+  answer: string | null;
+  draft: string;
+  importParsed: boolean;
+  leftOpen: boolean;
+  messages: ChatMessage[];
+  rightOpen: boolean;
+  onAnswer: (answer: string) => void;
+  onDraftChange: (draft: string) => void;
+  onImportParsed: (parsed: boolean) => void;
+  onLeftOpen: (open: boolean) => void;
+  onRightOpen: (open: boolean) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onTabChange: (tab: WorkbenchTab) => void;
+}) {
+  return (
+    <section className="agent-demo-section" id="demo">
+      <div className="section-title reveal">
+        <div>
+          <h2>Explore the actual Agent workbench.</h2>
+          <p>Same three-column product structure: status, chat and right workbench.</p>
+        </div>
+      </div>
+      <div className={`agent-preview-shell reveal ${leftOpen ? "left-open" : "left-closed"} ${rightOpen ? "right-open" : "right-closed"}`}>
+        <DemoLeftRail open={leftOpen} onToggle={() => onLeftOpen(!leftOpen)} />
+        <DemoChatMain answer={answer} draft={draft} messages={messages} onAnswer={onAnswer} onDraftChange={onDraftChange} onSubmit={onSubmit} />
+        <DemoRightRail
+          activeTab={activeTab}
+          importParsed={importParsed}
+          open={rightOpen}
+          onImportParsed={onImportParsed}
+          onTabChange={onTabChange}
+          onToggle={() => onRightOpen(!rightOpen)}
+        />
+      </div>
+    </section>
+  );
+}
+
+function DemoLeftRail({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  return (
+    <aside className="demo-left-rail">
+      <div className="rail-top">
+        <div className="brand-lockup">
+          <img className="agent-logo agent-logo-light" src="./assets/logo-light.png" alt="" />
+          <img className="agent-logo agent-logo-dark" src="./assets/logo-dark.png" alt="" />
+          {open ? <strong>Lang Drill Agent</strong> : null}
+        </div>
+        <button className="rail-toggle" type="button" onClick={onToggle} aria-label={open ? "折叠左栏" : "展开左栏"}>
+          <ArrowRight size={15} />
+        </button>
+      </div>
+      {open ? (
+        <>
+          <div className="daily-panel">
+            <div className="agent-panel-title">
+              <Gauge size={18} />
+              今日学习
+            </div>
+            <div className="metric-row">
+              <div>
+                <span>题目完成</span>
+                <strong>8 / 12</strong>
+              </div>
+              <div>
+                <span>正确率</span>
+                <strong>84%</strong>
+              </div>
+            </div>
+            <div className="thin-progress">
+              <span style={cssVars({ width: "67%" })} />
+            </div>
+            <div className="word-progress-row">
+              <Sparkle size={18} weight="fill" />
+              <div>
+                <strong>11 个截图词条</strong>
+                <span>achieve, challenge, appropriate...</span>
+              </div>
+            </div>
+            <button className="quick-start-button primary" type="button">
+              快速开始
+            </button>
+          </div>
+          <div className="session-list">
+            {SESSION_ROWS.map((session) => (
+              <button className={`session-link ${session.active ? "active" : ""}`} type="button" key={session.title}>
+                <span>{session.date}</span>
+                <strong>{session.title}</strong>
+                <small>{session.progress}</small>
+              </button>
+            ))}
+          </div>
+          <button className="settings-button" type="button">
+            <GearSix size={18} />
+            设置
+          </button>
+        </>
+      ) : (
+        <div className="closed-icons">
+          <Gauge size={19} />
+          <BookOpenText size={19} />
+          <GearSix size={19} />
+        </div>
+      )}
+    </aside>
+  );
+}
+
+function DemoChatMain({
   answer,
   draft,
   messages,
@@ -724,32 +923,37 @@ function DemoMain({
 }: {
   answer: string | null;
   draft: string;
-  messages: Message[];
+  messages: ChatMessage[];
   onAnswer: (answer: string) => void;
   onDraftChange: (draft: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   return (
-    <section className="demo-main">
-      <div className="chat-header">
+    <section className="demo-chat-main">
+      <div className="long-panel compact">
         <div>
-          <span>主聊天</span>
-          <strong>截图词表练习：achieve</strong>
+          <span className="eyebrow">Current Session</span>
+          <h3>截图词表练习：achieve</h3>
+          <p>从截图词条生成考试式题组，并把作答、讲解和掌握度写入同一个学习状态。</p>
         </div>
-        <div className="context-ring" aria-label="上下文容量 18%">
-          18%
+        <div className="score-stack">
+          <StatCard label="题目" value="8/12" />
+          <StatCard label="词汇" value="11" />
+          <StatCard label="正确率" value="84%" />
+          <StatCard label="上下文" value="18%" />
         </div>
       </div>
-      <div className="message-feed">
+      <div className="message-stream">
         {messages.map((message, index) => (
-          <div className={`message message-${message.role}`} key={`${message.role}-${index}-${message.text}`}>
-            {message.text}
+          <div className={`agent-message ${message.role}`} key={`${message.role}-${index}-${message.text}`}>
+            <div className="avatar">{message.role === "assistant" ? <Sparkle size={18} weight="fill" /> : "我"}</div>
+            <div className="bubble">{message.text}</div>
           </div>
         ))}
-        <QuestionCard answer={answer} onAnswer={onAnswer} />
+        <ActiveQuestionCard answer={answer} onAnswer={onAnswer} />
       </div>
-      <form className="chat-input" onSubmit={onSubmit}>
-        <button className="icon-button" type="button" aria-label="上传文件">
+      <form className="chat-composer" onSubmit={onSubmit}>
+        <button type="button" aria-label="上传文件">
           <UploadSimple size={18} />
         </button>
         <input
@@ -757,7 +961,7 @@ function DemoMain({
           onChange={(event) => onDraftChange(event.target.value)}
           placeholder="问问 Lang Drill Agent，或粘贴 3 个以上词条..."
         />
-        <button className="icon-button send-button" type="submit" aria-label="发送消息">
+        <button type="submit" aria-label="发送">
           <PaperPlaneTilt size={18} weight="fill" />
         </button>
       </form>
@@ -765,26 +969,37 @@ function DemoMain({
   );
 }
 
-function QuestionCard({ answer, onAnswer }: { answer: string | null; onAnswer: (answer: string) => void }) {
+function StatCard({ label, value }: { label: string; value: string }) {
   return (
-    <article className="active-question-card">
-      <div className="question-card-header">
-        <span>当前题 · CET-4 语境选择</span>
-        <strong>1 / 12</strong>
+    <div className="stat-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function ActiveQuestionCard({ answer, onAnswer }: { answer: string | null; onAnswer: (answer: string) => void }) {
+  const options = ["A. assess", "B. achieve", "C. approach", "D. advertise"];
+  return (
+    <article className="question-dock">
+      <div className="question-head">
+        <Cards size={18} />
+        <strong>当前题 · CET-4 语境选择</strong>
+        <span>1 / 12</span>
       </div>
       <p>The team worked together to ___ the goal before Friday.</p>
-      <div className="option-grid">
-        {QUESTION_OPTIONS.map((option) => {
+      <div className="options">
+        {options.map((option) => {
           const selected = answer === option;
           const correct = option.includes("achieve");
           return (
             <button
-              className={`option-button ${selected ? "is-selected" : ""} ${selected && correct ? "is-correct" : ""} ${
-                selected && !correct ? "is-wrong" : ""
+              className={`${selected ? "selected" : ""} ${selected && correct ? "correct" : ""} ${
+                selected && !correct ? "wrong" : ""
               }`}
               type="button"
-              key={option}
               onClick={() => onAnswer(option)}
+              key={option}
             >
               {selected && correct ? <CheckCircle size={17} /> : selected ? <XCircle size={17} /> : <span />}
               {option}
@@ -792,49 +1007,62 @@ function QuestionCard({ answer, onAnswer }: { answer: string | null; onAnswer: (
           );
         })}
       </div>
-      {answer ? (
-        <div className="answer-feedback">
-          {answer.includes("achieve") ? "正确。achieve 表示“达成目标”。" : "这一题的正确答案是 B. achieve。"}
-        </div>
-      ) : null}
+      {answer ? <div className="answer-note">{answer.includes("achieve") ? "正确。achieve 表示达成目标。" : "正确答案是 B. achieve。"}</div> : null}
     </article>
   );
 }
 
-function DemoWorkbench({ activeTab, onTabChange }: { activeTab: WorkbenchTab; onTabChange: (tab: WorkbenchTab) => void }) {
+function DemoRightRail({
+  activeTab,
+  importParsed,
+  open,
+  onImportParsed,
+  onTabChange,
+  onToggle,
+}: {
+  activeTab: WorkbenchTab;
+  importParsed: boolean;
+  open: boolean;
+  onImportParsed: (parsed: boolean) => void;
+  onTabChange: (tab: WorkbenchTab) => void;
+  onToggle: () => void;
+}) {
   return (
-    <aside className="demo-workbench">
-      <div className="workbench-tabs" role="tablist" aria-label="右侧工作台">
-        <WorkbenchTabButton active={activeTab === "branch"} icon={<GitBranch size={17} />} label="分支" onClick={() => onTabChange("branch")} />
-        <WorkbenchTabButton active={activeTab === "import"} icon={<ImageSquare size={17} />} label="截图" onClick={() => onTabChange("import")} />
-        <WorkbenchTabButton active={activeTab === "skills"} icon={<PlugsConnected size={17} />} label="Skills" onClick={() => onTabChange("skills")} />
-        <WorkbenchTabButton active={activeTab === "settings"} icon={<GearSix size={17} />} label="设置" onClick={() => onTabChange("settings")} />
-      </div>
-      <div className="workbench-panel">
-        {activeTab === "branch" ? <BranchPanel /> : null}
-        {activeTab === "import" ? <ImportPanel /> : null}
-        {activeTab === "skills" ? <SkillsPanel /> : null}
-        {activeTab === "settings" ? <SettingsPanel /> : null}
-      </div>
+    <aside className="demo-right-rail">
+      <button className="right-toggle" type="button" onClick={onToggle} aria-label={open ? "折叠右栏" : "展开右栏"}>
+        <ArrowRight size={15} />
+      </button>
+      {open ? (
+        <>
+          <div className="right-tabs" role="tablist" aria-label="右侧工作台">
+            <RailTab active={activeTab === "branch"} icon={<GitBranch size={16} />} label="分支" onClick={() => onTabChange("branch")} />
+            <RailTab active={activeTab === "import"} icon={<ImageSquare size={16} />} label="截图" onClick={() => onTabChange("import")} />
+            <RailTab active={activeTab === "skills"} icon={<PlugsConnected size={16} />} label="Skills" onClick={() => onTabChange("skills")} />
+            <RailTab active={activeTab === "settings"} icon={<GearSix size={16} />} label="设置" onClick={() => onTabChange("settings")} />
+          </div>
+          <div className="right-panel" id="skills">
+            {activeTab === "branch" ? <BranchPanel /> : null}
+            {activeTab === "import" ? <ImportPanel parsed={importParsed} onParsed={onImportParsed} /> : null}
+            {activeTab === "skills" ? <SkillsPanel /> : null}
+            {activeTab === "settings" ? <SettingsPanel /> : null}
+          </div>
+        </>
+      ) : (
+        <div className="closed-icons">
+          <GitBranch size={19} />
+          <ImageSquare size={19} />
+          <PlugsConnected size={19} />
+        </div>
+      )}
     </aside>
   );
 }
 
-function WorkbenchTabButton({
-  active,
-  icon,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  icon: ReactNode;
-  label: string;
-  onClick: () => void;
-}) {
+function RailTab({ active, icon, label, onClick }: { active: boolean; icon: ReactNode; label: string; onClick: () => void }) {
   return (
-    <button className={`tab-button ${active ? "is-active" : ""}`} type="button" onClick={onClick}>
+    <button className={active ? "active" : ""} type="button" onClick={onClick}>
       {icon}
-      {label}
+      <span>{label}</span>
     </button>
   );
 }
@@ -844,10 +1072,10 @@ function BranchPanel() {
     <div className="panel-stack">
       <div className="reference-card">
         <span>引用当前题</span>
-        <p>The team worked together to ___ the goal.</p>
+        <p>The team worked together to ___ the goal before Friday.</p>
       </div>
       <textarea defaultValue="解释 achieve 和 accomplish 在四级语境题中的区别。" />
-      <button className="button primary-button" type="button">
+      <button className="inline-primary" type="button">
         <ChatsCircle size={18} />
         创建分支
       </button>
@@ -855,29 +1083,38 @@ function BranchPanel() {
   );
 }
 
-function ImportPanel() {
+function ImportPanel({ parsed, onParsed }: { parsed: boolean; onParsed: (parsed: boolean) => void }) {
   return (
     <div className="panel-stack">
       <div className="drop-zone">
-        <ImageSquare size={24} />
+        <ImageSquare size={25} />
         <strong>拖入截图或文件</strong>
-        <span>选择文件后先进入待解析队列</span>
+        <span>选择后先进入待解析队列</span>
       </div>
-      <button className="button quiet-button" type="button">
+      <button className="inline-action" type="button" onClick={() => onParsed(true)}>
         <Play size={18} />
         解析文本
       </button>
-      <div className="parsed-words">
-        {FLOW_WORDS.map((word) => (
-          <div key={word.term}>
-            <strong>{word.term}</strong>
-            <span>{word.meaning}</span>
+      {parsed ? (
+        <>
+          <div className="parsed-text">achieve v. 達成する{"\n"}challenge n. 挑戦{"\n"}appropriate adj. 適切な</div>
+          <div className="parsed-words">
+            {FLOW_WORDS.slice(0, 5).map((word) => (
+              <div key={word.term}>
+                <strong>{word.term}</strong>
+                <span>
+                  {word.pos} {word.meaning}
+                </span>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-      <button className="button primary-button" type="button">
-        导入并开始练习
-      </button>
+          <button className="inline-primary" type="button">
+            导入并开始练习
+          </button>
+        </>
+      ) : (
+        <p className="hint">点击解析文本后展示可编辑词条卡，导入动作会放在结果区底部。</p>
+      )}
     </div>
   );
 }
@@ -885,18 +1122,20 @@ function ImportPanel() {
 function SkillsPanel() {
   return (
     <div className="panel-stack">
-      <div className="tool-note">
+      <div className="skill-highlight">
         <Database size={18} />
-        内置联网检索始终可见，实际调用仍受权限控制。
+        <div>
+          <strong>内置联网检索</strong>
+          <span>始终可见，实际调用受权限控制。</span>
+        </div>
       </div>
-      {SKILL_PLACEHOLDERS.map((skill) => (
-        <div className="skill-card" key={skill.id}>
+      {SKILL_ROWS.map((skill) => (
+        <div className="skill-card" key={skill.name}>
           <div>
             <strong>{skill.name}</strong>
-            <span>{skill.path}</span>
+            <span>{skill.body}</span>
           </div>
           <small>{skill.state}</small>
-          <p>{skill.body}</p>
         </div>
       ))}
     </div>
@@ -905,21 +1144,25 @@ function SkillsPanel() {
 
 function SettingsPanel() {
   return (
-    <div className="panel-stack settings-stack">
+    <div className="panel-stack settings-preview">
       <label>
-        API Format
-        <select defaultValue="openai">
-          <option value="openai">OpenAI-compatible</option>
-          <option value="anthropic">Anthropic Messages</option>
+        Provider
+        <select defaultValue="mimo">
+          <option value="mimo">Xiaomi MiMo</option>
+          <option value="openai">OpenAI GPT</option>
+          <option value="deepseek">DeepSeek</option>
+        </select>
+      </label>
+      <label>
+        Model
+        <select defaultValue="mimo-v2.5">
+          <option value="mimo-v2.5">mimo-v2.5</option>
+          <option value="deepseek-chat">deepseek-chat</option>
         </select>
       </label>
       <label>
         Base URL
         <input defaultValue="https://api.example.com/v1" />
-      </label>
-      <label>
-        数据目录
-        <input defaultValue="C:\\Users\\You\\AppData\\Roaming\\Lang Drill Agent\\data" />
       </label>
       <div className="permission-list">
         <span>截图导入</span>
@@ -930,61 +1173,24 @@ function SettingsPanel() {
   );
 }
 
-function ScreenshotsSection() {
-  return (
-    <section className="screens-section" id="screens">
-      <div className="section-heading reveal">
-        <h2>真实前端截图素材</h2>
-        <p>展示站使用脱敏截图辅助说明，所有交互演示仍在本页静态模拟器里完成。</p>
-      </div>
-      <div className="screenshot-grid">
-        {SCREENSHOTS.map((shot) => (
-          <figure className="screenshot-card reveal" key={shot.src}>
-            <img src={shot.src} alt={shot.title} loading="lazy" />
-            <figcaption>
-              <strong>{shot.title}</strong>
-              <span>{shot.body}</span>
-            </figcaption>
-          </figure>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function InstallSection() {
   return (
     <section className="install-section reveal">
       <div>
-        <h2>本地应用优先，网页体验正在演进</h2>
-        <p>
-          当前推荐安装 Windows 桌面版体验完整能力。展示站里的模拟器可探索布局、题卡和设置流程，但不会调用真实模型或读取本地数据。
-        </p>
+        <h2>Download the local workbench.</h2>
+        <p>Windows desktop app runs the same Web experience with a local FastAPI backend and SQLite learning database.</p>
       </div>
       <div className="install-actions">
-        <a className="button primary-button" href={DOWNLOAD_URL}>
-          <DownloadSimple size={20} />
-          Windows 安装包
+        <a className="hero-button primary" href={DOWNLOAD_URL}>
+          <DownloadSimple size={19} />
+          Download
         </a>
-        <a className="button quiet-button" href={GITHUB_URL} target="_blank" rel="noreferrer">
-          <GithubLogo size={20} />
-          GitHub 仓库
+        <a className="hero-button secondary" href={GITHUB_URL} target="_blank" rel="noreferrer">
+          <GithubLogo size={20} weight="fill" />
+          GitHub
         </a>
       </div>
     </section>
-  );
-}
-
-function SiteFooter() {
-  return (
-    <footer className="site-footer">
-      <span>Lang Drill Agent</span>
-      <span>Vocabulary in. Exam drills out.</span>
-      <a href={GITHUB_URL} target="_blank" rel="noreferrer">
-        GitHub
-        <ArrowRight size={15} />
-      </a>
-    </footer>
   );
 }
 
