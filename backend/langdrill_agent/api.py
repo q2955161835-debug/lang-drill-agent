@@ -392,6 +392,41 @@ _PERMISSION_TOOL_GUIDANCE: dict[str, dict[str, str]] = {
 }
 
 
+_PRODUCT_MANUAL_CONTEXT: dict[str, Any] = {
+    "name": "Lang Drill Agent",
+    "positioning": "本地 Web 三栏语言学习刷题工作台，以数据库追踪正式学习状态，模型负责生成、讲解和总结。",
+    "primary_interface": {
+        "web": "左侧学习状态，中间聊天与题卡，右侧分支、手机映像和截图导入。",
+        "cli": "CLI 只用于开发、调试、自动化和数据维护，不是普通用户学习主路径。",
+    },
+    "core_capabilities": [
+        "普通学习聊天：回答学习建议、当前设置、产品使用方式和题目追问。",
+        "正式刷题：先生成完整题组并写入数据库，再逐题展示、判分、讲解和推进。",
+        "截图/文件词表导入：支持右侧截图导入，也支持主聊天粘贴词表或上传/拖入图片、TXT、Markdown、PDF、DOCX 文件。",
+        "答题讲解：程序先判定客观对错，再让 Evaluator Tutor 结合上下文、用户背景和自定义指令生成讲解。",
+        "分支对话：可基于选中文本、当前题或最新消息创建独立追问，不写回主会话学习记录。",
+        "当日总结：用户要求总结/复盘时，基于当日数据库明细调用当前模型生成 Markdown 复盘。",
+        "联网检索：内置无密钥网页检索在联网权限开启时可用；拓展 Skills 与内置联网工具分开管理。",
+        "历年真题参考：保存真题资产索引和解析摘要，组卷参考风格与题型，不输出版权不明完整真题。",
+        "上下文容量：聊天栏显示当前会话上下文占用，并支持主动压缩。",
+    ],
+    "settings_pages": {
+        "model": "配置供应商、Base URL、API 格式、模型、视觉能力、思考等级、上下文容量和 MinerU token。",
+        "permissions": "维护会话 Agent 可触发能力；非敏感能力默认开启，敏感保存动作仍必须用户确认。",
+        "skills": "独立管理拓展 Skills；Multi Search Engine 只生成可审计搜索入口，不替代内置联网检索。",
+        "study": "维护学习目标、背景、人格和自定义指令。",
+        "data": "迁移或初始化题目数据库目录。",
+        "syllabus": "维护考纲、历年真题和题型范围。",
+    },
+    "answer_rules": [
+        "用户询问产品功能、使用流程、权限边界、当前模型配置或思考等级时，优先依据本说明和 context_pack.model_runtime 直接回答。",
+        "API Key、MinerU token、cookie 和数据库密码属于敏感信息，只能回答是否已配置或给出脱敏预览，不能索要、回显或猜测明文。",
+        "Base URL、API 格式、供应商、模型名、视觉能力、思考等级和上下文容量不是密钥，可在用户询问配置时回答。",
+        "不要声称已保存设置、导入试卷、迁移数据库或写入题库，除非程序接口结果明确完成。",
+    ],
+}
+
+
 def _enabled_tool_guidance(status: dict[str, Any]) -> list[dict[str, str]]:
     enabled_ids = set(status.get("enabled_feature_ids", []))
     guidance: list[dict[str, str]] = []
@@ -465,9 +500,86 @@ def _sanitized_skills_context(conn) -> dict[str, Any]:
     }
 
 
+def _model_option_id(option: Any) -> str:
+    if isinstance(option, dict):
+        return str(option.get("id") or option.get("model") or option.get("name") or "")
+    return str(option or "")
+
+
+def _sanitized_model_runtime_context(conn) -> dict[str, Any]:
+    service = ModelConfigService(conn)
+    config = service.current()
+    providers = service.providers()
+    provider = next((item for item in providers if item.get("id") == config.get("provider_id")), {})
+    model_options = provider.get("model_options", []) if isinstance(provider.get("model_options", []), list) else []
+    current_model = next((item for item in model_options if _model_option_id(item) == config.get("model")), {})
+    thinking_options = config.get("thinking_level_options") or []
+    current_thinking = next(
+        (item for item in thinking_options if str(item.get("id", "")) == str(config.get("thinking_level", ""))),
+        {},
+    )
+    provider_summaries = []
+    for item in providers:
+        if item.get("id") == "mock":
+            continue
+        options = item.get("model_options", []) if isinstance(item.get("model_options", []), list) else []
+        provider_summaries.append(
+            {
+                "id": item.get("id", ""),
+                "label": item.get("label", ""),
+                "base_url": item.get("base_url", ""),
+                "api_format": item.get("api_format", ""),
+                "default_model": item.get("model", ""),
+                "has_api_key": bool(item.get("has_api_key", False)),
+                "api_key_status": "configured" if item.get("has_api_key") else "not_configured",
+                "visible_in_picker": bool(item.get("visible_in_picker", False)),
+                "model_count": len([option for option in options if _model_option_id(option)]),
+            }
+        )
+    return {
+        "current": {
+            "provider_id": config.get("provider_id", ""),
+            "provider_label": provider.get("label", config.get("provider_id", "")),
+            "base_url": config.get("base_url", ""),
+            "api_format": config.get("api_format", ""),
+            "model": config.get("model", ""),
+            "model_label": current_model.get("label", config.get("model", "")) if isinstance(current_model, dict) else config.get("model", ""),
+            "has_api_key": bool(config.get("has_api_key", False)),
+            "api_key_status": "configured" if config.get("has_api_key") else "not_configured",
+            "vision": bool(config.get("vision", False)),
+            "visible_in_picker": bool(config.get("visible_in_picker", False)),
+            "reasoning_parameter": config.get("reasoning_parameter", ""),
+            "thinking_level": config.get("thinking_level", ""),
+            "thinking_label": current_thinking.get("label", config.get("thinking_level", "")) if current_thinking else "",
+            "thinking_api_value": config.get("thinking_api_value", ""),
+            "thinking_options": [
+                {
+                    "id": item.get("id", ""),
+                    "label": item.get("label", ""),
+                    "api_value": item.get("api_value", ""),
+                    "custom": bool(item.get("custom", False)),
+                }
+                for item in thinking_options
+            ],
+            "context_tokens": current_model.get("context_tokens", 0) if isinstance(current_model, dict) else 0,
+        },
+        "configured_providers": provider_summaries,
+        "sensitive_fields_excluded": ["api_key", "mineru_token", "cookie", "database_password"],
+    }
+
+
 def _runtime_instruction_modules(task_type: str) -> list[dict[str, str]]:
     if task_type not in {TaskType.general_chat.value, TaskType.branch_chat.value, TaskType.summary.value, "evaluation"}:
         return []
+    product_contract = {
+        "id": "runtime.product_manual_contract",
+        "content": (
+            "用户询问 Lang Drill Agent 的产品功能、使用步骤、权限边界、文件导入、截图导入、分支、总结、联网、模型配置或思考等级时，"
+            "必须依据 context_pack.product_manual 和 context_pack.model_runtime 直接回答。"
+            "供应商、模型、Base URL、API 格式、视觉能力、思考等级、上下文容量和密钥是否已配置可以说明；"
+            "API Key、MinerU token、cookie 和数据库密码明文不可读取、索要或回显。"
+        ),
+    }
     profile_contract = {
         "id": "runtime.profile_context_contract",
         "content": (
@@ -490,6 +602,7 @@ def _runtime_instruction_modules(task_type: str) -> list[dict[str, str]]:
     }
     if task_type == TaskType.branch_chat.value:
         return [
+            product_contract,
             profile_contract,
             tool_contract,
             {
@@ -504,7 +617,7 @@ def _runtime_instruction_modules(task_type: str) -> list[dict[str, str]]:
                 ),
             },
         ]
-    return [profile_contract, tool_contract]
+    return [product_contract, profile_contract, tool_contract]
 
 
 def _runtime_context(
@@ -516,6 +629,8 @@ def _runtime_context(
     profile = ProfileService(conn).get()
     return {
         "profile": profile.model_dump(exclude={"global_user_prompt"}),
+        "product_manual": _PRODUCT_MANUAL_CONTEXT,
+        "model_runtime": _sanitized_model_runtime_context(conn),
         "agent_permissions": _sanitized_permission_context(conn),
         "skills": _sanitized_skills_context(conn),
         "session_id": session_id,
