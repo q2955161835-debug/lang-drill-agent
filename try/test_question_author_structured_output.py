@@ -73,6 +73,14 @@ class StructuredQuestionProvider:
         return ModelResult(content=content, input_tokens=20, output_tokens=20, latency_ms=1, model=self.model)
 
 
+class TimeoutQuestionProvider:
+    provider_id = "timeout"
+    model = "timeout-model"
+
+    def complete(self, pack):
+        raise TimeoutError("simulated provider timeout")
+
+
 def test_question_author_persists_valid_structured_model_output(
     tmp_path: Path,
     monkeypatch,
@@ -106,4 +114,36 @@ def test_question_author_persists_valid_structured_model_output(
     assert active["prompt"].startswith("Choose the best word")
     assert [row["status"] for row in question_rows] == ["ready", "ready", "ready", "ready"]
     assert [row["validation_status"] for row in call_rows] == ["passed"]
+
+
+def test_question_author_falls_back_when_provider_times_out(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("LANGDRILL_PAPER_ROOT", str(tmp_path / "papers"))
+    db_path = tmp_path / "timeout-fallback.db"
+    init_db(db_path)
+    provider = TimeoutQuestionProvider()
+
+    with transaction(db_path) as conn:
+        ProfileService(conn).update(UserProfile(exam_id="cet4", exam_name="大学英语四级", target_language="英语"))
+        session_id = SessionService(conn).ensure_session(None, "timeout fallback", force_new=True)
+
+        result = QuestionAuthorAgent(conn, provider).ensure_question_set(
+            session_id,
+            "collection: 收藏\ncollision: 碰撞\ncontext: 语境\nmethod: 方法",
+            target_count=4,
+        )
+        active = QuestionService(conn).active_question(session_id)
+        question_rows = conn.execute(
+            "SELECT type, status FROM questions WHERE session_id=? ORDER BY sequence ASC",
+            (session_id,),
+        ).fetchall()
+        call_count = conn.execute(
+            "SELECT COUNT(*) AS count FROM model_calls WHERE agent_name='question_author'"
+        ).fetchone()["count"]
+
+    assert result["created"] >= 4
+    assert "本地规则" in str(result["opening_message"])
+    assert active is not None
+    assert len(question_rows) >= 4
+    assert all(row["status"] == "ready" for row in question_rows)
+    assert call_count == 0
 
