@@ -928,8 +928,10 @@ body.panel-resize-active * {
   grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   overflow: hidden;
 }
-.branch-panel .panel-title { font-size: 1rem; border-color: var(--line); }
+.branch-panel .panel-title { grid-row: 1; font-size: 1rem; border-color: var(--line); }
+.branch-panel > .hint { grid-row: 2; }
 .branch-quote-card {
+  grid-row: 3;
   display: grid;
   gap: 8px;
   border: var(--border-thin);
@@ -969,7 +971,9 @@ body.panel-resize-active * {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.branch-panel > .workbench-actions { grid-row: 3; }
 .branch-thread {
+  grid-row: 4;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
@@ -1005,11 +1009,10 @@ body.panel-resize-active * {
 .branch-composer {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 40px;
+  grid-row: 5;
   gap: 8px;
   align-items: end;
   min-width: 0;
-  position: sticky;
-  bottom: 0;
   z-index: 2;
   margin: 0 -2px -2px;
   padding: 8px 2px 2px;
