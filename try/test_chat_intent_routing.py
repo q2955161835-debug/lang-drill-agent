@@ -56,6 +56,8 @@ def test_explicit_drill_requests_still_start_drill() -> None:
     assert router.route("今天练 CET-4 高频词汇", has_active_question=False) is TaskType.daily_drill
     assert router.route("collision: 碰撞；冲突", has_active_question=False) is TaskType.daily_drill
     assert router.route("再来点题", has_active_question=False) is TaskType.daily_drill
+    assert router.route("再来2题吧", has_active_question=False) is TaskType.daily_drill
+    assert router.route("再来 2 题吧", has_active_question=False) is TaskType.daily_drill
     assert router.route("在来点题", has_active_question=False) is TaskType.daily_drill
     assert router.route("给我来两道阅读题", has_active_question=False) is TaskType.daily_drill
     assert router.route("再来一组翻译判断题", has_active_question=False) is TaskType.daily_drill
