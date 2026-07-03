@@ -2,8 +2,6 @@
 
 Lang Drill Agent 是一个面向语言考试备考的本地 Web（网页）学习工作台。它把“导入词表、生成题组、逐题作答、判题讲解、错题回流和学习统计”串成可追踪流程，重点服务英语四级/六级（CET-4/CET-6，大学英语四级/六级）、法语四级和日语四级/六级备考。
 
-完整维护说明见 [doc/README-full.md](doc/README-full.md)。
-
 ## 解决的问题
 
 传统背词和刷题工具常见问题是：词表、题目、作答记录、错题复习和模型讲解分散在不同地方。这个项目把正式学习状态统一写入 SQLite（轻量数据库），模型只负责生成和讲解，题目落库、判分、进度和统计由程序负责。
@@ -37,10 +35,6 @@ flowchart LR
 - Agent 实现：[backend/langdrill_agent/agents.py](backend/langdrill_agent/agents.py)
 - 服务层：[backend/langdrill_agent/services.py](backend/langdrill_agent/services.py)
 - 测试：[try/](try/)
-
-## 截图
-
-![三栏学习工作台](doc/screenshots/workbench-overview.jpg)
 
 ## 本地运行
 
