@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type ClipboardEvent, type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import {
@@ -26,6 +26,7 @@ import {
   Sun,
   Target,
   Trash,
+  UploadSimple,
   UserCircle,
   X
 } from "@phosphor-icons/react";
@@ -1016,6 +1017,7 @@ export default function App() {
   const appRef = useRef<HTMLDivElement | null>(null);
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const composerFileInputRef = useRef<HTMLInputElement | null>(null);
   const selectedTextRef = useRef("");
   const [profile, setProfile] = useState<Profile>(MOCK_PROFILE);
   const [providers, setProviders] = useState<ProviderOption[]>(FALLBACK_PROVIDERS);
@@ -1403,7 +1405,7 @@ export default function App() {
 
   const handleComposerFiles = useCallback(async (files: File[]) => {
     if (!files.length || sending) return;
-    setComposerFileStatus("正在读取拖入文件...");
+    setComposerFileStatus("正在读取文件...");
     try {
       const imageFiles = files.filter(isImageFile);
       const extractFiles = files.filter((file) => !isImageFile(file));
@@ -1443,6 +1445,35 @@ export default function App() {
     event.preventDefault();
     setComposerDragActive(false);
     const files = Array.from(event.dataTransfer.files || []);
+    void handleComposerFiles(files);
+  }, [handleComposerFiles]);
+
+  const handleComposerFileSelect = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+    void handleComposerFiles(files);
+  }, [handleComposerFiles]);
+
+  const handleComposerPaste = useCallback((event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const withClipboardName = (file: File, index: number) => {
+      if (file.name) return file;
+      const extension = file.type.split("/")[1] || "png";
+      return new File([file], `clipboard-image-${Date.now()}-${index}.${extension}`, { type: file.type || "image/png" });
+    };
+    const clipboardFiles = Array.from(event.clipboardData.files || []);
+    const itemFiles = clipboardFiles.length
+      ? []
+      : Array.from(event.clipboardData.items || [])
+        .filter((item) => item.kind === "file")
+        .map((item, index) => {
+          const file = item.getAsFile();
+          if (!file) return null;
+          return withClipboardName(file, index);
+        })
+        .filter((file): file is File => Boolean(file));
+    const files = clipboardFiles.length ? clipboardFiles.map(withClipboardName) : itemFiles;
+    if (!files.length) return;
+    event.preventDefault();
     void handleComposerFiles(files);
   }, [handleComposerFiles]);
 
@@ -1977,10 +2008,29 @@ export default function App() {
             }}
             onDrop={handleComposerDrop}
           >
+            <input
+              ref={composerFileInputRef}
+              className="hidden-file-input"
+              type="file"
+              multiple
+              accept=".png,.jpg,.jpeg,.jp2,.webp,.gif,.bmp,.txt,.md,.markdown,.pdf,.doc,.docx,image/*"
+              onChange={handleComposerFileSelect}
+            />
+            <button
+              type="button"
+              className="composer-upload-button"
+              onClick={() => composerFileInputRef.current?.click()}
+              disabled={sending}
+              title="上传文件"
+              aria-label="上传文件"
+            >
+              <UploadSimple size={20} />
+            </button>
             <textarea
               ref={composerRef}
               value={input}
               onChange={(event) => setInput(event.target.value)}
+              onPaste={handleComposerPaste}
               placeholder={sending ? "发送中..." : "输入今日学习内容、答案或任何学习请求"}
               disabled={sending}
               name="langdrill-chat-message"
@@ -2958,7 +3008,27 @@ function SettingsDialog({
     }
     setSaveState(`默认模型已切换为 ${data.model_config.model}。`);
   };
+  const persistAgentPermissions = async () => {
+    setPermissionMessage("正在保存权限...");
+    try {
+      const data = await apiPost<{ agent_permissions: AgentSettingsPermissionsStatus }>("/api/settings/agent-permissions", {
+        enabled_feature_ids: permissionDraft.enabled_feature_ids
+      });
+      setPermissionDraft(data.agent_permissions);
+      onAgentPermissionsChange(data.agent_permissions);
+      setPermissionMessage("Agent 设置权限已保存。");
+      return true;
+    } catch (err) {
+      setPermissionMessage(err instanceof Error ? err.message : "权限保存失败");
+      return false;
+    }
+  };
   const saveSettings = async () => {
+    if (activeSettingsTab === "permissions") {
+      const saved = await persistAgentPermissions();
+      if (saved) onClose();
+      return;
+    }
     // 持久化 profile 到后端
     try {
       const profileData = await apiPost<{ profile: Profile; sessions?: SessionItem[]; syllabus_status?: SyllabusStatus; past_paper_status?: PastPaperStatus; learning_stats?: LearningStats }>("/api/profile", {
@@ -3197,19 +3267,6 @@ function SettingsDialog({
       }))
     });
     setPermissionMessage("");
-  };
-  const saveAgentPermissions = async () => {
-    setPermissionMessage("正在保存权限...");
-    try {
-      const data = await apiPost<{ agent_permissions: AgentSettingsPermissionsStatus }>("/api/settings/agent-permissions", {
-        enabled_feature_ids: permissionDraft.enabled_feature_ids
-      });
-      setPermissionDraft(data.agent_permissions);
-      onAgentPermissionsChange(data.agent_permissions);
-      setPermissionMessage("Agent 设置权限已保存。");
-    } catch (err) {
-      setPermissionMessage(err instanceof Error ? err.message : "权限保存失败");
-    }
   };
   const refreshSkillsStatus = async () => {
     setSkillsMessage("正在刷新拓展 Skills 状态...");
@@ -4058,7 +4115,6 @@ function SettingsDialog({
                   ))}
                 </div>
                 <div className="inline-row wrap-row">
-                  <button className="inline-action primary-inline" onClick={() => void saveAgentPermissions()}>保存权限</button>
                   <button
                     className="inline-action"
                     onClick={() => {
@@ -4212,7 +4268,7 @@ function SettingsDialog({
         <div className="modal-actions">
           <button onClick={() => void resetDefaults()}>恢复默认设置</button>
           <button onClick={onClose}>取消</button>
-          <button className="primary" onClick={() => void saveSettings()}>保存</button>
+          <button className="primary" onClick={() => void saveSettings()}>{activeSettingsTab === "permissions" ? "保存权限" : "保存"}</button>
         </div>
       </div>
     </div>

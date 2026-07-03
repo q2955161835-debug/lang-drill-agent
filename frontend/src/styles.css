@@ -777,7 +777,7 @@ body.panel-resize-active * {
 }
 .composer {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   gap: 12px;
   width: min(920px, 100%);
   margin: 0 auto;
@@ -799,6 +799,25 @@ body.panel-resize-active * {
   font-size: 0.82rem;
   font-weight: 650;
 }
+.composer-upload-button {
+  align-self: end;
+  display: inline-grid;
+  place-items: center;
+  width: 50px;
+  height: 50px;
+  border: var(--border-thin);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-strong) 86%, var(--bg));
+  color: var(--muted-strong);
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease, color 0.15s ease;
+}
+.composer-upload-button:hover:not(:disabled) {
+  background: var(--surface-strong);
+  border-color: var(--line-strong);
+  color: var(--accent);
+}
+.composer-upload-button:active:not(:disabled) { transform: translateY(1px); }
+.composer-upload-button:disabled { opacity: 0.55; cursor: not-allowed; }
 .composer textarea {
   border: 0;
   outline: 0;

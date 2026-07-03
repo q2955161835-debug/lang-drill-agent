@@ -209,6 +209,47 @@ def test_saved_settings_question_calls_model_with_runtime_context(tmp_path: Path
     )
 
 
+def test_product_question_includes_manual_and_sanitized_model_runtime(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "product-manual-model-runtime.db"
+    monkeypatch.setenv("LANGDRILL_DB_PATH", str(db_path))
+    monkeypatch.setenv("LANGDRILL_DEFAULT_PROVIDER", "mimo")
+    monkeypatch.setenv("LANGDRILL_DEFAULT_MODEL", "mimo-v2.5")
+    monkeypatch.setenv("LANGDRILL_PROVIDER_BASE_URL", "https://api.xiaomimimo.com/anthropic")
+    monkeypatch.setenv("LANGDRILL_PROVIDER_API_KEY_MIMO", "super-secret-mimo-key")
+    init_db(db_path)
+
+    client = TestClient(app)
+
+    captured = {}
+
+    def fake_complete(self, pack):
+        captured["pack"] = pack
+        return ModelResult(content="当前配置回答", input_tokens=10, output_tokens=4, latency_ms=1, model=self.model)
+
+    monkeypatch.setattr(ModelProvider, "complete", fake_complete)
+    response = client.post(
+        "/api/chat",
+        json={"content": "你是什么模型？当前思考等级是什么？这个产品怎么导入文件？", "force_new_session": True},
+    )
+
+    assert response.status_code == 200
+    pack = captured["pack"]
+    module_ids = [module["id"] for module in pack.system_modules]
+    assert "runtime.product_manual_contract" in module_ids
+    assert pack.context_pack["product_manual"]["name"] == "Lang Drill Agent"
+    current = pack.context_pack["model_runtime"]["current"]
+    assert current["provider_id"] == "mimo"
+    assert current["provider_label"] == "Xiaomi MiMo"
+    assert current["model"] == "mimo-v2.5"
+    assert current["base_url"] == "https://api.xiaomimimo.com/anthropic"
+    assert current["api_format"] == "anthropic-messages"
+    assert current["api_key_status"] == "configured"
+    assert current["thinking_level"] == "enabled"
+    assert current["thinking_label"] == "开启"
+    assert "api_key" in pack.context_pack["model_runtime"]["sensitive_fields_excluded"]
+    assert "super-secret-mimo-key" not in repr(pack.context_pack)
+
+
 def test_question_explanation_prompt_uses_runtime_context(tmp_path: Path, monkeypatch) -> None:
     db_path = tmp_path / "question-explanation-context.db"
     monkeypatch.setenv("LANGDRILL_DB_PATH", str(db_path))
