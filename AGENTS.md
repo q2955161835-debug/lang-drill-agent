@@ -76,6 +76,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - `frontend/`：React（前端框架）+ TypeScript（类型化 JavaScript）+ Vite（前端构建工具）网页前端。
 - `frontend/src/api.ts`：前端 API（接口）基础地址。默认空字符串，Web（网页）模式继续走相对 `/api` 和 Vite（前端构建工具）代理；桌面构建通过 `VITE_LANGDRILL_API_BASE=http://127.0.0.1:18080` 指向桌面本地后端。
 - `frontend/public/assets/`：前端静态资源目录，当前保存深色主题背景图、浅色/深色 logo（标志）等无需打包导入的公开资产；浏览器 favicon（页签图标）使用 `frontend/public/favicon-light.png` 和 `frontend/public/favicon-dark.png`；聊天气泡使用浅蓝紫/深蓝紫专用颜色，不能把用户/助手消息退回纯白或纯黑。
+- `logo/`：用户提供的浅色/深色 logo（标志）源图目录；替换品牌时应从这里重新生成 `frontend/public/assets/logo-light.png`、`frontend/public/assets/logo-dark.png`、`frontend/public/favicon-light.png`、`frontend/public/favicon-dark.png` 和 `src-tauri/icons/icon.ico`。
 - `frontend/src/App.tsx`：前端主入口，负责可拖拽三栏布局、聊天、主聊天粘贴图片/拖拽文件/上传按钮导入、设置、初始化、当前题吸附显示、已答题回顾卡片、上下文容量圆环、Agent 设置权限、拓展 Skills（拓展技能）状态页和右侧工作台接入。
 - `frontend/src/components/`：前端可复用组件，当前重点是 `RightWorkbench.tsx`、`ContextMenu.tsx` 和 `MarkdownText.tsx`；`RightWorkbench.tsx` 折叠和页签切换必须隐藏但不卸载内部面板状态。
 - `papers/`：按考试类型分开的历年真题资产目录骨架；`raw/` 存原始试卷或粘贴文本，`parsed/` 存解析 JSON（JSON 数据交换格式），实际导入内容默认不提交。

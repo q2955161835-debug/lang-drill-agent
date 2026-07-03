@@ -211,12 +211,13 @@ body.panel-resize-active * {
   min-width: 0;
 }
 .brand-logo {
-  width: 38px;
+  width: 72px;
   height: 38px;
-  flex: 0 0 38px;
+  flex: 0 0 72px;
   border-radius: 8px;
-  object-fit: cover;
+  object-fit: contain;
   border: var(--border-thin);
+  background: var(--surface);
 }
 .brand-logo-dark { display: none; }
 :root[data-theme="dark"] .brand-logo-light { display: none; }
