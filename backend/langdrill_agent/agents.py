@@ -253,7 +253,24 @@ class QuestionAuthorAgent:
             output_schema=AuthoredQuestionSet.model_json_schema(),
             allow_global_user_prompt=False,
         )
-        result = self.provider.complete(pack)
+        try:
+            result = self.provider.complete(pack)
+        except Exception:
+            logger.warning("model request failed during question authoring, using fallback", exc_info=True)
+            questions = self._fallback_question_set(
+                session_id=session_id,
+                exam_name=profile.exam_name,
+                exam_id=profile.exam_id,
+                start_sequence=start_sequence,
+                target_count=count,
+                content_pool=content_pool,
+            )
+            question_service.save_questions(questions)
+            return {
+                "created": len(questions),
+                "opening_message": "模型暂时不可用，已使用本地规则生成一组考试式练习题。",
+                "progress": question_service.question_progress(session_id),
+            }
         authored = self._try_parse_question_set(result.content, session_id, start_sequence, count)
         questions = authored["questions"]
         validation_status = "passed"
