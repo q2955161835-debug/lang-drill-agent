@@ -204,7 +204,24 @@ body.panel-resize-active * {
   border-bottom: var(--border-thick);
   background: var(--surface-glass);
 }
-.brand { font-size: 1.05rem; }
+.brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.brand-logo {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: var(--border-thin);
+}
+.brand-logo-dark { display: none; }
+:root[data-theme="dark"] .brand-logo-light { display: none; }
+:root[data-theme="dark"] .brand-logo-dark { display: block; }
+.brand { font-size: 1.05rem; white-space: nowrap; }
 
 .icon-button, .right-toggle, .send-button {
   display: inline-grid;

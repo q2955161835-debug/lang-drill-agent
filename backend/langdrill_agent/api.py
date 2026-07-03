@@ -426,7 +426,7 @@ _PRODUCT_MANUAL_CONTEXT: dict[str, Any] = {
         "model": "配置供应商、Base URL、API 格式、模型、视觉能力、思考等级、上下文容量和 MinerU token。",
         "permissions": "维护会话 Agent 可触发能力；非敏感能力默认开启，敏感保存动作仍必须用户确认。",
         "skills": "独立管理拓展 Skills；Multi Search Engine 只生成可审计搜索入口，不替代内置联网检索。",
-        "study": "维护学习目标、背景、人格和自定义指令。",
+        "study": "维护学习目标、背景、每日学习时长、人格和自定义指令；每日学习时长会影响默认组卷目标分钟数和题量换算。",
         "data": "迁移或初始化题目数据库目录。",
         "syllabus": "维护考纲、历年真题和题型范围。",
     },
@@ -887,6 +887,58 @@ def _general_chat_response(
     except RuntimeError as exc:
         logger.warning("model request failed during general chat", exc_info=True)
         return {"content": _model_request_error_message(exc), "web_search": search_context}
+
+
+def _settings_guidance_response(
+    conn,
+    provider: ModelProvider,
+    *,
+    session_id: str,
+    content: str,
+    active_question: dict | None,
+) -> str:
+    pack = _assemble_runtime_pack(
+        conn,
+        task_type=TaskType.general_chat.value,
+        session_id=session_id,
+        user_content=content,
+        active_question=active_question,
+        extra_context={
+            "settings_intent": {
+                "requires_user_confirmation": True,
+                "allowed_behavior": "说明设置页入口、可配置字段和保存边界；不要声称已经修改或保存。",
+            }
+        },
+    )
+    pack.system_modules.append(
+        {
+            "id": "settings.guidance_contract",
+            "content": (
+                "用户表达了设置相关需求或产品反馈。必须像普通聊天一样直接回答，"
+                "并依据 context_pack.product_manual、context_pack.profile 和 context_pack.agent_permissions。"
+                "如果用户要修改设置，只能说明设置页位置、可调整字段和确认保存边界；"
+                "不要输出固定模板，不要声称已经保存。"
+                "学习设置页包含学习目标、学习背景、每日学习时长、人格和自定义指令。"
+            ),
+        }
+    )
+    try:
+        result = provider.complete(pack)
+        _record_model_call(
+            conn,
+            agent_name="settings_agent",
+            task_type=TaskType.settings.value,
+            provider=provider,
+            result=result,
+            prompt_modules=[module["id"] for module in pack.system_modules],
+        )
+        return _coerce_plain_model_text(
+            result.content,
+            "设置相关问题我已经收到；请在设置页确认后保存，敏感配置不会由会话直接写入。",
+        )
+    except RuntimeError as exc:
+        logger.warning("model request failed during settings guidance", exc_info=True)
+        return _model_request_error_message(exc)
 
 
 def _daily_summary_context(conn, session_id: str) -> dict[str, Any]:
@@ -1609,6 +1661,7 @@ def initialize(request: InitRequest) -> dict:
                 "deadline": request.deadline,
                 "learning_goal": request.learning_goal,
                 "learning_background": request.learning_background,
+                "daily_minutes": request.daily_minutes,
             }
         )
         ProfileService(conn).update(updated)
@@ -2051,9 +2104,13 @@ def chat(request: ChatRequest) -> ChatResponse:
                         f"- 解析方式：{draft_result['parser']}"
                     )
             else:
-                assistant_content = (
-                    "请点击左侧栏底部的「设置」按钮来修改模型供应商、学习目标、"
-                    "人格等配置。已授权的设置功能可以在会话中先让我整理草稿，再由你确认填入。"
+                active_question = active
+                assistant_content = _settings_guidance_response(
+                    conn,
+                    provider,
+                    session_id=session_id,
+                    content=request.content or visible_content,
+                    active_question=active_question,
                 )
 
         elif task.value == "summary":

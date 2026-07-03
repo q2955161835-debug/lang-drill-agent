@@ -23,18 +23,35 @@ _EXPLANATION_KEYWORDS = (
 
 _SETTINGS_MUTATION_PATTERN = re.compile(
     r"(?:打开|进入|跳到|前往|更改|修改|配置|调整|切换|新增|添加|删除|移除|填写|填入|保存)"
-    r".{0,18}(?:设置|设置页|供应商|模型|目标|背景|人格|权限|上下文|数据库|MinerU|api\s*key|apikey|密钥)"
-    r"|(?:设置页|供应商|模型|目标|背景|人格|权限|上下文|数据库|MinerU|api\s*key|apikey|密钥)"
+    r".{0,18}(?:设置|设置页|供应商|模型|目标|背景|人格|权限|上下文|数据库|学习时长|每日学习时长|每天学习|MinerU|api\s*key|apikey|密钥)"
+    r"|(?:设置页|供应商|模型|目标|背景|人格|权限|上下文|数据库|学习时长|每日学习时长|每天学习|MinerU|api\s*key|apikey|密钥)"
     r".{0,18}(?:打开|进入|更改|修改|配置|调整|切换|新增|添加|删除|移除|填写|填入|保存)"
     r"|(?:把|将).{0,28}(?:目标|背景|人格|模型|供应商|权限|上下文).{0,12}"
     r"(?:改成|改为|设为|设置为|换成|切到|调整为)"
-    r"|(?:设置|设定).{0,3}(?:供应商|模型|目标|背景|人格|权限|上下文|数据库|MinerU|api\s*key|apikey|密钥)"
+    r"|(?:把|将).{0,28}(?:学习时长|每日学习时长|每天学习).{0,12}"
+    r"(?:改成|改为|设为|设置为|换成|切到|调整为)"
+    r"|(?:设置|设定).{0,3}(?:供应商|模型|目标|背景|人格|权限|上下文|数据库|学习时长|每日学习时长|每天学习|MinerU|api\s*key|apikey|密钥)"
     r"|(?<!已)(?:开启|关闭|启用|禁用).{0,18}(?:联网|截图|词表|数据库|真题|模型|密钥|权限|Skill|Skills|skill|skills)",
     re.IGNORECASE,
 )
 _PAST_PAPER_SETTINGS_PATTERN = re.compile(
     r"(?:真题|试卷|样卷|past paper|paper).{0,24}(?:导入|填入|填写|填表|设置|保存|解析)"
     r"|(?:导入|填入|填写|填表|设置|保存|解析).{0,24}(?:真题|试卷|样卷|past paper|paper)",
+    re.IGNORECASE,
+)
+_SETTINGS_INFO_OR_FEEDBACK_PATTERN = re.compile(
+    r"(?:应该|应当|希望|最好|能不能|能否|是否|是不是|可以|可不可以|怎么|如何|为什么|哪里|在哪|当前|我的|是什么|有哪些|说明|介绍)"
+    r".{0,40}(?:设置|设置页|学习时长|每日学习时长|每天学习|供应商|模型|权限|产品|功能|用法|Base\s*URL|API\s*格式|思考等级)"
+    r"|(?:设置|设置页|学习时长|每日学习时长|每天学习|供应商|模型|权限|产品|功能|用法|Base\s*URL|API\s*格式|思考等级)"
+    r".{0,40}(?:应该|应当|希望|最好|能不能|能否|是否|是不是|可以|可不可以|怎么|如何|为什么|哪里|在哪|当前|我的|是什么|有哪些|说明|介绍)",
+    re.IGNORECASE,
+)
+_STRONG_SETTINGS_ACTION_PATTERN = re.compile(
+    r"(?:请|帮我|麻烦).{0,12}(?:打开|进入|更改|修改|配置|调整|切换|新增|添加|删除|移除|填写|填入|保存|设置|设定)"
+    r"|(?:把|将).{0,40}(?:改成|改为|设为|设置为|换成|切到|调整为)"
+    r"|(?:开启|关闭|启用|禁用).{0,18}(?:联网|截图|词表|数据库|真题|模型|密钥|权限|Skill|Skills|skill|skills)"
+    r"|(?:导入|解析|保存).{0,24}(?:真题|试卷|样卷|past paper|paper)"
+    r"|(?:添加|新增|加入|删除|移除).{0,18}(?:自定义模型|模型|供应商)",
     re.IGNORECASE,
 )
 
@@ -133,31 +150,35 @@ class TaskRouter:
         if has_active_question and selected_option and selected_option.strip().upper() in {"A", "B", "C", "D"}:
             return TaskType.answer_question
 
-        # 3. 设置：只有明确修改、打开或导入设置时才进入设置流程。
+        # 3. 设置：产品能力询问或反馈必须走普通聊天，让模型读取产品说明书回答。
+        if _SETTINGS_INFO_OR_FEEDBACK_PATTERN.search(text) and not _STRONG_SETTINGS_ACTION_PATTERN.search(text):
+            return TaskType.general_chat
+
+        # 4. 设置：只有明确修改、打开或导入设置时才进入设置流程。
         if _SETTINGS_MUTATION_PATTERN.search(text) or _PAST_PAPER_SETTINGS_PATTERN.search(text):
             return TaskType.settings
 
-        # 4. 总结：匹配总结关键词
+        # 5. 总结：匹配总结关键词
         if any(keyword in text for keyword in _SUMMARY_KEYWORDS):
             return TaskType.summary
 
-        # 5. 追问 / 讲解：有当前题且命中讲解关键词
+        # 6. 追问 / 讲解：有当前题且命中讲解关键词
         if has_active_question and any(keyword in text for keyword in _EXPLANATION_KEYWORDS):
             return TaskType.explanation
 
-        # 6. 答题：严格正则匹配
+        # 7. 答题：严格正则匹配
         if has_active_question and _ANSWER_PATTERN.match(text):
             return TaskType.answer_question
 
-        # 7. 模糊加练：先确认题型、来源和数量，不直接组卷。
+        # 8. 模糊加练：先确认题型、来源和数量，不直接组卷。
         if _looks_like_extra_drill_setup_request(text):
             return TaskType.extra_drill_setup
 
-        # 8. 推进：只取数据库里的下一道待答题，不重新初始化
+        # 9. 推进：只取数据库里的下一道待答题，不重新初始化
         if any(keyword == text or keyword in text for keyword in _CONTINUE_KEYWORDS):
             return TaskType.continue_drill
 
-        # 9. 明确学习 / 练题意图才进入日常训练；普通寒暄和咨询只聊天。
+        # 10. 明确学习 / 练题意图才进入日常训练；普通寒暄和咨询只聊天。
         if _looks_like_explicit_drill_request(text):
             return TaskType.daily_drill
 

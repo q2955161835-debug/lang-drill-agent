@@ -31,7 +31,7 @@ class UserProfile(BaseModel):
     exam_id: str = "cet4"
     exam_name: str = "大学英语四级"
     deadline: str | None = None
-    daily_minutes: int = 35
+    daily_minutes: int = Field(default=35, ge=5, le=240)
     learning_goal: str = ""
     learning_background: str = ""
     persona: Literal["none", "warm", "professional", "humorous", "custom"] = "professional"
@@ -133,6 +133,7 @@ class InitRequest(BaseModel):
     deadline: str | None = None
     learning_goal: str = ""
     learning_background: str = ""
+    daily_minutes: int = Field(default=35, ge=5, le=240)
     search_years: int = Field(default=3, ge=1, le=10)
 
 
@@ -210,7 +211,7 @@ class ProfileUpdateRequest(BaseModel):
     learning_background: str | None = None
     persona: str | None = None
     global_user_prompt: str | None = None
-    daily_minutes: int | None = None
+    daily_minutes: int | None = Field(default=None, ge=5, le=240)
 
 
 class ScreenshotImportRequest(BaseModel):

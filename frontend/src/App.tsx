@@ -233,6 +233,12 @@ function isDailyQuestionSetFinished(panel: DailyPanel) {
   return panel.questions_total > 0 && panel.questions_done >= panel.questions_total;
 }
 
+function normalizedDailyMinutes(value: number | string | undefined) {
+  const parsed = typeof value === "string" ? Number(value) : value;
+  if (typeof parsed !== "number" || !Number.isFinite(parsed)) return 35;
+  return Math.max(5, Math.min(240, Math.round(parsed || 35)));
+}
+
 const DEFAULT_PANEL: DailyPanel = {
   date: localDateString(),
   title: "长期学习记录",
@@ -260,6 +266,7 @@ const MOCK_PROFILE: Profile = {
   exam_id: "cet4",
   exam_name: "大学英语四级",
   deadline: null,
+  daily_minutes: 35,
   learning_goal: "",
   learning_background: "",
   persona: "professional",
@@ -1796,7 +1803,13 @@ export default function App() {
           <InteractiveButton className="icon-button" onClick={() => setLeftOpen((value) => !value)} title="折叠侧栏">
             <Sidebar size={20} />
           </InteractiveButton>
-          {leftOpen && <span className="brand">Lang Drill</span>}
+          {leftOpen && (
+            <span className="brand-lockup">
+              <img className="brand-logo brand-logo-light" src="/assets/logo-light.png" alt="" />
+              <img className="brand-logo brand-logo-dark" src="/assets/logo-dark.png" alt="" />
+              <span className="brand">Lang Drill</span>
+            </span>
+          )}
         </div>
         {leftOpen && (
           <>
@@ -3037,6 +3050,7 @@ function SettingsDialog({
         exam_id: draft.exam_id,
         exam_name: draft.exam_name,
         deadline: draft.deadline || null,
+        daily_minutes: normalizedDailyMinutes(draft.daily_minutes),
         learning_goal: draft.learning_goal,
         learning_background: draft.learning_background,
         persona: draft.persona,
@@ -4212,6 +4226,18 @@ function SettingsDialog({
               <SettingSection title="学习设置">
                 <input value={draft.learning_goal} onChange={(event) => setDraft({ ...draft, learning_goal: event.target.value })} placeholder="目标考试、分数或能力目标" />
                 <textarea value={draft.learning_background} onChange={(event) => setDraft({ ...draft, learning_background: event.target.value })} placeholder="当前水平、弱项、已学内容" />
+                <label className="field-label">
+                  每日学习时长（分钟）
+                  <input
+                    type="number"
+                    min="5"
+                    max="240"
+                    step="5"
+                    value={draft.daily_minutes}
+                    onChange={(event) => setDraft({ ...draft, daily_minutes: Number(event.target.value) })}
+                  />
+                  <small>用于生成每日计划和默认题量，当前出题会按时长换算练习数量。</small>
+                </label>
                 <select value={draft.persona} onChange={(event) => setDraft({ ...draft, persona: event.target.value })}>
                   {personalityOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
                 </select>
@@ -4307,6 +4333,7 @@ function OnboardingDialog({
     exam_id: profile.exam_id || "cet4",
     exam_name: profile.exam_name || "大学英语四级",
     deadline: profile.deadline || "",
+    daily_minutes: profile.daily_minutes || 35,
     learning_goal: profile.learning_goal || "",
     learning_background: profile.learning_background || "",
     search_years: 3
@@ -4332,7 +4359,8 @@ function OnboardingDialog({
     try {
       const data = await apiPost<{ profile: Profile }>("/api/initialize", {
         ...draft,
-        deadline: draft.deadline || null
+        deadline: draft.deadline || null,
+        daily_minutes: normalizedDailyMinutes(draft.daily_minutes)
       });
       onDone(data.profile);
     } catch (err) {
@@ -4358,6 +4386,7 @@ function OnboardingDialog({
           <label>目标语言<input value={draft.target_language} onChange={(event) => setDraft({ ...draft, target_language: event.target.value })} /></label>
           <label>目标考试<input value={draft.exam_name} onChange={(event) => setDraft({ ...draft, exam_name: event.target.value })} /></label>
           <label>考试时间<input type="datetime-local" value={toDateTimeLocalValue(draft.deadline)} onChange={(event) => setDraft({ ...draft, deadline: event.target.value })} onInput={(event) => setDraft({ ...draft, deadline: event.currentTarget.value })} /></label>
+          <label>每日学习时长（分钟）<input type="number" min="5" max="240" step="5" value={draft.daily_minutes} onChange={(event) => setDraft({ ...draft, daily_minutes: Number(event.target.value) })} /></label>
           <label>学习目标<textarea value={draft.learning_goal} onChange={(event) => setDraft({ ...draft, learning_goal: event.target.value })} /></label>
           <label>学习背景<textarea value={draft.learning_background} onChange={(event) => setDraft({ ...draft, learning_background: event.target.value })} /></label>
           <label>真题参考年限<input type="number" min="1" max="10" value={draft.search_years} onChange={(event) => setDraft({ ...draft, search_years: Number(event.target.value) })} /></label>

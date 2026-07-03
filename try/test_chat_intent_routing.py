@@ -38,12 +38,14 @@ def test_saved_settings_questions_route_as_general_chat() -> None:
         is TaskType.general_chat
     )
     assert router.route("当前模型和已开启权限是什么？", has_active_question=False) is TaskType.general_chat
+    assert router.route("每日学习时长应该可以在设置中调整", has_active_question=False) is TaskType.general_chat
 
 
 def test_settings_mutations_still_route_to_settings() -> None:
     router = TaskRouter()
 
     assert router.route("请把学习目标改成四级600分", has_active_question=False) is TaskType.settings
+    assert router.route("请把每日学习时长改成45分钟", has_active_question=False) is TaskType.settings
     assert router.route("帮我配置一个自定义模型 mimo-v2.5", has_active_question=False) is TaskType.settings
     assert router.route("请开启联网功能权限", has_active_question=False) is TaskType.settings
     assert router.route("导入 2025 年四级真题并解析", has_active_question=False) is TaskType.settings
@@ -207,6 +209,74 @@ def test_saved_settings_question_calls_model_with_runtime_context(tmp_path: Path
         item["feature_id"] == "profile_exam"
         for item in pack.context_pack["agent_permissions"]["enabled_tool_guidance"]
     )
+
+
+def test_settings_feedback_uses_general_chat_model_context(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "settings-feedback.db"
+    monkeypatch.setenv("LANGDRILL_DB_PATH", str(db_path))
+    monkeypatch.setenv("LANGDRILL_DEFAULT_PROVIDER", "mock")
+    monkeypatch.setenv("LANGDRILL_DEFAULT_MODEL", "mock-tutor-v1")
+    init_db(db_path)
+    captured = {}
+
+    def fake_complete(self, pack):
+        captured["pack"] = pack
+        return ModelResult(content="每日学习时长可以在学习设置中调整。", input_tokens=12, output_tokens=6, latency_ms=1, model=self.model)
+
+    monkeypatch.setattr(ModelProvider, "complete", fake_complete)
+    client = TestClient(app)
+    response = client.post(
+        "/api/chat",
+        json={"content": "每日学习时长应该可以在设置中调整", "force_new_session": True},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["message"]["content"] == "每日学习时长可以在学习设置中调整。"
+    pack = captured["pack"]
+    assert pack.context_pack["task_type"] == "general_chat"
+    assert "每日学习时长" in pack.context_pack["product_manual"]["settings_pages"]["study"]
+
+
+def test_generic_settings_action_uses_model_guidance(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "settings-guidance.db"
+    monkeypatch.setenv("LANGDRILL_DB_PATH", str(db_path))
+    monkeypatch.setenv("LANGDRILL_DEFAULT_PROVIDER", "mock")
+    monkeypatch.setenv("LANGDRILL_DEFAULT_MODEL", "mock-tutor-v1")
+    init_db(db_path)
+    captured = {}
+
+    def fake_complete(self, pack):
+        captured["pack"] = pack
+        return ModelResult(content="可以，去设置页的学习设置里改每日学习时长，保存后生效。", input_tokens=14, output_tokens=8, latency_ms=1, model=self.model)
+
+    monkeypatch.setattr(ModelProvider, "complete", fake_complete)
+    client = TestClient(app)
+    response = client.post(
+        "/api/chat",
+        json={"content": "请把每日学习时长改成45分钟", "force_new_session": True},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["message"]["content"] == "可以，去设置页的学习设置里改每日学习时长，保存后生效。"
+    module_ids = [module["id"] for module in captured["pack"].system_modules]
+    assert "settings.guidance_contract" in module_ids
+    with transaction(db_path) as conn:
+        row = conn.execute("SELECT task_type FROM model_calls ORDER BY created_at DESC LIMIT 1").fetchone()
+        assert row["task_type"] == "settings"
+
+
+def test_profile_daily_minutes_can_update(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "profile-daily-minutes.db"
+    monkeypatch.setenv("LANGDRILL_DB_PATH", str(db_path))
+    init_db(db_path)
+    client = TestClient(app)
+    response = client.post("/api/profile", json={"daily_minutes": 50})
+
+    assert response.status_code == 200
+    assert response.json()["profile"]["daily_minutes"] == 50
+    with transaction(db_path) as conn:
+        profile = ProfileService(conn).get()
+        assert profile.daily_minutes == 50
 
 
 def test_product_question_includes_manual_and_sanitized_model_runtime(tmp_path: Path, monkeypatch) -> None:

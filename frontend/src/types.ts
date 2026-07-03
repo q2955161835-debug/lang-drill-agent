@@ -4,6 +4,7 @@ export type Profile = {
   exam_id: string;
   exam_name: string;
   deadline?: string | null;
+  daily_minutes: number;
   learning_goal: string;
   learning_background: string;
   persona: string;
