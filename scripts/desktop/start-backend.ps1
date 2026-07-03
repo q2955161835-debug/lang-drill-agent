@@ -16,6 +16,21 @@ $utf8Bom = [System.Text.UTF8Encoding]::new($true)
 [Console]::OutputEncoding = $utf8
 $OutputEncoding = $utf8
 
+function Normalize-WindowsPathForPowerShell {
+    param([string]$PathValue)
+    if ($PathValue.StartsWith("\\?\UNC\")) {
+        return "\\" + $PathValue.Substring(8)
+    }
+    if ($PathValue.StartsWith("\\?\")) {
+        return $PathValue.Substring(4)
+    }
+    return $PathValue
+}
+
+$ProjectRoot = Normalize-WindowsPathForPowerShell $ProjectRoot
+$AppDataDir = Normalize-WindowsPathForPowerShell $AppDataDir
+$LocalAppDataDir = Normalize-WindowsPathForPowerShell $LocalAppDataDir
+
 $PythonVersion = "3.11.9"
 $PythonInstallerUrl = "https://www.python.org/ftp/python/$PythonVersion/python-$PythonVersion-amd64.exe"
 $RuntimeDir = Join-Path $LocalAppDataDir "runtime"
@@ -43,6 +58,11 @@ function ConvertTo-PowerShellLiteral {
     return "'" + $Value.Replace("'", "''") + "'"
 }
 
+function ConvertTo-NativeArgument {
+    param([string]$Value)
+    return '"' + $Value.Replace('"', '\"') + '"'
+}
+
 function Assert-ExitCode {
     param([int]$ExitCode, [string]$Message)
     if ($ExitCode -ne 0) {
@@ -66,6 +86,50 @@ function Invoke-NativeLogged {
         $ErrorActionPreference = $previousErrorAction
     }
     Assert-ExitCode -ExitCode $exitCode -Message $FailureMessage
+}
+
+function Resolve-PythonCandidate {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [string[]]$Arguments = @()
+    )
+    $probe = "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}'); print(sys.executable)"
+    $previousErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $output = & $FilePath @Arguments "-c" $probe 2>$null
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorAction
+    }
+    if ($exitCode -ne 0 -or -not $output -or $output.Count -lt 2) {
+        return $null
+    }
+    $versionText = ([string]$output[0]).Trim()
+    $version = [version]$versionText
+    $pythonExe = ([string]$output[1]).Trim()
+    if ($version.Major -ne 3 -or $version.Minor -lt 11 -or -not (Test-Path $pythonExe)) {
+        return $null
+    }
+    return $pythonExe
+}
+
+function Find-ExistingPython {
+    $candidates = @(
+        @{ FilePath = "py.exe"; Arguments = @("-3.13") },
+        @{ FilePath = "py.exe"; Arguments = @("-3.12") },
+        @{ FilePath = "py.exe"; Arguments = @("-3.11") },
+        @{ FilePath = "python.exe"; Arguments = @() },
+        @{ FilePath = "python3.exe"; Arguments = @() }
+    )
+    foreach ($candidate in $candidates) {
+        $pythonExe = Resolve-PythonCandidate -FilePath $candidate.FilePath -Arguments $candidate.Arguments
+        if ($pythonExe) {
+            return $pythonExe
+        }
+    }
+    return $null
 }
 
 function Get-PortOwner {
@@ -167,6 +231,12 @@ function Sync-AppSource {
 }
 
 function Ensure-Python {
+    $existingPython = Find-ExistingPython
+    if ($existingPython) {
+        Write-Status "Using existing Python runtime: $existingPython"
+        return $existingPython
+    }
+
     $pythonExe = Join-Path $PythonDir "python.exe"
     if (Test-Path $pythonExe) {
         return $pythonExe
@@ -180,17 +250,20 @@ function Ensure-Python {
     }
 
     Write-Status "Installing Python $PythonVersion runtime into user cache..."
+    $installerLog = Join-Path $LogDir "python-installer.log"
     $arguments = @(
         "/quiet",
         "InstallAllUsers=0",
-        "TargetDir=$PythonDir",
+        ("TargetDir=" + (ConvertTo-NativeArgument $PythonDir)),
         "Include_pip=1",
         "Include_launcher=0",
         "PrependPath=0",
         "Include_test=0",
-        "Shortcuts=0"
+        "Shortcuts=0",
+        "/log",
+        (ConvertTo-NativeArgument $installerLog)
     )
-    $process = Start-Process -FilePath $installer -ArgumentList $arguments -Wait -PassThru -WindowStyle Hidden
+    $process = Start-Process -FilePath $installer -ArgumentList ($arguments -join " ") -Wait -PassThru -WindowStyle Hidden
     Assert-ExitCode -ExitCode $process.ExitCode -Message "Python runtime installer failed with exit code $($process.ExitCode)."
     if (-not (Test-Path $pythonExe)) {
         throw "Python runtime installation finished but python.exe was not found: $pythonExe"
@@ -242,9 +315,17 @@ function Start-Backend {
     )
     [System.IO.File]::WriteAllLines($runner, [string[]]$runnerLines, $utf8Bom)
 
+    $runnerArguments = @(
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        (ConvertTo-NativeArgument $runner)
+    ) -join " "
+
     $process = Start-Process `
         -FilePath "powershell.exe" `
-        -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $runner) `
+        -ArgumentList $runnerArguments `
         -WorkingDirectory $SourceDir `
         -WindowStyle Hidden `
         -PassThru

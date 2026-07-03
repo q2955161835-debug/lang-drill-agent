@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::Deserialize;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::{
     path::{Path, PathBuf},
     process::Command,
@@ -9,6 +11,8 @@ use std::{
 use tauri::{path::BaseDirectory, Manager, RunEvent};
 
 const DESKTOP_PORT: u16 = 18080;
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[derive(Debug, Default)]
 struct BackendProcessState {
@@ -84,21 +88,26 @@ fn start_backend(app: &mut tauri::App) -> Result<BackendStartResult, Box<dyn std
     std::fs::create_dir_all(&app_data_dir)?;
     std::fs::create_dir_all(&local_app_data_dir)?;
 
-    let output = Command::new("powershell.exe")
+    let mut command = Command::new("powershell.exe");
+    command
         .arg("-NoProfile")
         .arg("-ExecutionPolicy")
         .arg("Bypass")
+        .arg("-WindowStyle")
+        .arg("Hidden")
         .arg("-File")
-        .arg(script)
+        .arg(path_for_powershell(&script))
         .arg("-ProjectRoot")
-        .arg(project_root)
+        .arg(path_for_powershell(&project_root))
         .arg("-AppDataDir")
-        .arg(app_data_dir)
+        .arg(path_for_powershell(&app_data_dir))
         .arg("-LocalAppDataDir")
-        .arg(local_app_data_dir)
+        .arg(path_for_powershell(&local_app_data_dir))
         .arg("-Port")
-        .arg(DESKTOP_PORT.to_string())
-        .output()?;
+        .arg(DESKTOP_PORT.to_string());
+    #[cfg(target_os = "windows")]
+    command.creation_flags(CREATE_NO_WINDOW);
+    let output = command.output()?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -116,6 +125,23 @@ fn start_backend(app: &mut tauri::App) -> Result<BackendStartResult, Box<dyn std
         .find(|line| line.trim_start().starts_with('{'))
         .ok_or("Desktop backend bootstrap did not return JSON status.")?;
     Ok(serde_json::from_str(json_line)?)
+}
+
+#[cfg(target_os = "windows")]
+fn path_for_powershell(path: &Path) -> String {
+    let value = path.display().to_string();
+    if let Some(stripped) = value.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{stripped}");
+    }
+    if let Some(stripped) = value.strip_prefix(r"\\?\") {
+        return stripped.to_string();
+    }
+    value
+}
+
+#[cfg(not(target_os = "windows"))]
+fn path_for_powershell(path: &Path) -> String {
+    path.display().to_string()
 }
 
 fn resource_or_dev_path(

@@ -74,7 +74,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\desktop\build-de
 src-tauri\target\release\bundle\nsis\Lang Drill Agent_0.1.0_x64-setup.exe
 ```
 
-首次启动会联网下载并准备 Python 3.11.9（编程语言运行时）和后端依赖，缓存到 `%LOCALAPPDATA%\Lang Drill Agent\runtime`；用户配置、数据库、日志和 `papers`（试卷资产目录）写入 `%APPDATA%\Lang Drill Agent`。安装包首版为 unsigned（未代码签名）内测包。
+首次启动会优先复用本机已有 Python 3.11+（编程语言运行时）；如果本机没有可用 Python，才会联网下载并准备 Python 3.11.9 和后端依赖，缓存到 `%LOCALAPPDATA%\Lang Drill Agent\runtime`。用户配置、数据库、日志和 `papers`（试卷资产目录）写入 `%APPDATA%\Lang Drill Agent`。安装包首版为 unsigned（未代码签名）内测包。
 
 ## 验证
 
