@@ -495,8 +495,10 @@ def _runtime_instruction_modules(task_type: str) -> list[dict[str, str]]:
             {
                 "id": "runtime.branch_context_contract",
                 "content": (
-                    "分支会话继承主会话的用户画像、考试目标、权限状态、当前题和选中文本。"
-                    "解释 selected_text 或追问时，要围绕分支材料展开，并使用用户学习背景调整难度；"
+                    "分支会话继承主会话的用户画像、考试目标、权限状态、当前题、主会话消息和可选选中文本。"
+                    "如果 context_pack.selected_text 非空，优先围绕该引用材料展开；"
+                    "如果 selected_text 为空，必须以 context_pack.main_session_context.messages 作为主会话背景回答分支消息；"
+                    "使用用户学习背景调整难度；"
                     "除非用户询问或确实直接相关，不要重复强调目标分数、考试时间或学习背景；"
                     "默认不写回主会话数据库，不声称已经修改主线记录。"
                 ),
@@ -1010,6 +1012,7 @@ def _branch_model_response(
     selected_text: str,
     user_message: str,
 ) -> str:
+    clean_selected_text = selected_text.strip()
     history_rows = conn.execute(
         """
         SELECT role, content
@@ -1025,6 +1028,7 @@ def _branch_model_response(
         for row in reversed(history_rows)
     ]
     active_question = QuestionService(conn).active_question(session_id)
+    main_session_context = ContextService(conn).session_context_snapshot(session_id, max_messages=1000)
     pack = _assemble_runtime_pack(
         conn,
         task_type=TaskType.branch_chat.value,
@@ -1033,9 +1037,14 @@ def _branch_model_response(
         active_question=active_question,
         extra_context={
             "branch_id": branch_id,
-            "selected_text": selected_text,
+            "selected_text": clean_selected_text,
+            "branch_source": "selected_text" if clean_selected_text else "main_session_context",
+            "main_session_context": main_session_context,
             "branch_history": branch_history,
-            "branch_contract": "只在分支内解释、改写、举例或整理复习卡片；默认不写回主会话。",
+            "branch_contract": (
+                "只在分支内解释、改写、举例或整理复习卡片；默认不写回主会话。"
+                "如果 selected_text 为空，必须把 main_session_context.messages 作为当前主会话背景来回答。"
+            ),
         },
     )
     result = provider.complete(pack)
@@ -2013,20 +2022,23 @@ def chat(request: ChatRequest) -> ChatResponse:
 def branch_chat(request: BranchRequest) -> dict:
     init_db()
     with transaction() as conn:
+        clean_selected_text = request.selected_text.strip()
+        clean_message = request.message.strip() or "请基于当前主会话上下文创建学习分支。"
+        title_source = clean_selected_text or clean_message or "主会话分支"
         branch_id = new_id("br")
         conn.execute(
             """
             INSERT INTO branch_conversations (id, session_id, title, selected_text)
             VALUES (?, ?, ?, ?)
             """,
-            (branch_id, request.session_id, request.selected_text[:24], request.selected_text),
+            (branch_id, request.session_id, title_source[:24], clean_selected_text),
         )
         conn.execute(
             """
             INSERT INTO branch_messages (id, branch_id, role, content)
             VALUES (?, ?, 'user', ?)
             """,
-            (new_id("bmsg"), branch_id, request.message),
+            (new_id("bmsg"), branch_id, clean_message),
         )
         try:
             provider = _current_model_provider(conn)
@@ -2035,8 +2047,8 @@ def branch_chat(request: BranchRequest) -> dict:
                 provider,
                 session_id=request.session_id,
                 branch_id=branch_id,
-                selected_text=request.selected_text,
-                user_message=request.message,
+                selected_text=clean_selected_text,
+                user_message=clean_message,
             )
         except RuntimeError as exc:
             logger.warning("model request failed during branch creation", exc_info=True)
@@ -2061,7 +2073,7 @@ def branch_message(branch_id: str, request: BranchMessageRequest) -> dict:
         ).fetchone()
         if not branch:
             return {"error": "branch_not_found"}
-        clean_message = request.message.strip()
+        clean_message = request.message.strip() or "请继续基于当前分支上下文回答。"
         conn.execute(
             "INSERT INTO branch_messages (id, branch_id, role, content) VALUES (?, ?, 'user', ?)",
             (new_id("bmsg"), branch_id, clean_message),
@@ -2073,7 +2085,7 @@ def branch_message(branch_id: str, request: BranchMessageRequest) -> dict:
                 provider,
                 session_id=branch["session_id"],
                 branch_id=branch_id,
-                selected_text=branch["selected_text"],
+                selected_text=branch["selected_text"] or "",
                 user_message=clean_message,
             )
         except RuntimeError as exc:

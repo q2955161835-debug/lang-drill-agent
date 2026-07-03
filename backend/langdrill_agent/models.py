@@ -138,7 +138,7 @@ class InitRequest(BaseModel):
 
 class BranchRequest(BaseModel):
     session_id: str
-    selected_text: str = Field(min_length=1)
+    selected_text: str = ""
     message: str
 
 

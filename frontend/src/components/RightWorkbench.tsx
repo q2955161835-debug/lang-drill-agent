@@ -211,14 +211,24 @@ function BranchPanel({
   onSendBranchMessage: (content: string) => void;
 }) {
   const [draft, setDraft] = useState("");
+  const threadRef = useRef<HTMLDivElement | null>(null);
   const cleanQuote = branchQuoteText.trim();
   const hasPendingQuote = Boolean(!branchId && cleanQuote);
-  const canSend = Boolean(!branchSending && (branchId ? draft.trim() : hasPendingQuote));
+  const hasDraft = Boolean(draft.trim());
+  const canSend = Boolean(!branchSending && (branchId ? hasDraft : hasPendingQuote || (branchSourceAvailable && hasDraft)));
   const canCreateBranch = Boolean(!branchId && !hasPendingQuote && branchSourceAvailable && !branchSending);
 
   useEffect(() => {
     setDraft("");
   }, [branchId, cleanQuote]);
+
+  useEffect(() => {
+    const thread = threadRef.current;
+    if (!thread) return;
+    window.requestAnimationFrame(() => {
+      thread.scrollTop = thread.scrollHeight;
+    });
+  }, [branchMessages.length, branchSending]);
 
   const sendDraft = () => {
     if (!canSend) return;
@@ -229,8 +239,16 @@ function BranchPanel({
     }
     setDraft("");
   };
-  const composerDisabled = Boolean(branchSending || (!branchId && !hasPendingQuote));
+  const composerDisabled = Boolean(branchSending || (!branchId && !hasPendingQuote && !branchSourceAvailable));
   const sendLabel = branchId ? "发送分支消息" : "提交分支引用";
+  const hintText = branchId
+    ? `当前分支：${branchId}`
+    : "可引用当前题/最新消息，也可以直接提问；无引用时会使用当前主会话全部内容作为背景。";
+  const placeholder = branchId
+    ? "继续追问，或者让分支整理成复习卡片。"
+    : hasPendingQuote
+      ? "补充提示词；留空则按默认方式解释引用。"
+      : "直接向分支提问；将基于当前主会话背景回答。";
 
   return (
     <section className="branch-panel workbench-form">
@@ -238,7 +256,7 @@ function BranchPanel({
         <GitBranch size={18} />
         <span>分支对话</span>
       </div>
-      <p className="hint">{branchId ? `当前分支：${branchId}` : "选中主聊天文本后，可以在这里展开解释，不污染主线学习记录。"}</p>
+      <p className="hint">{hintText}</p>
       {hasPendingQuote && (
         <div className="branch-quote-card" aria-label="分支引用内容">
           <div className="branch-quote-head">
@@ -264,7 +282,7 @@ function BranchPanel({
           </button>
         </div>
       )}
-      <div className="branch-thread" aria-live="polite">
+      <div className="branch-thread" aria-live="polite" ref={threadRef}>
         {branchMessages.length === 0 ? (
           <p className="empty-copy">这里会显示分支对话记录。</p>
         ) : (
@@ -291,7 +309,7 @@ function BranchPanel({
               sendDraft();
             }
           }}
-          placeholder={branchId ? "继续追问，或者让分支整理成复习卡片。" : "补充提示词；留空则按默认方式解释引用。"}
+          placeholder={placeholder}
           disabled={composerDisabled}
         />
         <button

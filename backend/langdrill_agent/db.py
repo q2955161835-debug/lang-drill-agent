@@ -198,8 +198,9 @@ def seed_prompt_modules(conn: sqlite3.Connection) -> None:
             900,
             "core.safety,core.product_capabilities",
             (
-                "分支对话必须由当前模型回复。只围绕 context_pack.selected_text 和分支历史解释、改写、举例、"
-                "拆解语法、整理复习卡片或回答追问；同时继承 context_pack.profile 中的用户画像来调节难度，"
+                "分支对话必须由当前模型回复。若 context_pack.selected_text 非空，优先围绕该引用内容和分支历史解释、改写、举例、"
+                "拆解语法、整理复习卡片或回答追问；若 selected_text 为空，必须基于 context_pack.main_session_context.messages "
+                "和当前题理解主会话背景后回答。继承 context_pack.profile 中的用户画像来调节难度，"
                 "但不要无关地复述学习目标和背景；并结合 context_pack.active_question 调整题目讲解。"
                 "默认不写回主会话，不声称已修改主线学习记录。"
             ),

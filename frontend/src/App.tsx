@@ -411,6 +411,7 @@ const DEFAULT_LEARNING_STATS: LearningStats = {
 const DRAFT_SESSION_ID = "__draft_new_chat__";
 const DEFAULT_CONTEXT_LIMIT = 1_000_000;
 const DEFAULT_BRANCH_PROMPT = "请围绕引用内容解释、举例，并判断是否适合整理成复习卡片。";
+const DEFAULT_BRANCH_CONTEXT_PROMPT = "请基于当前主会话全部内容，整理可继续追问的学习分支。";
 const DEFAULT_TOKEN_USAGE: TokenUsage = {
   input: 0,
   output: 0,
@@ -1112,7 +1113,7 @@ export default function App() {
     }
     const latestMessage = latestBranchableMessage(messages);
     return {
-      label: latestMessage ? "基于最新消息创建分支" : "基于当前内容创建分支",
+      label: latestMessage ? "基于最新消息创建分支" : "基于当前主会话创建分支",
       text: latestMessage
     };
   }, [activeQuestion, messages]);
@@ -1571,8 +1572,8 @@ export default function App() {
   const submitBranchQuote = useCallback(async (content: string) => {
     const quoteDraft = branchQuoteDraft;
     const cleanText = quoteDraft?.sourceText.trim() || "";
-    if (!activeSessionId || !cleanText || branchSending) return;
-    const cleanContent = content.trim() || DEFAULT_BRANCH_PROMPT;
+    if (!activeSessionId || branchSending) return;
+    const cleanContent = content.trim() || (cleanText ? DEFAULT_BRANCH_PROMPT : DEFAULT_BRANCH_CONTEXT_PROMPT);
     const userMessage: Message = { id: `branch-create-${Date.now()}`, role: "user", content: cleanContent };
     setBranchMessages([userMessage]);
     setBranchSending(true);
@@ -1603,8 +1604,17 @@ export default function App() {
   }, [selectedText, stageBranchQuote]);
 
   const startBranchFromCurrentContext = useCallback(() => {
-    stageBranchQuote(branchSource.text, branchSource.label);
-  }, [branchSource.label, branchSource.text, stageBranchQuote]);
+    if (branchSource.text.trim()) {
+      stageBranchQuote(branchSource.text, branchSource.label);
+      return;
+    }
+    setBranchId(null);
+    setBranchQuoteDraft(null);
+    setBranchMessages([]);
+    setRightOpen(true);
+    setWorkbenchTab("branch");
+    void submitBranchQuote(DEFAULT_BRANCH_CONTEXT_PROMPT);
+  }, [branchSource.label, branchSource.text, stageBranchQuote, submitBranchQuote]);
 
   const clearBranchQuote = useCallback(() => {
     if (branchSending) return;
@@ -2012,7 +2022,7 @@ export default function App() {
         onToggle={() => setRightOpen((value) => !value)}
         onResizeStart={(event) => startPanelResize("right", event)}
         onResizeKeyDown={(event) => resizePanelWithKeyboard("right", event)}
-        branchSourceAvailable={Boolean(activeSessionId && branchSource.text.trim())}
+        branchSourceAvailable={Boolean(activeSessionId)}
         branchCreateLabel={branchSource.label}
         onCreateBranch={() => void startBranchFromCurrentContext()}
         onSubmitBranchQuote={(prompt) => void submitBranchQuote(prompt)}

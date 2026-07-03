@@ -332,3 +332,46 @@ def test_branch_create_and_message_call_model(tmp_path: Path, monkeypatch) -> No
         model_call_count = conn.execute("SELECT COUNT(*) AS total FROM model_calls WHERE task_type='branch_chat'").fetchone()["total"]
 
     assert model_call_count == 2
+
+
+def test_branch_without_selected_text_uses_main_session_context(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "branch-main-context.db"
+    monkeypatch.setenv("LANGDRILL_DB_PATH", str(db_path))
+    monkeypatch.setenv("LANGDRILL_DEFAULT_PROVIDER", "mock")
+    monkeypatch.setenv("LANGDRILL_DEFAULT_MODEL", "mock-tutor-v1")
+    init_db(db_path)
+    with transaction(db_path) as conn:
+        session_service = SessionService(conn)
+        session_id = session_service.ensure_session(None, "主会话背景", force_new=True)
+        session_service.add_message(session_id, "user", "silence: n. 寂静；沉默")
+        session_service.add_message(session_id, "assistant", "silence 常用于 in silence 和 keep silence。")
+
+    captured = {}
+
+    def fake_complete(self, pack):
+        captured["pack"] = pack
+        return ModelResult(content="基于主会话背景的分支回复", input_tokens=15, output_tokens=8, latency_ms=1, model=self.model)
+
+    monkeypatch.setattr(ModelProvider, "complete", fake_complete)
+    client = TestClient(app)
+    response = client.post(
+        "/api/branch",
+        json={"session_id": session_id, "selected_text": "", "message": "帮我继续解释 silence 的用法"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "基于主会话背景的分支回复"
+    pack = captured["pack"]
+    assert pack.context_pack["selected_text"] == ""
+    assert pack.context_pack["branch_source"] == "main_session_context"
+    messages = pack.context_pack["main_session_context"]["messages"]
+    assert [message["content"] for message in messages] == [
+        "silence: n. 寂静；沉默",
+        "silence 常用于 in silence 和 keep silence。",
+    ]
+
+    with transaction(db_path) as conn:
+        branch = conn.execute("SELECT selected_text, title FROM branch_conversations").fetchone()
+
+    assert branch["selected_text"] == ""
+    assert branch["title"].startswith("帮我继续解释")
