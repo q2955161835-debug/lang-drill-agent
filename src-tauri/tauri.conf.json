@@ -4,9 +4,9 @@
   "version": "0.1.0",
   "identifier": "com.langdrill.agent",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ../scripts/desktop/start-frontend-for-tauri.ps1",
     "devUrl": "http://127.0.0.1:5173",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ../scripts/desktop/build-frontend-for-tauri.ps1",
     "frontendDist": "../frontend/dist"
   },
   "app": {
@@ -25,9 +25,16 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "msi"],
+    "targets": ["nsis"],
     "category": "Education",
+    "icon": ["icons/icon.ico"],
     "shortDescription": "English learning agent for CET practice",
-    "longDescription": "Lang Drill Agent is a local-first English learning agent with chat, practice questions, Anki sync, and screenshot import workflows."
+    "longDescription": "Lang Drill Agent is a local-first language learning agent with chat, practice questions, screenshot import workflows, and a local SQLite learning database.",
+    "resources": {
+      "../backend/langdrill_agent/*.py": "app/backend/langdrill_agent/",
+      "../backend/langdrill_agent/migrations/": "app/backend/langdrill_agent/migrations/",
+      "../pyproject.toml": "app/pyproject.toml",
+      "../scripts/desktop/start-backend.ps1": "desktop-runtime/start-backend.ps1"
+    }
   }
 }

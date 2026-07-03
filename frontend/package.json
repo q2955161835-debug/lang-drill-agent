@@ -8,8 +8,8 @@
     "dev": "vite --host 127.0.0.1 --port 5173 --strictPort",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:dev": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ../scripts/desktop/dev-desktop.ps1 -SkipInstall",
+    "tauri:build": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ../scripts/desktop/build-desktop.ps1 -SkipInstall"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
@@ -19,6 +19,7 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",

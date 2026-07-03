@@ -6,11 +6,17 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .config import PROJECT_ROOT, load_settings
+from .config import PROJECT_ROOT, env_file_path, load_settings
 from .db import init_db, transaction
 from .paper_assets import BUILTIN_PAPER_EXAM_IDS
 from .services import PastPaperService, SourceService
 from .utils import dumps
+
+
+def _data_env_file_path() -> Path:
+    if os.getenv("LANGDRILL_ENV_FILE", "").strip():
+        return env_file_path()
+    return PROJECT_ROOT / ".env"
 
 
 class DataPathService:
@@ -205,7 +211,8 @@ class DataPathService:
         return counts
 
     def _write_env(self, updates: dict[str, str]) -> None:
-        env_path = PROJECT_ROOT / ".env"
+        env_path = _data_env_file_path()
+        env_path.parent.mkdir(parents=True, exist_ok=True)
         values: dict[str, str] = {}
         if env_path.exists():
             for line in env_path.read_text(encoding="utf-8").splitlines():

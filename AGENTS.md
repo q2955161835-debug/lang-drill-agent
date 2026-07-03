@@ -2,7 +2,7 @@
 
 ## 项目目标
 
-Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把旧 `语言学习-lang-drill-skill` 的学习流程沉淀为可运行、可测试、可追踪的本地应用。项目正式使用方式和对外定位以 Web（网页）三栏学习工作台为核心，后续 Windows 桌面壳承载同一 Web（网页）体验；CLI（Command Line Interface，命令行接口）保留为开发、调试、自动化和数据维护辅助入口，不作为普通用户学习主路径。
+Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把旧 `语言学习-lang-drill-skill` 的学习流程沉淀为可运行、可测试、可追踪的本地应用。项目正式使用方式和对外定位以 Web（网页）三栏学习工作台为核心；Windows 桌面版通过 Tauri（桌面应用框架）承载同一 Web（网页）体验并启动本地 FastAPI（Web API 框架）后端；CLI（Command Line Interface，命令行接口）保留为开发、调试、自动化和数据维护辅助入口，不作为普通用户学习主路径。
 
 当前核心优化方向：
 - 以数据库作为唯一正式学习状态来源，保证题组、作答、掌握度、错题和会话历史可追踪。
@@ -10,6 +10,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - Question Author（出题 Agent）调用模型失败、超时或返回不可用时，必须使用本地规则兜底生成完整考试式题组并写入数据库；组卷前 Orchestrator（调度器）规划模型失败或超时也不得阻断后续 Question Author（出题 Agent）写题，不能让正式练习、截图导入自动练习或主聊天词表练习在组卷阶段中断。
 - 正式学习、截图导入、模型配置、题目数据库迁移和验收流程优先通过 Web（网页）完成；CLI（命令行接口）已有功能不删除，但只作为维护、调试和脚本化兜底。
 - Web（网页）体验以三栏学习工作台为主：左侧学习状态，中间聊天与题目，右侧分支/手机映像/截图导入。
+- 桌面版必须复用同一前端和后端业务能力，不改变 `start.bat`、`scripts/dev/start-dev.ps1`、Vite（前端构建工具）代理和浏览器访问路径的语义；桌面构建通过独立 `scripts/desktop/` 脚本和 `src-tauri/` 工程完成。
 - Web（网页）三栏边界必须可拖拽调整并持久化左右栏宽度；折叠侧栏或切换右侧工作台页签时不得卸载工作台内部状态，截图导入的待解析队列、解析状态、识别文本和已解析可编辑词条卡必须保留。
 - 右侧分支页必须同时支持右键/选中文本引用、普通点击路径和无引用直接追问；当前会话有待答题题卡时，应能直接基于当前题目创建分支引用，避免分支功能依赖浏览器右键或文本拖选能力；没有选择内容或引用卡时，用户也可以直接在分支输入框发送消息，后端必须以当前主会话消息作为背景；引用状态必须先展示在分支页，用户输入提示词后提交，或留空按默认提示词提交，禁止把选中文本直接作为用户消息发送。
 - 模型配置支持默认四个真实供应商 OpenAI/GPT、Claude、DeepSeek（深度求索）、MiMo（小米米魔）和保存后才出现的自定义供应商；设置页可按当前 Base URL（基础网址）、API 格式和 API Key（接口密钥）从供应商模型列表接口自动获取可调用模型，并给每个模型维护聊天栏显示/隐藏开关，默认全部显示；若供应商未开放模型列表接口，刷新必须保留内置或已保存模型列表，不得把 404 HTML（超文本标记语言）错误页直接展示给用户；设置页允许在当前供应商下手动添加自定义模型，记录模型 ID、显示名、上下文容量和视觉能力，自定义模型可删除，内置或 API 返回模型不可删除；聊天栏模型选择只暴露已启用、已配置 API Key 且未隐藏的真实供应商/模型，Mock Provider（本地模拟供应商）只保留给自动测试和离线调试。
@@ -73,12 +74,14 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - `backend/langdrill_agent/phone_mirror.py`：adb（安卓调试桥）/scrcpy（手机映像工具）环境检测和启动准备。
 - `backend/langdrill_agent/migrations/`：SQLite（轻量数据库）schema（数据库结构）初始化脚本。
 - `frontend/`：React（前端框架）+ TypeScript（类型化 JavaScript）+ Vite（前端构建工具）网页前端。
+- `frontend/src/api.ts`：前端 API（接口）基础地址。默认空字符串，Web（网页）模式继续走相对 `/api` 和 Vite（前端构建工具）代理；桌面构建通过 `VITE_LANGDRILL_API_BASE=http://127.0.0.1:18080` 指向桌面本地后端。
 - `frontend/public/assets/`：前端静态资源目录，当前保存深色主题背景图等无需打包导入的公开资产；聊天气泡使用浅蓝紫/深蓝紫专用颜色，不能把用户/助手消息退回纯白或纯黑。
 - `frontend/src/App.tsx`：前端主入口，负责可拖拽三栏布局、聊天、主聊天粘贴图片/拖拽文件/上传按钮导入、设置、初始化、当前题吸附显示、已答题回顾卡片、上下文容量圆环、Agent 设置权限、拓展 Skills（拓展技能）状态页和右侧工作台接入。
 - `frontend/src/components/`：前端可复用组件，当前重点是 `RightWorkbench.tsx`、`ContextMenu.tsx` 和 `MarkdownText.tsx`；`RightWorkbench.tsx` 折叠和页签切换必须隐藏但不卸载内部面板状态。
 - `papers/`：按考试类型分开的历年真题资产目录骨架；`raw/` 存原始试卷或粘贴文本，`parsed/` 存解析 JSON（JSON 数据交换格式），实际导入内容默认不提交。
-- `scripts/dev/`：开发期启动与维护脚本。`start-dev.ps1` 是一键启动主逻辑，`start.bat` 只作为 Windows 双击入口。
-- `src-tauri/`：Tauri（桌面壳）Windows 桌面封装骨架。
+- `scripts/dev/`：Web（网页）开发期启动与维护脚本。`start-dev.ps1` 是一键启动主逻辑，`start.bat` 只作为 Windows 双击入口。
+- `scripts/desktop/`：桌面版开发、构建和运行时准备脚本。`build-desktop.ps1` 构建 NSIS（Windows 安装器）；`dev-desktop.ps1` 启动 Tauri（桌面应用框架）开发模式；`start-backend.ps1` 在用户目录准备 Python（编程语言）运行时、虚拟环境、依赖、独立 `.env`、数据库、日志和 `papers`（试卷资产目录）。
+- `src-tauri/`：Tauri（桌面应用框架）Windows 桌面封装工程，负责窗口配置、资源打包、启动/停止本地后端、后端健康检查和 NSIS（Windows 安装器）产物生成；当前首版为 unsigned（未代码签名）内测包，MSI（Windows Installer，Windows 安装包）保留为后续目标。
 - `doc/`：本地维护目录，保存项目地图、验收标准、人工验收清单、桌面打包说明、长版 README（项目说明文档）、脱敏截图资产和进展记录；该目录已加入 `.gitignore`，不再提交到 GitHub（代码托管平台），但本地仍按项目规则维护。
 - `doc/进展记录/`：本地阶段性工作记录，包含完成内容、文件清单、错误汇报、验证结果和回退方案；记录文件不再进入 GitHub 提交。
 - `try/`：自动测试、调试脚本和临时验证文件；该目录内文件必须只服务于测试/调试，可清理后不影响项目运行。
@@ -105,7 +108,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 
 ## 启动与停止
 
-一键启动：
+Web（网页）一键启动：
 
 ```powershell
 .\start.bat
@@ -139,6 +142,24 @@ cd frontend
 npm run dev
 ```
 
+桌面版开发启动：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\desktop\dev-desktop.ps1 -SkipInstall
+```
+
+桌面版安装包构建：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\desktop\build-desktop.ps1 -SkipInstall
+```
+
+桌面版规则：
+- 桌面后端固定监听 `http://127.0.0.1:18080`；端口被非 Lang Drill Agent 进程占用时必须给出清晰错误。
+- 首次启动在 `%LOCALAPPDATA%\Lang Drill Agent\runtime` 准备 Python 3.11.9（编程语言运行时）、虚拟环境和后端依赖；使用 3.11.9 是因为 Python 3.11.15（编程语言版本）官方未提供 Windows 二进制安装器。
+- 桌面版真实配置和用户数据写入 `%APPDATA%\Lang Drill Agent\.env`、`data`、`logs` 和 `papers`，不写安装目录，不污染 Web（网页）开发期 `.env` 与数据库。
+- 桌面窗口关闭时必须停止本次拥有的后端进程；异常时通过用户目录日志定位原因。
+
 ## 常用命令
 
 ```powershell
@@ -152,6 +173,8 @@ py -m langdrill_agent.cli backup-user-data
 cd frontend
 npm install
 npm run dev
+cd ..
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\desktop\build-desktop.ps1 -SkipInstall
 ```
 
 ## 测试命令
@@ -161,6 +184,9 @@ py -m pytest try -q
 py -m ruff check backend try
 cd frontend
 npm run build
+cd ..
+cargo check --manifest-path src-tauri\Cargo.toml
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\desktop\build-desktop.ps1 -SkipInstall
 py try/browser_acceptance_check.py
 ```
 
@@ -203,6 +229,7 @@ npm run build
 - `.env` 是真实环境变量账本，必须留在 `.gitignore` 中，禁止提交。
 - `.env.example` 是假账本，只存变量名、占位值和必要说明。
 - 新增、删除或改名环境变量时，同步更新 `.env.example`、代码读取逻辑、启动文档和部署说明。
+- `LANGDRILL_ENV_FILE` 可指定真实 `.env` 文件路径；未设置时读取项目根目录 `.env`。桌面版必须设置到 `%APPDATA%\Lang Drill Agent\.env`，确保密钥、数据库路径和试卷资产目录与 Web（网页）开发环境隔离。
 - `start-dev.ps1` 只写入开发期默认 `LANGDRILL_DEFAULT_PROVIDER`、`LANGDRILL_DEFAULT_MODEL`、`LANGDRILL_PROVIDER_BASE_URL`，必须保留已有 `LANGDRILL_PROVIDER_API_KEY` 与 `LANGDRILL_PROVIDER_API_KEY_<PROVIDER_ID>` 形式的供应商专属密钥，并在保留时清理常见 `apikey:` / `Bearer:` 粘贴前缀。
 - 默认真实供应商密钥变量：`LANGDRILL_PROVIDER_API_KEY_OPENAI`、`LANGDRILL_PROVIDER_API_KEY_CLAUDE`、`LANGDRILL_PROVIDER_API_KEY_DEEPSEEK`、`LANGDRILL_PROVIDER_API_KEY_MIMO`；自定义供应商使用同规则生成的动态变量名。
 - `LANGDRILL_ENABLE_LLMLINGUA=1` 时，主动压缩上下文可尝试使用可选依赖 LLMLingua；未启用或不可用时使用本地抽取式摘要兜底。

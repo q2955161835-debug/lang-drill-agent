@@ -13,7 +13,7 @@ from typing import Any
 
 import httpx
 
-from .config import PROJECT_ROOT
+from .config import PROJECT_ROOT, env_file_path
 from .models import Question, UserProfile
 from .paper_assets import (
     ensure_exam_paper_dirs,
@@ -28,6 +28,12 @@ from .utils import dumps, loads, new_id, normalize_api_key, today_str, validate_
 
 
 logger = logging.getLogger(__name__)
+
+
+def _service_env_file_path() -> Path:
+    if os.getenv("LANGDRILL_ENV_FILE", "").strip():
+        return env_file_path()
+    return PROJECT_ROOT / ".env"
 
 
 class AgentSettingsPermissionService:
@@ -2979,7 +2985,7 @@ class ModelConfigService:
         return ""
 
     def _read_env(self) -> dict[str, str]:
-        env_path = PROJECT_ROOT / ".env"
+        env_path = _service_env_file_path()
         if not env_path.exists():
             return {}
         values: dict[str, str] = {}
@@ -3017,7 +3023,8 @@ class ModelConfigService:
         return values
 
     def _write_env(self, updates: dict[str, str], *, clear_empty: bool = False) -> None:
-        env_path = PROJECT_ROOT / ".env"
+        env_path = _service_env_file_path()
+        env_path.parent.mkdir(parents=True, exist_ok=True)
         values = self._read_env()
         if clear_empty:
             values.update(updates)
@@ -3028,6 +3035,8 @@ class ModelConfigService:
             "LANGDRILL_DB_PATH",
             "LANGDRILL_LOG_LEVEL",
             "LANGDRILL_USER_NAME",
+            "LANGDRILL_MIGRATE_LEGACY_DB",
+            "LANGDRILL_PAPER_ROOT",
             "LANGDRILL_DEFAULT_PROVIDER",
             "LANGDRILL_DEFAULT_MODEL",
             "LANGDRILL_PROVIDER_BASE_URL",

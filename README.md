@@ -2,6 +2,8 @@
 
 Lang Drill Agent 是一个面向语言考试备考的本地 Web（网页）学习工作台。它把“导入词表、生成题组、逐题作答、判题讲解、错题回流和学习统计”串成可追踪流程，重点服务英语四级/六级（CET-4/CET-6，大学英语四级/六级）、法语四级和日语四级/六级备考。
 
+当前也提供 Windows 桌面版：Tauri（桌面应用框架）窗口承载同一 React/Vite（前端框架/构建工具）界面，并在本机启动 FastAPI（Web API 框架）后端。Web（网页）启动方式保持不变。
+
 ## 解决的问题
 
 传统背词和刷题工具常见问题是：词表、题目、作答记录、错题复习和模型讲解分散在不同地方。这个项目把正式学习状态统一写入 SQLite（轻量数据库），模型只负责生成和讲解，题目落库、判分、进度和统计由程序负责。
@@ -21,6 +23,7 @@ Lang Drill Agent 是一个面向语言考试备考的本地 Web（网页）学�
 ```mermaid
 flowchart LR
   UI["React + Vite Web 工作台"] --> API["FastAPI API"]
+  Desktop["Tauri Windows 桌面壳"] --> UI
   API --> Services["学习服务层"]
   Services --> DB["SQLite 学习状态库"]
   Services --> Agents["Orchestrator / Question Author / Evaluator Tutor"]
@@ -35,6 +38,7 @@ flowchart LR
 - Agent 实现：[backend/langdrill_agent/agents.py](backend/langdrill_agent/agents.py)
 - 服务层：[backend/langdrill_agent/services.py](backend/langdrill_agent/services.py)
 - 测试：[try/](try/)
+- 桌面壳：[src-tauri/](src-tauri/)
 
 ## 本地运行
 
@@ -56,6 +60,22 @@ cd ..
 
 真实 API Key（接口密钥）只写入本地 `.env`，不要提交。示例变量见 [.env.example](.env.example)。
 
+## Windows 桌面版
+
+桌面版使用独立构建脚本，不改变 Web（网页）开发启动：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\desktop\build-desktop.ps1 -SkipInstall
+```
+
+构建成功后，NSIS（Windows 安装器）输出到：
+
+```text
+src-tauri\target\release\bundle\nsis\Lang Drill Agent_0.1.0_x64-setup.exe
+```
+
+首次启动会联网下载并准备 Python 3.11.9（编程语言运行时）和后端依赖，缓存到 `%LOCALAPPDATA%\Lang Drill Agent\runtime`；用户配置、数据库、日志和 `papers`（试卷资产目录）写入 `%APPDATA%\Lang Drill Agent`。安装包首版为 unsigned（未代码签名）内测包。
+
 ## 验证
 
 ```powershell
@@ -63,6 +83,8 @@ py -m pytest try -q
 py -m ruff check backend try
 cd frontend
 npm run build
+cd ..
+cargo check --manifest-path src-tauri\Cargo.toml
 ```
 
 项目已添加 GitHub Actions CI（持续集成）：推送和 Pull Request（拉取请求）会运行后端测试、Python（编程语言）检查和前端构建。
@@ -76,14 +98,15 @@ npm run build
 
 ## 当前完成度
 
-- 已完成：Web 主流程、正式题组入库、答题推进、截图词表导入、模型配置、真题索引、学习统计、上下文压缩入口和本地测试。
-- 已验证：后端测试、ruff（Python 代码检查）、前端 build（构建）和全链路 smoke（冒烟）流程。
+- 已完成：Web 主流程、正式题组入库、答题推进、截图词表导入、模型配置、真题索引、学习统计、上下文压缩入口、本地测试和 Windows 桌面版 NSIS（Windows 安装器）构建链路。
+- 已验证：后端测试、ruff（Python 代码检查）、前端 build（构建）、Tauri（桌面应用框架）编译检查和全链路 smoke（冒烟）流程。
 - 仍需优化：`api.py` 和 `services.py` 文件偏大，后续应拆分 routes（路由）和 core（核心公共模块）；前端 `App.tsx` 也需要逐步组件化。
 
 ## 下一步计划
 
 - 拆分 `backend/langdrill_agent/api.py` 为 `routes/chat.py`、`routes/settings.py`、`routes/imports.py`、`routes/papers.py` 和公共 `core` 模块。
 - 增加 API endpoint contract（接口契约）测试和更多前端交互验收。
+- 在干净 Windows（视窗系统）环境人工验收 unsigned（未签名）安装包首次启动、配置 API Key（接口密钥）、导入截图、刷题和退出重启。
 - 补充更多脱敏截图和演示视频。
 - 为真实模型输出质量建立对比样例和人工验收记录。
 

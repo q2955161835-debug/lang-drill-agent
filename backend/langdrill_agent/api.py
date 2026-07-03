@@ -100,7 +100,14 @@ async def global_exception_handler(request, exc):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:18080",
+        "http://tauri.localhost",
+        "https://tauri.localhost",
+        "tauri://localhost",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -127,6 +134,11 @@ async def request_logging_middleware(request: Request, call_next):
 def startup() -> None:
     configure_logging()
     init_db()
+
+
+@app.get("/api/health")
+def health() -> dict[str, Any]:
+    return {"ok": True, "app": "langdrill-agent"}
 
 
 def _current_model_provider(conn) -> ModelProvider:

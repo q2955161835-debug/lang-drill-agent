@@ -9,6 +9,8 @@ __pycache__/
 node_modules/
 frontend/dist/
 frontend/*.tsbuildinfo
+src-tauri/target/
+src-tauri/gen/
 data/*.db
 data/*.db-*
 data_backups/

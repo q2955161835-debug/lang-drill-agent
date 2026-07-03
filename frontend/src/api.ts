@@ -1,4 +1,4 @@
-export const API = "";
+export const API = (import.meta.env.VITE_LANGDRILL_API_BASE || "").replace(/\/$/, "");
 
 export async function apiGet<T>(url: string): Promise<T> {
   const response = await fetch(`${API}${url}`);

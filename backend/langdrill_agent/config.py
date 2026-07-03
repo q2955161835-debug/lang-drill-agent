@@ -27,6 +27,13 @@ class Settings:
 LEGACY_DEFAULT_DB_VALUES = {"./data/langdrill_agent.db", "data/langdrill_agent.db"}
 
 
+def env_file_path() -> Path:
+    raw = os.getenv("LANGDRILL_ENV_FILE", "").strip()
+    if raw:
+        return Path(os.path.expandvars(raw)).expanduser()
+    return PROJECT_ROOT / ".env"
+
+
 def default_user_data_dir() -> Path:
     raw = os.getenv("LANGDRILL_USER_DATA_DIR", "").strip()
     if raw:
@@ -50,7 +57,7 @@ def _resolve_db_path(raw_path: str, user_data_dir: Path) -> Path:
 
 def load_settings() -> Settings:
     if load_dotenv:
-        load_dotenv(PROJECT_ROOT / ".env")
+        load_dotenv(env_file_path())
 
     user_data_dir = default_user_data_dir()
     db_path = _resolve_db_path(os.getenv("LANGDRILL_DB_PATH", ""), user_data_dir)
