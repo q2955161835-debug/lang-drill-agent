@@ -195,6 +195,63 @@ def _model_request_error_message(exc: RuntimeError) -> str:
     )
 
 
+_QUESTION_COUNT_PATTERN = re.compile(
+    r"(?:再|来|出|加|补|生成|安排|给我|请|我要|想要|做|练)?\s*"
+    r"(?P<count>\d{1,2}|一|两|二|三|四|五|六|七|八|九|十|十一|十二|十三|十四|十五|十六|十七|十八|十九|二十)"
+    r"\s*(?:道|个)?\s*(?:题|练习|小测|测验)"
+)
+_CHINESE_COUNT_MAP = {
+    "一": 1,
+    "二": 2,
+    "两": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+    "十": 10,
+    "十一": 11,
+    "十二": 12,
+    "十三": 13,
+    "十四": 14,
+    "十五": 15,
+    "十六": 16,
+    "十七": 17,
+    "十八": 18,
+    "十九": 19,
+    "二十": 20,
+}
+
+
+def _requested_question_count(content: str) -> int | None:
+    match = _QUESTION_COUNT_PATTERN.search(content)
+    if not match:
+        return None
+    raw_count = match.group("count")
+    try:
+        value = int(raw_count)
+    except ValueError:
+        value = _CHINESE_COUNT_MAP.get(raw_count, 0)
+    if value <= 0:
+        return None
+    return max(1, min(24, value))
+
+
+def _extra_drill_setup_message() -> str:
+    return (
+        "可以，再加练前先定一下方向和数量。\n\n"
+        "你可以直接回复类似下面任意一种：\n\n"
+        "1. 出 10 题，完全随机\n"
+        "2. 出 8 题，今日薄弱项\n"
+        "3. 出 12 题，历史薄弱项\n"
+        "4. 出 6 题，更多复习内容\n"
+        "5. 出 10 题，阅读 / 完形 / 翻译判断 / 形近词辨析\n\n"
+        "如果不指定题型，我会按当前考试、今日错题、低掌握词和已选真题题型混合生成。"
+    )
+
+
 _WEB_SEARCH_EXPLICIT_PATTERN = re.compile(
     r"(?:联网|上网|网上|搜索|搜一下|搜搜|查一下|查查|检索|浏览网页|打开网页|web search|search web|browse|look up)",
     re.IGNORECASE,
@@ -1636,6 +1693,11 @@ def chat(request: ChatRequest) -> ChatResponse:
             assistant_content = str(general_result.get("content", ""))
             web_search_context = general_result.get("web_search")
 
+        elif task.value == "extra_drill_setup":
+            # ── 加练配置：题组已完成但用户还没指定题型/数量，先询问偏好，不写题目 ──
+            active_question = active
+            assistant_content = _extra_drill_setup_message()
+
         else:
             # ── 默认：有库存题先继续；无库存时先生成完整题组入库，再展示第一题 ──
             progress_before = QuestionService(conn).question_progress(session_id)
@@ -1648,8 +1710,17 @@ def chat(request: ChatRequest) -> ChatResponse:
                 )
             else:
                 try:
-                    OrchestratorAgent(conn, provider).handle_daily_drill(session_id, request.content)
-                    author_result = QuestionAuthorAgent(conn, provider).ensure_question_set(session_id, request.content)
+                    try:
+                        OrchestratorAgent(conn, provider).handle_daily_drill(session_id, request.content)
+                    except Exception:
+                        logger.warning("daily drill planning failed; continuing to question author", exc_info=True)
+                    requested_count = _requested_question_count(request.content)
+                    author_result = QuestionAuthorAgent(conn, provider).ensure_question_set(
+                        session_id,
+                        request.content,
+                        target_count=requested_count or 8,
+                        exact_count=requested_count is not None,
+                    )
                     active_question = QuestionService(conn).active_question(session_id)
                     progress = QuestionService(conn).question_progress(session_id)
                     assistant_content = _question_progress_message(

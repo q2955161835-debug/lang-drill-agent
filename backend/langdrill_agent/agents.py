@@ -199,6 +199,7 @@ class QuestionAuthorAgent:
         requested_content: str,
         *,
         target_count: int = 8,
+        exact_count: bool = False,
     ) -> dict[str, object]:
         question_service = QuestionService(self.conn)
         progress = question_service.question_progress(session_id)
@@ -213,7 +214,11 @@ class QuestionAuthorAgent:
         plan = loads(plan_row["daily_plan_json"], {}) if plan_row else {}
         start_sequence = question_service.next_sequence(session_id)
         content_pool = self._content_pool(profile.exam_id, requested_content, target_count * 3)
-        count = self._target_count(profile.daily_minutes, len(content_pool), target_count)
+        count = max(1, min(24, target_count)) if exact_count else self._target_count(
+            profile.daily_minutes,
+            len(content_pool),
+            target_count,
+        )
         past_paper_context = PastPaperService(self.conn).generation_context(profile.exam_id)
         pack = self.assembler.assemble(
             task_type="question_authoring",
@@ -264,6 +269,7 @@ class QuestionAuthorAgent:
                 start_sequence=start_sequence,
                 target_count=count,
                 content_pool=content_pool,
+                exact_count=exact_count,
             )
             question_service.save_questions(questions)
             return {
@@ -284,6 +290,7 @@ class QuestionAuthorAgent:
                 start_sequence=start_sequence,
                 target_count=count,
                 content_pool=content_pool,
+                exact_count=exact_count,
             )
             validation_status = "fallback_after_validation_failure"
         if len(questions) < max(2, min(count, 4)):
@@ -294,6 +301,7 @@ class QuestionAuthorAgent:
                 start_sequence=start_sequence,
                 target_count=count,
                 content_pool=content_pool,
+                exact_count=exact_count,
             )
             validation_status = "fallback_after_short_set"
         question_service.save_questions(questions)
@@ -523,6 +531,7 @@ class QuestionAuthorAgent:
         start_sequence: int,
         target_count: int,
         content_pool: list[dict[str, object]],
+        exact_count: bool = False,
     ) -> list[Question]:
         terms = [item for item in content_pool if str(item.get("term") or "").strip()]
         if not terms:
@@ -537,7 +546,8 @@ class QuestionAuthorAgent:
                 {"term": "accurate", "meaning": "准确的", "source_scope": "generated"},
             ]
         questions: list[Question] = []
-        for offset in range(max(4, min(target_count, len(terms) or target_count))):
+        total_count = target_count if exact_count else max(4, min(target_count, len(terms) or target_count))
+        for offset in range(total_count):
             item = terms[offset % len(terms)]
             sequence = start_sequence + offset
             term = str(item.get("term") or f"item-{sequence}").strip()

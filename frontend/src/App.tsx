@@ -228,6 +228,10 @@ function hasDailyImportedContent(panel: DailyPanel) {
     || (panel.knowledge_terms?.length || 0) > 0;
 }
 
+function isDailyQuestionSetFinished(panel: DailyPanel) {
+  return panel.questions_total > 0 && panel.questions_done >= panel.questions_total;
+}
+
 const DEFAULT_PANEL: DailyPanel = {
   date: localDateString(),
   title: "长期学习记录",
@@ -1654,6 +1658,7 @@ export default function App() {
   }, []);
 
   const hasCurrentImportedContent = hasDailyImportedContent(dailyPanel);
+  const currentQuestionSetFinished = isDailyQuestionSetFinished(dailyPanel);
 
   const quickStartToday = useCallback(() => {
     if (!hasCurrentImportedContent) {
@@ -1663,8 +1668,8 @@ export default function App() {
       return;
     }
     setQuickStartHint("");
-    void postChatContent("继续当前题组", false);
-  }, [hasCurrentImportedContent, postChatContent]);
+    void postChatContent(currentQuestionSetFinished ? "再来几题" : "继续当前题组", false);
+  }, [currentQuestionSetFinished, hasCurrentImportedContent, postChatContent]);
 
   const compressContext = useCallback(async () => {
     if (!activeSessionId || compressingContext) return;
@@ -2144,6 +2149,13 @@ function LongTermPanel({
   const questionPercent = questionTotal ? Math.round((learningStats.questions_done / questionTotal) * 100) : 0;
   const wordPercent = wordsTotal ? Math.round((learningStats.words_mastered / wordsTotal) * 100) : 0;
   const hasCurrentContent = hasDailyImportedContent(dailyPanel);
+  const currentQuestionSetFinished = isDailyQuestionSetFinished(dailyPanel);
+  const quickStartLabel = hasCurrentContent ? (currentQuestionSetFinished ? "再来几题" : "快速开始") : "当日导入";
+  const quickStartTitle = hasCurrentContent
+    ? currentQuestionSetFinished
+      ? "选择加练题型和数量"
+      : "继续当前题组"
+    : "打开右侧截图导入";
   return (
     <section className={`long-panel ${compact ? "compact" : ""}`}>
       <div className="long-grid">
@@ -2167,11 +2179,11 @@ function LongTermPanel({
           type="button"
           className={`quick-start-button ${hasCurrentContent ? "primary" : "import"}`}
           onClick={onQuickStart}
-          aria-label={hasCurrentContent ? "继续当前题组" : "打开当日截图导入"}
-          title={hasCurrentContent ? "继续当前题组" : "打开右侧截图导入"}
+          aria-label={quickStartTitle}
+          title={quickStartTitle}
         >
           {hasCurrentContent ? <PlayCircle size={17} /> : <ImageSquare size={17} />}
-          <span>{hasCurrentContent ? "快速开始" : "当日导入"}</span>
+          <span>{quickStartLabel}</span>
         </button>
       </div>
     </section>

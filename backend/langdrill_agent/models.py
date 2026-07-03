@@ -16,6 +16,7 @@ class TaskType(str, Enum):
     onboarding = "onboarding"
     general_chat = "general_chat"
     daily_drill = "daily_drill"
+    extra_drill_setup = "extra_drill_setup"
     continue_drill = "continue_drill"
     answer_question = "answer_question"
     explanation = "explanation"

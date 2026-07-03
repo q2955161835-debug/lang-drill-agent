@@ -50,6 +50,16 @@ _FORCE_DRILL_PATTERN = re.compile(
     r"|(?:quiz|drill|practice|test me)",
     re.IGNORECASE,
 )
+_EXTRA_DRILL_SETUP_PATTERN = re.compile(
+    r"^(?:给我|帮我|请|麻烦)?\s*"
+    r"(?:再|还|继续|接着)?\s*"
+    r"(?:来|加|补|安排|整)?\s*"
+    r"(?:几|多少)\s*"
+    r"(?:道|个|组|套)?\s*"
+    r"(?:题|练习|训练|小测|测验)\s*"
+    r"(?:吧|吗|呢|呀|啊)?$",
+    re.IGNORECASE,
+)
 _NATURAL_DRILL_PATTERN = re.compile(
     r"(?:给我|帮我|请|麻烦)?\s*"
     r"(?:再|在|还|继续|接着|多|另外|额外)?\s*"
@@ -100,6 +110,10 @@ def _looks_like_explicit_drill_request(text: str) -> bool:
     return bool(_START_LEARNING_PATTERN.search(text))
 
 
+def _looks_like_extra_drill_setup_request(text: str) -> bool:
+    return bool(_EXTRA_DRILL_SETUP_PATTERN.match(text.strip()))
+
+
 class TaskRouter:
     def route(
         self,
@@ -135,11 +149,15 @@ class TaskRouter:
         if has_active_question and _ANSWER_PATTERN.match(text):
             return TaskType.answer_question
 
-        # 7. 推进：只取数据库里的下一道待答题，不重新初始化
+        # 7. 模糊加练：先确认题型、来源和数量，不直接组卷。
+        if _looks_like_extra_drill_setup_request(text):
+            return TaskType.extra_drill_setup
+
+        # 8. 推进：只取数据库里的下一道待答题，不重新初始化
         if any(keyword == text or keyword in text for keyword in _CONTINUE_KEYWORDS):
             return TaskType.continue_drill
 
-        # 8. 明确学习 / 练题意图才进入日常训练；普通寒暄和咨询只聊天。
+        # 9. 明确学习 / 练题意图才进入日常训练；普通寒暄和咨询只聊天。
         if _looks_like_explicit_drill_request(text):
             return TaskType.daily_drill
 

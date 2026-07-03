@@ -64,6 +64,14 @@ def test_explicit_drill_requests_still_start_drill() -> None:
     assert router.route("接着练练", has_active_question=False) is TaskType.daily_drill
 
 
+def test_vague_extra_drill_request_asks_for_preferences() -> None:
+    router = TaskRouter()
+
+    assert router.route("再来几题", has_active_question=False) is TaskType.extra_drill_setup
+    assert router.route("再来几道题吧", has_active_question=False) is TaskType.extra_drill_setup
+    assert router.route("继续几题", has_active_question=False) is TaskType.extra_drill_setup
+
+
 def test_greeting_chat_calls_model_without_generating_questions(tmp_path: Path, monkeypatch) -> None:
     db_path = tmp_path / "greeting.db"
     monkeypatch.setenv("LANGDRILL_DB_PATH", str(db_path))

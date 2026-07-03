@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from langdrill_agent.agents import OrchestratorAgent
 from langdrill_agent.api import app
 from langdrill_agent.db import init_db, transaction
 from langdrill_agent.utils import dumps
@@ -121,6 +122,60 @@ def test_natural_drill_request_generates_question_set(tmp_path: Path, monkeypatc
         ).fetchone()["total"]
 
     assert question_count >= 4
+
+
+def test_vague_extra_drill_request_does_not_generate_questions(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "extra_drill_setup.db"
+    monkeypatch.setenv("LANGDRILL_DB_PATH", str(db_path))
+    monkeypatch.setenv("LANGDRILL_DEFAULT_PROVIDER", "mock")
+    monkeypatch.setenv("LANGDRILL_DEFAULT_MODEL", "mock-tutor-v1")
+    init_db(db_path)
+    _use_mock_provider(db_path)
+
+    client = TestClient(app)
+    response = client.post("/api/chat", json={"content": "再来几题", "force_new_session": True})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "先定一下方向和数量" in payload["message"]["content"]
+    assert payload["active_question"] is None
+    assert payload["daily_panel"]["questions_total"] == 0
+
+    with transaction(db_path) as conn:
+        question_count = conn.execute("SELECT COUNT(*) AS total FROM questions").fetchone()["total"]
+
+    assert question_count == 0
+
+
+def test_numbered_extra_drill_continues_when_planning_times_out(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "extra_drill_timeout.db"
+    monkeypatch.setenv("LANGDRILL_DB_PATH", str(db_path))
+    monkeypatch.setenv("LANGDRILL_DEFAULT_PROVIDER", "mock")
+    monkeypatch.setenv("LANGDRILL_DEFAULT_MODEL", "mock-tutor-v1")
+    init_db(db_path)
+    _use_mock_provider(db_path)
+
+    def raise_timeout(self, session_id: str, content: str) -> dict:
+        raise RuntimeError("The read operation timed out.")
+
+    monkeypatch.setattr(OrchestratorAgent, "handle_daily_drill", raise_timeout)
+
+    client = TestClient(app)
+    response = client.post("/api/chat", json={"content": "再来2题吧", "force_new_session": True})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "先生成并入库 2 道题" in payload["message"]["content"]
+    assert payload["active_question"]["sequence"] == 1
+    assert payload["daily_panel"]["questions_total"] == 2
+
+    with transaction(db_path) as conn:
+        question_count = conn.execute(
+            "SELECT COUNT(*) AS total FROM questions WHERE session_id=?",
+            (payload["session_id"],),
+        ).fetchone()["total"]
+
+    assert question_count == 2
 
 
 def test_chinese_colon_preface_is_not_used_as_english_option(tmp_path: Path, monkeypatch) -> None:
