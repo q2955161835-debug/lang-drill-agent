@@ -1960,6 +1960,7 @@ def chat(request: ChatRequest) -> ChatResponse:
 
         active_question = active  # 默认保持当前题
         answered_question: dict | None = None
+        answer_feedback_meta: dict[str, Any] | None = None
         settings_action: dict[str, Any] | None = None
         web_search_context: dict[str, Any] | None = None
 
@@ -1975,6 +1976,9 @@ def chat(request: ChatRequest) -> ChatResponse:
                 )
                 feedback = EvaluatorTutorAgent._strip_drill_progress_footer(result.feedback)
                 answered_question = _answered_question_snapshot(active, answer_content, result.is_correct)
+                answer_feedback_meta = {"source": result.feedback_source}
+                if result.model_error:
+                    answer_feedback_meta["model_error"] = result.model_error
                 session_service.mark_completed_if_finished(session_id)
                 active_question = QuestionService(conn).active_question(session_id)
                 progress = QuestionService(conn).question_progress(session_id)
@@ -2185,6 +2189,8 @@ def chat(request: ChatRequest) -> ChatResponse:
         assistant_payload = {"active_question": active_question}
         if answered_question:
             assistant_payload["answered_question"] = answered_question
+        if answer_feedback_meta:
+            assistant_payload["answer_feedback"] = answer_feedback_meta
         if web_search_context:
             assistant_payload["web_search"] = web_search_context
         if settings_action:

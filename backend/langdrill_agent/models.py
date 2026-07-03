@@ -111,6 +111,8 @@ class EvaluationResult(BaseModel):
     feedback: str
     mastery_delta: float
     next_action: str
+    feedback_source: Literal["model", "program_fallback"] = "model"
+    model_error: str = ""
 
 
 class PromptPack(BaseModel):

@@ -882,8 +882,13 @@ class EvaluatorTutorAgent:
                 base_feedback=feedback,
                 extra_prompt=extra_prompt.strip(),
             )
-        except RuntimeError:
+            feedback_source = "model"
+            model_error = ""
+        except RuntimeError as exc:
             logger.warning("model request failed during answer feedback, using base feedback", exc_info=True)
+            feedback_source = "program_fallback"
+            model_error = self._safe_model_error(exc)
+            feedback = self._model_failure_feedback(feedback, model_error)
         attempt_id = new_id("att")
         self.conn.execute(
             """
@@ -920,6 +925,8 @@ class EvaluatorTutorAgent:
             feedback=feedback,
             mastery_delta=score - 0.5,
             next_action="continue",
+            feedback_source=feedback_source,
+            model_error=model_error,
         )
 
     def _update_knowledge_mastery(self, question_payload: dict, score: float) -> None:
@@ -1022,7 +1029,38 @@ class EvaluatorTutorAgent:
                     ],
                 }
             )
-        result = self.provider.complete(pack)
+        try:
+            result = self.provider.complete(pack)
+        except RuntimeError:
+            self._record_answer_evaluation_call(
+                pack=pack,
+                model=self.provider.model,
+                input_tokens=0,
+                output_tokens=0,
+                latency_ms=0,
+                validation_status="provider_error_fallback",
+            )
+            raise
+        self._record_answer_evaluation_call(
+            pack=pack,
+            model=result.model,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            latency_ms=result.latency_ms,
+            validation_status="not_required",
+        )
+        return self._strip_drill_progress_footer(self._coerce_model_feedback(result.content, base_feedback)) or base_feedback
+
+    def _record_answer_evaluation_call(
+        self,
+        *,
+        pack: Any,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        latency_ms: int,
+        validation_status: str,
+    ) -> None:
         self.conn.execute(
             """
             INSERT INTO model_calls
@@ -1035,15 +1073,34 @@ class EvaluatorTutorAgent:
                 self.name,
                 "answer_evaluation",
                 self.provider.provider_id,
-                result.model,
+                model,
                 dumps([m["id"] for m in pack.system_modules]),
-                result.input_tokens,
-                result.output_tokens,
-                result.latency_ms,
-                "not_required",
+                input_tokens,
+                output_tokens,
+                latency_ms,
+                validation_status,
             ),
         )
-        return self._strip_drill_progress_footer(self._coerce_model_feedback(result.content, base_feedback)) or base_feedback
+
+    @staticmethod
+    def _safe_model_error(exc: RuntimeError) -> str:
+        text = re.sub(r"\s+", " ", str(exc)).strip()
+        if not text:
+            return "模型请求失败，未返回具体错误。"
+        lowered = text.lower()
+        if "<html" in lowered or "<!doctype" in lowered or "openresty" in lowered:
+            return "模型服务返回非结构化错误页面，请检查 Base URL、API 格式和网络。"
+        return text[:240]
+
+    @staticmethod
+    def _model_failure_feedback(base_feedback: str, error: str) -> str:
+        return (
+            "⚠️ Evaluator Tutor（判题讲解智能体）模型讲解未成功，本题已先按程序客观判定保存作答，"
+            "避免丢失记录。\n\n"
+            f"失败原因：{error}\n\n"
+            "以下是程序基础判题：\n\n"
+            f"{base_feedback}"
+        )
 
     @staticmethod
     def _coerce_model_feedback(content: str, base_feedback: str) -> str:
