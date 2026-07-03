@@ -825,13 +825,14 @@ def create_english_sessions(conn: sqlite3.Connection) -> None:
     word_dates = ["2026-06-22", "2026-06-26", "2026-06-30", "2026-07-02"]
     for index, (term, pos, meaning) in enumerate(ENGLISH_WORDS):
         day = word_dates[index % len(word_dates)]
+        mastery = 0.84 if day != "2026-07-02" else (0.82 if index % 3 == 0 else 0.52)
         insert_knowledge(
             conn,
             exam_id="cet4",
             term=term,
             meaning=f"{pos} {meaning}",
             source_scope="screenshot_import",
-            mastery=0.82 if index % 3 == 0 else 0.52,
+            mastery=mastery,
             created_at=ts(day, 9 + index % 8, 10 + index % 40),
         )
 
@@ -1022,7 +1023,58 @@ def create_active_english_session(conn: sqlite3.Connection) -> None:
             }
         },
     )
-    for call_index, task_type in enumerate(["question_authoring", "evaluation", "evaluation", "settings", "branch_chat"]):
+    insert_message(
+        conn,
+        session_id=session_id,
+        role="user",
+        content="请告诉我当前模型供应商、模型、Base URL、API 格式和思考等级。",
+        created_at=ts(day, 20, 43),
+        payload={"task": "general_chat"},
+    )
+    insert_message(
+        conn,
+        session_id=session_id,
+        role="assistant",
+        content=(
+            "当前脱敏模型配置如下：\n\n"
+            "- 供应商：Xiaomi MiMo（小米米魔）\n"
+            "- 模型：`mimo-v2.5-pro`\n"
+            "- Base URL（基础网址）：`https://api.xiaomimimo.com/anthropic`\n"
+            "- API 格式（接口格式）：`anthropic-messages`\n"
+            "- 思考等级（reasoning，推理）：开启\n"
+            "- 图片能力：当前聊天栏图片会先走 MinerU/RapidOCR（文档解析/本地文字识别）抽取文本。\n\n"
+            "API Key（接口密钥）只会显示是否已配置，不会在聊天、截图或日志中回显明文。"
+        ),
+        created_at=ts(day, 20, 44),
+        payload={"task": "general_chat", "source": "model_runtime_demo"},
+    )
+    insert_message(
+        conn,
+        session_id=session_id,
+        role="user",
+        content="总结",
+        created_at=ts(day, 20, 45),
+        payload={"task": "summary"},
+    )
+    insert_message(
+        conn,
+        session_id=session_id,
+        role="assistant",
+        content=(
+            "## 今日复盘\n\n"
+            "你今天的截图词表练习已经完成前 5 题，整体表现稳定，但 `contrary`、`fierce` 和 `collection/collision` 的干扰项仍需要回看。\n\n"
+            "### 错题归因\n"
+            "- 近形近义干扰：看到 `coll-` 开头时容易先联想到 collision（碰撞），但题干里的 museum、paintings 和 photographs 明确指向 collection（收藏）。\n"
+            "- 语境触发词没有被优先使用：遇到 fierce、contrary 这类抽象词时，先找句子中的程度、转折和对比线索。\n\n"
+            "### 下一轮建议\n"
+            "先做 6 道阅读式词汇题，再用截图导入补 8-10 个低掌握词。答题时继续在补充提问里写出你排除干扰项的理由。"
+        ),
+        created_at=ts(day, 20, 46),
+        payload={"task": "summary", "source": "daily_summary_demo"},
+    )
+    for call_index, task_type in enumerate(
+        ["question_authoring", "evaluation", "evaluation", "settings", "branch_chat", "general_chat", "summary"]
+    ):
         insert_model_call(
             conn,
             task_type=task_type,
@@ -1144,7 +1196,7 @@ def seed_japanese_knowledge(conn: sqlite3.Connection, records: list[QuestionReco
                 meaning="旧日语四级真实训练迁移词法点",
                 kind=kind,
                 source_scope="legacy_cjt4_import",
-                mastery=0.8 if index % 4 == 0 else 0.55,
+                mastery=0.82,
                 created_at=ts("2026-04-23" if index % 2 else "2026-04-21", 16 + index % 5, index % 50),
             )
 
