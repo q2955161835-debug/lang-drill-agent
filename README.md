@@ -68,6 +68,19 @@ http://127.0.0.1:5173
 
 真实 API Key 只写入本地 `.env`，不要提交。示例变量见 [.env.example](.env.example)。
 
+## 产品展示网站
+
+独立展示站点位于 [演示web](演示web)，不改动主应用 `frontend/`。它用于对外介绍 Lang Drill Agent 的核心闭环，包含双主题、动态单词银河、滚动组卷演示、脱敏截图画廊和一个可探索的三栏工作台模拟器。
+
+```powershell
+cd 演示web
+npm install
+npm run dev
+npm run build
+```
+
+该站点是静态前端，适合部署到 GitHub Pages。演示工作台不连接真实后端，不读取 `.env`，模型回复为固定模拟内容。
+
 ## Windows 安装包
 
 当前 Windows 安装包发布在 GitHub Release：

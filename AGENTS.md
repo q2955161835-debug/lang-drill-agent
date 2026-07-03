@@ -76,6 +76,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - `frontend/`：React（前端框架）+ TypeScript（类型化 JavaScript）+ Vite（前端构建工具）网页前端。
 - `frontend/src/api.ts`：前端 API（接口）基础地址。默认空字符串，Web（网页）模式继续走相对 `/api` 和 Vite（前端构建工具）代理；桌面构建通过 `VITE_LANGDRILL_API_BASE=http://127.0.0.1:18080` 指向桌面本地后端。
 - `frontend/public/assets/`：前端静态资源目录，当前保存深色主题背景图、浅色/深色 logo（标志）等无需打包导入的公开资产；浏览器 favicon（页签图标）使用 `frontend/public/favicon-light.png` 和 `frontend/public/favicon-dark.png`；聊天气泡使用浅蓝紫/深蓝紫专用颜色，不能把用户/助手消息退回纯白或纯黑。
+- `演示web/`：独立产品展示网站，不重构或替代 `frontend/` 主应用；使用 React（前端框架）+ TypeScript（类型化 JavaScript）+ Vite（前端构建工具）构建静态站点，包含双主题、动态单词银河、滚动组卷演示、脱敏截图画廊和可探索的三栏工作台 mock（模拟）前端。该站点用于 GitHub Pages（GitHub 静态站点）等静态托管，不连接真实后端，不读取 `.env`，演示模型回复为固定模拟内容。
 - `logo/`：用户提供的浅色/深色 logo（标志）源图目录；替换品牌时应从这里重新生成 `frontend/public/assets/logo-light.png`、`frontend/public/assets/logo-dark.png`、`frontend/public/favicon-light.png`、`frontend/public/favicon-dark.png` 和 `src-tauri/icons/icon.ico`。
 - `frontend/src/App.tsx`：前端主入口，负责可拖拽三栏布局、聊天、主聊天粘贴图片/拖拽文件/上传按钮导入、设置、初始化、当前题吸附显示、已答题回顾卡片、上下文容量圆环、Agent 设置权限、拓展 Skills（拓展技能）状态页和右侧工作台接入。
 - `frontend/src/components/`：前端可复用组件，当前重点是 `RightWorkbench.tsx`、`ContextMenu.tsx` 和 `MarkdownText.tsx`；`RightWorkbench.tsx` 折叠和页签切换必须隐藏但不卸载内部面板状态。
@@ -176,6 +177,10 @@ cd frontend
 npm install
 npm run dev
 cd ..
+cd 演示web
+npm install
+npm run dev
+cd ..
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\desktop\build-desktop.ps1 -SkipInstall
 ```
 
@@ -185,6 +190,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\desktop\build-de
 py -m pytest try -q
 py -m ruff check backend try
 cd frontend
+npm run build
+cd ..
+cd 演示web
 npm run build
 cd ..
 cargo check --manifest-path src-tauri\Cargo.toml
@@ -213,7 +221,7 @@ npm run build
 
 ## 允许修改范围
 
-- 任务相关的 `backend/langdrill_agent/`、`frontend/src/`、`frontend/public/assets/`、`scripts/`、`doc/`、`try/`。
+- 任务相关的 `backend/langdrill_agent/`、`frontend/src/`、`frontend/public/assets/`、`演示web/`、`scripts/`、`doc/`、`try/`。
 - 新增测试必须放入 `try/`。
 - 新增开发脚本优先放入 `scripts/dev/`，并同步更新 `AGENTS.md` 与验收标准。
 - 文档更新优先修改 `AGENTS.md`、`doc/项目地图.md`、`doc/验收标准.md`、`README.md` 和当天进展记录。

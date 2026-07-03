@@ -9,6 +9,11 @@ __pycache__/
 node_modules/
 frontend/dist/
 frontend/*.tsbuildinfo
+演示web/dist/
+演示web/.vite/
+演示web/*.tsbuildinfo
+演示web/vite.config.js
+演示web/vite.config.d.ts
 src-tauri/target/
 src-tauri/gen/
 data/*.db
