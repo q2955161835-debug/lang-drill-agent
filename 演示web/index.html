@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Lang Drill Agent 产品展示网站：把词表导入、考试式组卷、逐题讲解和错题回流串成一个学习闭环。"
+    />
+    <meta name="theme-color" content="#05070b" />
+    <link rel="icon" media="(prefers-color-scheme: light)" href="./favicon-light.png" />
+    <link rel="icon" media="(prefers-color-scheme: dark)" href="./favicon-dark.png" />
+    <title>Lang Drill Agent | Words become drills</title>
+    <script>
+      (function () {
+        var stored = localStorage.getItem("langdrill-demo-theme") || "system";
+        var theme =
+          stored === "system"
+            ? window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light"
+            : stored;
+        document.documentElement.dataset.theme = theme;
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
