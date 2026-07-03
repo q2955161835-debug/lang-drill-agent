@@ -97,6 +97,32 @@ def test_chat_generates_formal_question_set_and_auto_advances(tmp_path: Path, mo
     assert continued["active_question"]["id"] == answered["active_question"]["id"]
 
 
+def test_natural_drill_request_generates_question_set(tmp_path: Path, monkeypatch) -> None:
+    db_path = tmp_path / "natural_drill.db"
+    monkeypatch.setenv("LANGDRILL_DB_PATH", str(db_path))
+    monkeypatch.setenv("LANGDRILL_DEFAULT_PROVIDER", "mock")
+    monkeypatch.setenv("LANGDRILL_DEFAULT_MODEL", "mock-tutor-v1")
+    init_db(db_path)
+    _use_mock_provider(db_path)
+
+    client = TestClient(app)
+    response = client.post("/api/chat", json={"content": "再来点题", "force_new_session": True})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "先生成并入库" in payload["message"]["content"]
+    assert payload["active_question"]["sequence"] == 1
+    assert payload["daily_panel"]["questions_total"] >= 4
+
+    with transaction(db_path) as conn:
+        question_count = conn.execute(
+            "SELECT COUNT(*) AS total FROM questions WHERE session_id=?",
+            (payload["session_id"],),
+        ).fetchone()["total"]
+
+    assert question_count >= 4
+
+
 def test_chinese_colon_preface_is_not_used_as_english_option(tmp_path: Path, monkeypatch) -> None:
     db_path = tmp_path / "colon_preface.db"
     monkeypatch.setenv("LANGDRILL_DB_PATH", str(db_path))

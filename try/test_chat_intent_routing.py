@@ -55,6 +55,11 @@ def test_explicit_drill_requests_still_start_drill() -> None:
     assert router.route("请给我出 12 道四级词汇题", has_active_question=False) is TaskType.daily_drill
     assert router.route("今天练 CET-4 高频词汇", has_active_question=False) is TaskType.daily_drill
     assert router.route("collision: 碰撞；冲突", has_active_question=False) is TaskType.daily_drill
+    assert router.route("再来点题", has_active_question=False) is TaskType.daily_drill
+    assert router.route("在来点题", has_active_question=False) is TaskType.daily_drill
+    assert router.route("给我来两道阅读题", has_active_question=False) is TaskType.daily_drill
+    assert router.route("再来一组翻译判断题", has_active_question=False) is TaskType.daily_drill
+    assert router.route("接着练练", has_active_question=False) is TaskType.daily_drill
 
 
 def test_greeting_chat_calls_model_without_generating_questions(tmp_path: Path, monkeypatch) -> None:

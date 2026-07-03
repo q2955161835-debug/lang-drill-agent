@@ -50,6 +50,17 @@ _FORCE_DRILL_PATTERN = re.compile(
     r"|(?:quiz|drill|practice|test me)",
     re.IGNORECASE,
 )
+_NATURAL_DRILL_PATTERN = re.compile(
+    r"(?:给我|帮我|请|麻烦)?\s*"
+    r"(?:再|在|还|继续|接着|多|另外|额外)?\s*"
+    r"(?:来|出|加|补|安排|整)\s*"
+    r"(?:点|些|几道|几题|几|一|两|三|四|五|六|七|八|九|十|\d+)?\s*"
+    r"(?:道|个|组|套)?\s*"
+    r"(?:[\w\u4e00-\u9fff-]{0,8})?"
+    r"(?:题|练习|训练|小测|测验)"
+    r"|(?:再|还|继续|接着)\s*(?:练练|刷刷|做做)",
+    re.IGNORECASE,
+)
 _DRILL_ACTION_PATTERN = re.compile(
     r"(?:出题|出.{0,16}题|生成题|生成.{0,16}题)"
     r"|(?:给我|帮我|请|来|开始|现在|我要|我想)?.{0,8}"
@@ -81,9 +92,10 @@ def _looks_like_explicit_drill_request(text: str) -> bool:
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     if any(_VOCAB_DEFINITION_PATTERN.match(line) for line in lines):
         return True
-    if _has_advice_or_chat_cue(text) and not _FORCE_DRILL_PATTERN.search(text):
+    natural_drill = _NATURAL_DRILL_PATTERN.search(text)
+    if _has_advice_or_chat_cue(text) and not (_FORCE_DRILL_PATTERN.search(text) or natural_drill):
         return False
-    if _DRILL_ACTION_PATTERN.search(text):
+    if _DRILL_ACTION_PATTERN.search(text) or natural_drill:
         return True
     return bool(_START_LEARNING_PATTERN.search(text))
 

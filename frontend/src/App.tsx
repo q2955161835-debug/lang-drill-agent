@@ -755,6 +755,7 @@ function looksLikeScreenshotVocabulary(content: string) {
 
 const CHAT_ADVICE_RE = /怎么|如何|为什么|为啥|吗|？|\?|是不是|建议|推荐|计划|规划|应该/;
 const FORCE_DRILL_RE = /(?:出题|出.{0,16}题|生成题|生成.{0,16}题|刷题|做题|练题|考我|测验|小测)|(?:quiz|drill|practice|test me)/i;
+const NATURAL_DRILL_RE = /(?:给我|帮我|请|麻烦)?\s*(?:再|在|还|继续|接着|多|另外|额外)?\s*(?:来|出|加|补|安排|整)\s*(?:点|些|几道|几题|几|一|两|三|四|五|六|七|八|九|十|\d+)?\s*(?:道|个|组|套)?\s*(?:[\w\u4e00-\u9fff-]{0,8})?(?:题|练习|训练|小测|测验)|(?:再|还|继续|接着)\s*(?:练练|刷刷|做做)/i;
 const DRILL_ACTION_RE = /(?:出题|出.{0,16}题|生成题|生成.{0,16}题)|(?:给我|帮我|请|来|开始|现在|我要|我想)?.{0,8}(?:刷题|做题|练题|练(?:习|单词|词汇|听力|阅读|写作)?|考我|测验|小测|训练)|(?:quiz|drill|practice|test me)/i;
 const START_LEARNING_RE = /(?:今天|今日|现在|开始|我要|我想).{0,12}(?:学习|复习|背单词|练习|练|训练|刷题)/i;
 
@@ -765,8 +766,9 @@ function looksLikePracticeRequest(content: string) {
   if (lines.some((line) => VOCAB_INLINE_POS_RE.test(line) || VOCAB_INLINE_SEPARATOR_RE.test(line))) {
     return true;
   }
-  if (CHAT_ADVICE_RE.test(text) && !FORCE_DRILL_RE.test(text)) return false;
-  if (DRILL_ACTION_RE.test(text)) return true;
+  const naturalDrill = NATURAL_DRILL_RE.test(text);
+  if (CHAT_ADVICE_RE.test(text) && !(FORCE_DRILL_RE.test(text) || naturalDrill)) return false;
+  if (DRILL_ACTION_RE.test(text) || naturalDrill) return true;
   return START_LEARNING_RE.test(text);
 }
 
@@ -1338,10 +1340,12 @@ export default function App() {
         ? "模型正在识别图片"
       : activeQuestion && isOptionAnswer(cleanContent)
         ? "模型正在判题"
-        : likelyPractice ? "题目生成中" : "模型正在思考";
+        : likelyPractice ? "正在确认练题意图" : "模型正在思考";
     setLoadingLabel(nextLabel);
     const generationTimer = likelyScreenshot
       ? window.setTimeout(() => setLoadingLabel("题目生成中"), 900)
+      : likelyPractice
+        ? window.setTimeout(() => setLoadingLabel("题目生成中"), 500)
       : undefined;
     const attachmentLine = attachments.length
       ? `\n\n[图片附件：${attachments.map((item) => item.filename || "图片").join("、")}]`
