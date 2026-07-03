@@ -171,6 +171,24 @@ def seed_prompt_modules(conn: sqlite3.Connection) -> None:
             1,
         ),
         (
+            "task.summary",
+            "1.0.0",
+            "task",
+            "summary",
+            "any",
+            720,
+            1200,
+            "core.safety,core.product_capabilities",
+            (
+                "当用户要求“总结/复盘/今日表现”时，必须由当前模型基于 context_pack.daily_summary 生成详细复盘。"
+                "daily_summary 来自数据库，包含当日同考试范围的会话、题目、作答、正确答案、讲解、知识标签和最近聊天。"
+                "输出应使用 Markdown（标记语言），至少覆盖总体表现、已掌握内容、错题和易混点、知识点归因、下一轮复习顺序和具体练习建议。"
+                "不要只复述题目进度、正确率、新学内容和复习内容；不要编造数据库中没有的题目、答案或学习记录。"
+                "如果当天没有题目，要明确说明并给出开启练习的下一步。"
+            ),
+            1,
+        ),
+        (
             "task.branch_chat",
             "1.1.0",
             "task",

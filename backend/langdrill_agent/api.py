@@ -278,6 +278,22 @@ def _coerce_plain_model_text(content: str, fallback: str) -> str:
     return text or fallback
 
 
+def _clip_text(value: object, limit: int = 600) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    if len(text) <= limit:
+        return text
+    return f"{text[: max(0, limit - 1)].rstrip()}…"
+
+
+def _option_answer_text(options: list[Any], answer: object) -> str:
+    raw = str(answer or "").strip()
+    if len(raw) == 1 and raw.upper() in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+        index = ord(raw.upper()) - ord("A")
+        if 0 <= index < len(options):
+            return f"{raw.upper()}. {options[index]}"
+    return raw
+
+
 def _looks_like_web_search_request(text: str) -> bool:
     clean = text.strip()
     if not clean:
@@ -450,7 +466,7 @@ def _sanitized_skills_context(conn) -> dict[str, Any]:
 
 
 def _runtime_instruction_modules(task_type: str) -> list[dict[str, str]]:
-    if task_type not in {TaskType.general_chat.value, TaskType.branch_chat.value, "evaluation"}:
+    if task_type not in {TaskType.general_chat.value, TaskType.branch_chat.value, TaskType.summary.value, "evaluation"}:
         return []
     profile_contract = {
         "id": "runtime.profile_context_contract",
@@ -738,6 +754,251 @@ def _general_chat_response(
     except RuntimeError as exc:
         logger.warning("model request failed during general chat", exc_info=True)
         return {"content": _model_request_error_message(exc), "web_search": search_context}
+
+
+def _daily_summary_context(conn, session_id: str) -> dict[str, Any]:
+    session_service = SessionService(conn)
+    panel = session_service.daily_panel(session_id)
+    row = conn.execute("SELECT folder_date, exam_id FROM study_sessions WHERE id=?", (session_id,)).fetchone()
+    if not row:
+        return {"panel": panel, "sessions": [], "questions": [], "knowledge": {}, "recent_messages": []}
+    date = str(row["folder_date"])
+    exam_id = str(row["exam_id"])
+
+    session_rows = conn.execute(
+        """
+        SELECT id, title, status, daily_plan_json, created_at, updated_at
+        FROM study_sessions
+        WHERE folder_date=? AND exam_id=? AND status!='deleted'
+        ORDER BY created_at ASC, updated_at ASC
+        """,
+        (date, exam_id),
+    ).fetchall()
+    sessions = []
+    for session_row in session_rows:
+        plan = loads(session_row["daily_plan_json"], {})
+        sessions.append(
+            {
+                "id": session_row["id"],
+                "title": session_row["title"],
+                "status": session_row["status"],
+                "created_at": session_row["created_at"],
+                "updated_at": session_row["updated_at"],
+                "plan": {
+                    "new_content": plan.get("new_content", []),
+                    "review_content": plan.get("review_content", []),
+                    "target_minutes": plan.get("target_minutes"),
+                    "status": plan.get("status", ""),
+                },
+            }
+        )
+
+    question_rows = conn.execute(
+        """
+        SELECT
+          s.id AS session_id,
+          s.title AS session_title,
+          q.id,
+          q.sequence,
+          q.type,
+          q.prompt,
+          q.options_json,
+          q.answer_json,
+          q.explanation,
+          q.knowledge_tags_json,
+          q.difficulty,
+          q.status,
+          a.id AS attempt_id,
+          a.user_answer,
+          a.is_correct,
+          a.feedback,
+          a.mastery_delta,
+          a.created_at AS attempted_at
+        FROM questions q
+        JOIN study_sessions s ON s.id = q.session_id
+        LEFT JOIN attempts a ON a.id = (
+          SELECT a2.id
+          FROM attempts a2
+          WHERE a2.question_id=q.id AND a2.session_id=q.session_id
+          ORDER BY a2.created_at DESC
+          LIMIT 1
+        )
+        WHERE s.folder_date=? AND s.exam_id=? AND s.status!='deleted'
+        ORDER BY s.created_at ASC, q.sequence ASC
+        """,
+        (date, exam_id),
+    ).fetchall()
+    questions: list[dict[str, Any]] = []
+    all_terms: set[str] = set()
+    correct_terms: set[str] = set()
+    needs_review_terms: set[str] = set()
+    for question_row in question_rows:
+        options = loads(question_row["options_json"], [])
+        answer = loads(question_row["answer_json"], {})
+        tags = [str(tag) for tag in loads(question_row["knowledge_tags_json"], []) if str(tag).strip()]
+        normalized_terms = [
+            tag.split(":", 1)[1].strip()
+            if ":" in tag and tag.split(":", 1)[0].lower() in {"vocabulary", "vocab", "word", "words"}
+            else tag.strip()
+            for tag in tags
+        ]
+        all_terms.update(term for term in normalized_terms if term)
+        is_correct = None
+        if question_row["attempt_id"]:
+            is_correct = bool(question_row["is_correct"])
+            if is_correct:
+                correct_terms.update(term for term in normalized_terms if term)
+            else:
+                needs_review_terms.update(term for term in normalized_terms if term)
+        correct_letter = str(answer.get("letter") or "").strip()
+        correct_answer = _option_answer_text(options, correct_letter) if correct_letter else str(answer.get("correct") or "")
+        questions.append(
+            {
+                "id": question_row["id"],
+                "session_id": question_row["session_id"],
+                "session_title": question_row["session_title"],
+                "sequence": int(question_row["sequence"] or 0),
+                "type": question_row["type"],
+                "status": question_row["status"],
+                "prompt": _clip_text(question_row["prompt"], 700),
+                "options": options,
+                "user_answer": _option_answer_text(options, question_row["user_answer"]),
+                "correct_answer": correct_answer,
+                "answer_value": answer.get("correct", ""),
+                "is_correct": is_correct,
+                "difficulty": float(question_row["difficulty"] or 0),
+                "knowledge_tags": tags,
+                "explanation": _clip_text(question_row["explanation"], 500),
+                "feedback": _clip_text(question_row["feedback"], 650),
+                "mastery_delta": question_row["mastery_delta"],
+                "attempted_at": question_row["attempted_at"],
+            }
+        )
+
+    imported_rows = conn.execute(
+        """
+        SELECT term, meaning, source_scope, mastery_score, created_at, due_at
+        FROM knowledge_items
+        WHERE exam_id=? AND DATE(created_at, 'localtime')=?
+        ORDER BY created_at ASC, term ASC
+        """,
+        (exam_id, date),
+    ).fetchall()
+    imported_terms = [
+        {
+            "term": row["term"],
+            "meaning": _clip_text(row["meaning"], 180),
+            "source_scope": row["source_scope"],
+            "mastery_score": float(row["mastery_score"] or 0),
+            "due_at": row["due_at"],
+        }
+        for row in imported_rows
+    ]
+    for item in imported_terms:
+        if item["term"]:
+            all_terms.add(str(item["term"]))
+            if float(item["mastery_score"] or 0) < 0.75:
+                needs_review_terms.add(str(item["term"]))
+
+    message_rows = conn.execute(
+        """
+        SELECT m.role, m.content, m.created_at, s.title AS session_title
+        FROM messages m
+        JOIN study_sessions s ON s.id = m.session_id
+        WHERE s.folder_date=? AND s.exam_id=? AND s.status!='deleted'
+        ORDER BY m.created_at DESC
+        LIMIT 24
+        """,
+        (date, exam_id),
+    ).fetchall()
+    recent_messages = [
+        {
+            "role": row["role"],
+            "session_title": row["session_title"],
+            "content": _clip_text(row["content"], 500),
+            "created_at": row["created_at"],
+        }
+        for row in reversed(message_rows)
+    ]
+
+    return {
+        "date": date,
+        "exam_id": exam_id,
+        "exam_name": panel.get("exam_name", exam_id),
+        "panel": panel,
+        "sessions": sessions,
+        "questions": questions,
+        "knowledge": {
+            "all_terms": sorted(all_terms),
+            "correct_terms": sorted(correct_terms),
+            "needs_review_terms": sorted(needs_review_terms),
+            "imported_terms": imported_terms,
+        },
+        "recent_messages": recent_messages,
+        "summary_contract": (
+            "请基于 questions、knowledge、sessions 和 recent_messages 生成详细当日复盘；"
+            "优先分析错误模式、易混词、已掌握内容、下一轮复习顺序和可执行练习建议。"
+            "不得只复述 panel 聚合数字，也不得编造数据库中没有的作答。"
+        ),
+    }
+
+
+def _daily_summary_fallback(context: dict[str, Any]) -> str:
+    panel = context.get("panel", {}) or {}
+    questions = context.get("questions", []) or []
+    wrong_terms = (context.get("knowledge", {}) or {}).get("needs_review_terms", [])
+    lines = [
+        "## 今日学习总结",
+        "",
+        "模型总结暂时不可用，以下是基于数据库的程序兜底摘要。",
+        "",
+        f"- 日期：{panel.get('date', context.get('date', '未知'))}",
+        f"- 题目进度：{panel.get('questions_done', 0)}/{panel.get('questions_total', 0)}",
+        f"- 正确率：{int(float(panel.get('accuracy', 0) or 0) * 100)}%",
+    ]
+    if wrong_terms:
+        lines.append(f"- 优先复习：{'、'.join(wrong_terms[:12])}")
+    elif questions:
+        lines.append("- 暂未发现明确错题词条，可以按今日题目顺序快速回看。")
+    else:
+        lines.append("- 今天还没有完成题目，可以先导入词表或输入明确练习请求开启一轮。")
+    return "\n".join(lines)
+
+
+def _daily_summary_response(
+    conn,
+    provider: ModelProvider,
+    *,
+    session_id: str,
+    active_question: dict | None,
+) -> str:
+    summary_context = _daily_summary_context(conn, session_id)
+    pack = _assemble_runtime_pack(
+        conn,
+        task_type=TaskType.summary.value,
+        session_id=session_id,
+        user_content=(
+            "用户输入了“总结”。请根据 context_pack.daily_summary 中的当日完整学习数据，"
+            "生成一份详细复盘。输出 Markdown，建议包含：总体表现、已完成内容、错题和易混点、"
+            "知识点归因、下一轮复习顺序、具体练习建议。"
+        ),
+        active_question=active_question,
+        extra_context={"daily_summary": summary_context},
+    )
+    try:
+        result = provider.complete(pack)
+        _record_model_call(
+            conn,
+            agent_name="summary",
+            task_type=TaskType.summary.value,
+            provider=provider,
+            result=result,
+            prompt_modules=[module["id"] for module in pack.system_modules],
+        )
+        return _coerce_plain_model_text(result.content, _daily_summary_fallback(summary_context))
+    except RuntimeError:
+        logger.warning("model request failed during daily summary", exc_info=True)
+        return _daily_summary_fallback(summary_context)
 
 
 def _branch_model_response(
@@ -1656,24 +1917,14 @@ def chat(request: ChatRequest) -> ChatResponse:
                 )
 
         elif task.value == "summary":
-            # ── 总结：生成当日学习总结 ──
-            panel = session_service.daily_panel(session_id)
-            assistant_content = (
-                f"📊 今日学习总结\n\n"
-                f"日期：{panel.get('date', '未知')}\n"
-                f"题目进度：{panel.get('questions_done', 0)}/{panel.get('questions_total', 0)}\n"
-                f"正确率：{int(panel.get('accuracy', 0) * 100)}%\n"
-                f"状态：{panel.get('status', '未知')}\n\n"
+            # ── 总结：由当前模型基于当日数据库明细生成详细复盘 ──
+            active_question = active
+            assistant_content = _daily_summary_response(
+                conn,
+                provider,
+                session_id=session_id,
+                active_question=active_question,
             )
-            plan = panel.get("plan", {})
-            new_content = plan.get("new_content", [])
-            review_content = plan.get("review_content", [])
-            if new_content:
-                assistant_content += f"新学内容：{'、'.join(new_content)}\n"
-            if review_content:
-                assistant_content += f"复习内容：{'、'.join(review_content)}\n"
-            if not panel.get("questions_total"):
-                assistant_content += "\n今天还没有开始做题，输入学习内容开始吧！"
 
         elif task.value == "branch_chat" and request.selected_text:
             # ── 分支对话：转发到分支接口 ──
