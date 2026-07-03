@@ -23,6 +23,7 @@ logs/*.log
 frontend/%TEMP%*.log
 tmp/
 try/.cache/
+doc/
 papers/**/raw/*
 papers/**/parsed/*
 !papers/**/raw/.gitkeep
