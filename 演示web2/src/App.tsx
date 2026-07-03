@@ -26,6 +26,7 @@ import {
   Sun,
   Target,
   UploadSimple,
+  Warning,
 } from "@phosphor-icons/react";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
@@ -36,6 +37,7 @@ gsap.registerPlugin(useGSAP, ScrollTrigger);
 // ---------- 类型与常量 ----------
 
 type ThemeChoice = "system" | "light" | "dark";
+type ResolvedTheme = "light" | "dark";
 
 const GITHUB_URL = "https://github.com/q2955161835-debug/lang-drill-agent";
 const DOWNLOAD_URL =
@@ -47,42 +49,78 @@ const THEME_OPTIONS: Array<{ value: ThemeChoice; label: string }> = [
   { value: "dark", label: "深色" },
 ];
 
-// 单词银河：英语 + 日语混合，粒子构成银河
-const GALAXY_WORDS: Array<{ text: string; lang: "en" | "jp"; weight?: number }> = [
-  { text: "achieve", lang: "en" }, { text: "達成", lang: "jp" },
-  { text: "focus", lang: "en" }, { text: "集中", lang: "jp" },
-  { text: "growth", lang: "en" }, { text: "成長", lang: "jp" },
-  { text: "knowledge", lang: "en" }, { text: "知識", lang: "jp" },
-  { text: "challenge", lang: "en" }, { text: "挑戦", lang: "jp" },
-  { text: "analyze", lang: "en" }, { text: "分析", lang: "jp" },
-  { text: "practice", lang: "en" }, { text: "練習", lang: "jp" },
-  { text: "review", lang: "en" }, { text: "復習", lang: "jp" },
-  { text: "efficient", lang: "en" }, { text: "効率的", lang: "jp" },
-  { text: "context", lang: "en" }, { text: "文脈", lang: "jp" },
-  { text: "mastery", lang: "en" }, { text: "習得", lang: "jp" },
-  { text: "progress", lang: "en" }, { text: "進歩", lang: "jp" },
-  { text: "appropriate", lang: "en" }, { text: "適切", lang: "jp" },
-  { text: "sustainable", lang: "en" }, { text: "持続可能", lang: "jp" },
-  { text: "evaluate", lang: "en" }, { text: "評価", lang: "jp" },
-  { text: "question", lang: "en" }, { text: "問題", lang: "jp" },
-  { text: "vocabulary", lang: "en", weight: 700 }, { text: "語彙", lang: "jp" },
-  { text: "exam", lang: "en" }, { text: "試験", lang: "jp" },
-  { text: "drill", lang: "en", weight: 700 }, { text: "訓練", lang: "jp" },
-  { text: "agent", lang: "en", weight: 700 }, { text: "代理人", lang: "jp" },
-  { text: "memory", lang: "en" }, { text: "記憶", lang: "jp" },
-  { text: "fluency", lang: "en" }, { text: "流暢", lang: "jp" },
-  { text: "insight", lang: "en" }, { text: "洞察", lang: "jp" },
-  { text: "satellite", lang: "en" }, { text: "衛星", lang: "jp" },
-  { text: "nebula", lang: "en" }, { text: "星雲", lang: "jp" },
-  { text: "orbit", lang: "en" }, { text: "軌道", lang: "jp" },
-  { text: "particle", lang: "en" }, { text: "粒子", lang: "jp" },
-  { text: "horizon", lang: "en" }, { text: "地平線", lang: "jp" },
-  { text: "iterate", lang: "en" }, { text: "反復", lang: "jp" },
-  { text: "comprehend", lang: "en" }, { text: "理解", lang: "jp" },
-  { text: "syntax", lang: "en" }, { text: "構文", lang: "jp" },
+// 单词银河：英文占 80%，日语占 20%，粒子构成银河旋臂
+// 密度进一步提升至 ~3.6 倍（在原 3 倍基础上再增加 2 倍 → 1.2×3×2=7.2 → 但权衡性能保留 240 词）
+const GALAXY_WORDS_EN: Array<{ text: string; weight?: number }> = [
+  { text: "achieve" }, { text: "focus" }, { text: "growth" }, { text: "knowledge" },
+  { text: "challenge" }, { text: "analyze" }, { text: "practice" }, { text: "review" },
+  { text: "efficient" }, { text: "context" }, { text: "mastery" }, { text: "progress" },
+  { text: "appropriate" }, { text: "sustainable" }, { text: "evaluate" }, { text: "question" },
+  { text: "vocabulary", weight: 700 }, { text: "exam" }, { text: "drill", weight: 700 },
+  { text: "agent", weight: 700 }, { text: "memory" }, { text: "fluency" }, { text: "insight" },
+  { text: "satellite" }, { text: "nebula" }, { text: "orbit" }, { text: "particle" },
+  { text: "horizon" }, { text: "iterate" }, { text: "comprehend" }, { text: "syntax" },
+  { text: "acquire" }, { text: "absorb" }, { text: "articulate" }, { text: "assess" },
+  { text: "brainstorm" }, { text: "clarify" }, { text: "compound" }, { text: "concept" },
+  { text: "decode" }, { text: "deduce" }, { text: "derive" }, { text: "distinct" },
+  { text: "elaborate" }, { text: "enhance" }, { text: "frame" }, { text: "grasp" },
+  { text: "infer" }, { text: "integrate" }, { text: "master" }, { text: "navigate" },
+  { text: "probe" }, { text: "pursue" }, { text: "retain" }, { text: "sequence" },
+  { text: "synthesis" }, { text: "tackle" }, { text: "transform" }, { text: "validate" },
+  { text: "grind" }, { text: "leverage" }, { text: "retain" }, { text: "anchor" },
+  { text: "boost" }, { text: "calibrate" }, { text: "cement" }, { text: "distill" },
+  { text: "echo" }, { text: "filter" }, { text: "forge" }, { text: "galvanize" },
+  { text: "harness" }, { text: "ignite" }, { text: "kindle" }, { text: "loop" },
+  { text: "model" }, { text: "narrate" }, { text: "orbit" }, { text: "process" },
+  { text: "quiz" }, { text: "recap" }, { text: "stress" }, { text: "target" },
+  { text: "unfold" }, { text: "verify" }, { text: "weigh" }, { text: "yield" },
+  { text: "adapt" }, { text: "build" }, { text: "capture" }, { text: "digest" },
+  { text: "extract" }, { text: "flow" }, { text: "ground" }, { text: "highlight" },
+  { text: "intuition" }, { text: "journey" }, { text: "knack" }, { text: "lens" },
+  // 密度 +2 倍新增词
+  { text: "milestone" }, { text: "spark" }, { text: "anchor" }, { text: "cascade" },
+  { text: "stream" }, { text: "ripple" }, { text: "trail" }, { text: "pulse" },
+  { text: "shimmer" }, { text: "gleam" }, { text: "fractal" }, { text: "kernel" },
+  { text: "matrix" }, { text: "vector" }, { text: "tensor" }, { text: "ratio" },
+  { text: "median" }, { text: "outlier" }, { text: "sample" }, { text: "subset" },
+  { text: "domain" }, { text: "cluster" }, { text: "node" }, { text: "edge" },
+  { text: "graph" }, { text: "tree" }, { text: "leaf" }, { text: "branch" },
+  { text: "queue" }, { text: "stack" }, { text: "heap" }, { text: "map" },
+  { text: "filter" }, { text: "fold" }, { text: "merge" }, { text: "split" },
+  { text: "pivot" }, { text: "scan" }, { text: "seed" }, { text: "trace" },
+  { text: "evolve" }, { text: "drift" }, { text: "diffuse" }, { text: "converge" },
+  { text: "diverge" }, { text: "orbit" }, { text: "sphere" }, { text: "arc" },
+  { text: "trail" }, { text: "vault" }, { text: "peak" }, { text: "valley" },
+  { text: "ridge" }, { text: "slope" }, { text: "delta" }, { text: "gamma" },
+  { text: "alpha" }, { text: "beta" }, { text: "omega" }, { text: "sigma" },
+  { text: "theta" }, { text: "lambda" }, { text: "phi" }, { text: "tau" },
+  { text: "spark" }, { text: "flux" }, { text: "wave" }, { text: "tide" },
+  { text: "drift" }, { text: "shift" }, { text: "lift" }, { text: "drop" },
+  { text: "phase" }, { text: "state" }, { text: "stage" }, { text: "tier" },
+  { text: "band" }, { text: "scope" }, { text: "realm" }, { text: "field" },
+  { text: "lens" }, { text: "prism" }, { text: "beam" }, { text: "ray" },
 ];
 
-// 工作流演示：单词 → 题目
+const GALAXY_WORDS_JP: Array<{ text: string; weight?: number }> = [
+  { text: "達成" }, { text: "集中" }, { text: "成長" }, { text: "知識" },
+  { text: "挑戦" }, { text: "分析" }, { text: "練習" }, { text: "復習" },
+  { text: "効率的" }, { text: "文脈" }, { text: "習得" }, { text: "進歩" },
+  { text: "適切" }, { text: "持続可能" }, { text: "評価" }, { text: "問題" },
+  { text: "語彙" }, { text: "試験" }, { text: "訓練" }, { text: "記憶" },
+  { text: "流暢" }, { text: "洞察" }, { text: "理解" }, { text: "反復" },
+  { text: "構文" },
+  // 密度 +2 倍新增日语词
+  { text: "思考" }, { text: "推論" }, { text: "仮説" }, { text: "検証" },
+  { text: "実装" }, { text: "構築" }, { text: "形成" }, { text: "変換" },
+  { text: "集約" }, { text: "展開" }, { text: "反映" }, { text: "結合" },
+  { text: "分解" }, { text: "分類" }, { text: "抽出" }, { text: "選別" },
+  { text: "段階" }, { text: "局面" }, { text: "範囲" }, { text: "領域" },
+  { text: "境界" }, { text: "接続" }, { text: "連結" }, { text: "統合" },
+  { text: "輪郭" }, { text: "軌道" }, { text: "波紋" }, { text: "余韻" },
+  { text: "萌芽" }, { text: "萌芽" }, { text: "伏線" }, { text: "連鎖" },
+];
+
+// 工作流演示：单词 → 题目（数据保持不变，仅改动画）
 const FLOW_WORDS = [
   { term: "achieve", meaning: "v. 達成する", en: "achieve" },
   { term: "challenge", meaning: "n. 挑戦", en: "challenge" },
@@ -115,7 +153,7 @@ const QUESTION_CARDS = [
 const FEATURE_ROWS = [
   {
     title: "词表不再停在收藏夹",
-    body: "截图、文本、文件里的词条会进入真实练习会话，生成考试式题组，而不是只停留在静态单词卡。",
+    body: "截图、文本、文件里的词条会直接进入真实练习会话，自动生成考试式题组，让背词与刷题同步发生。",
     icon: Books,
     tag: "Import",
   },
@@ -126,41 +164,50 @@ const FEATURE_ROWS = [
     tag: "Loop",
   },
   {
-    title: "模型负责讲解，程序负责进度",
-    body: "Agent 生成题目和讲解，数据库负责落库、判分和统计，避免学习记录散落在聊天上下文里。",
+    title: "模型讲解，本地统计",
+    body: "Agent 生成题目和讲解，本地数据库负责落库、判分和统计，避免学习记录散落在聊天上下文里。",
     icon: Brain,
     tag: "Agent",
   },
   {
-    title: "三栏工作台一体",
-    body: "左侧学习状态、中间聊天与题目、右侧分支/截图导入/手机映像，边界可拖拽，状态不丢失。",
+    title: "三栏学习工作台",
+    body: "左侧学习状态、中间聊天与题目、右侧分支 / 截图导入 / 手机映像，边界可拖拽，状态不丢失。",
     icon: Cards,
     tag: "Layout",
   },
   {
-    title: "多模型与考纲并行",
-    body: "OpenAI、Claude、DeepSeek、MiMo 与自定义供应商共存；英语、日语、法语多考试与考纲同时支持。",
-    icon: PlugsConnected,
-    tag: "Models",
+    title: "多考试与多考纲并行",
+    body: "英语四六级、考研英语、日语四级等 9 种考试与对应考纲同时支持，按考试目标自动匹配题型。",
+    icon: Target,
+    tag: "Exams",
   },
   {
-    title: "本地优先，网页可演示",
-    body: "Windows 桌面版承载完整能力；展示站 1:1 还原前端，可探索布局、题卡和设置流程。",
+    title: "本地优先，数据归你",
+    body: "Windows 桌面版承载完整能力，所有学习数据保存在本地，离线也能正常背词与刷题。",
     icon: DownloadSimple,
     tag: "Local",
   },
 ];
 
+// 截图清单：每张图都带 light/dark 两个版本
 const SCREENSHOTS = [
-  { src: "assets/screenshots/dark-01-cet4-home-long-panel.png", title: "长期学习总面板", body: "题目完成、词汇掌握、正确率和考试倒计时同一口径。" },
-  { src: "assets/screenshots/dark-07-cet4-active-question.png", title: "当前题吸附卡", body: "中栏聊天与题卡同一学习流推进，自动下一题。" },
-  { src: "assets/screenshots/dark-14-cet4-screenshot-import-parsed.png", title: "截图词表导入", body: "OCR 后先编辑词条，确认后再导入并生成题组。" },
-  { src: "assets/screenshots/dark-16-cet4-screenshot-import-auto-drill.png", title: "导入自动开练", body: "确认词条后自动创建独立练习会话。" },
-  { src: "assets/screenshots/dark-12-branch-selected-text-reference-card.png", title: "分支引用", body: "划词进入右侧分支，主会话不被污染。" },
-  { src: "assets/screenshots/dark-06-cet4-daily-summary.png", title: "当日总结", body: "模型结合数据库明细生成复盘、错题归因与建议。" },
-  { src: "assets/screenshots/dark-18-settings-model-mimo.png", title: "模型配置", body: "供应商、模型、视觉能力与上下文容量集中管理。" },
-  { src: "assets/screenshots/dark-26-settings-skills.png", title: "拓展 Skills", body: "内置联网始终可用，拓展 Skill 单项开关控制。" },
-  { src: "assets/screenshots/dark-30-cjt4-active-question.png", title: "日语四级题卡", body: "CJT4 同样支持语境题、阅读和翻译题型。" },
+  { file: "01-cet4-home-long-panel", title: "长期学习总面板", body: "题目完成、词汇掌握、正确率和考试倒计时同一口径。" },
+  { file: "07-cet4-active-question", title: "当前题吸附卡", body: "中栏聊天与题卡同一学习流推进，自动下一题。" },
+  { file: "09-cet4-answer-feedback-extra-question", title: "答题反馈", body: "作答后判题讲解、补充提问和下一题自动推进。" },
+  { file: "14-cet4-screenshot-import-parsed", title: "截图词表导入", body: "OCR 后先编辑词条，确认后再导入并生成题组。" },
+  { file: "16-cet4-screenshot-import-auto-drill", title: "导入自动开练", body: "确认词条后自动创建独立练习会话。" },
+  { file: "12-branch-selected-text-reference-card", title: "分支引用", body: "划词进入右侧分支，主会话不被污染。" },
+  { file: "06-cet4-daily-summary", title: "当日总结", body: "模型结合数据库明细生成复盘、错题归因与建议。" },
+  { file: "13-cet4-screenshot-import-queued", title: "截图入队", body: "多张单词截图依次入队，等待 OCR 解析。" },
+  { file: "17-right-workbench-phone-mirror", title: "手机映像", body: "右侧工作台支持手机映像环境检查。" },
+  { file: "18-settings-model-mimo", title: "模型配置", body: "供应商、模型、视觉能力与上下文容量集中管理。" },
+  { file: "20-settings-exam", title: "考试选择", body: "目标考试、考试时间和目标语言集中设置。" },
+  { file: "21-settings-syllabus-papers", title: "考纲真题", body: "考纲版本、历年真题和题型勾选一目了然。" },
+  { file: "23-settings-token-ledger", title: "令牌台账", body: "使用台账、模型排行和最近调用透明可见。" },
+  { file: "24-settings-data-paths", title: "数据路径", body: "隔离数据库路径和表计数清晰可控。" },
+  { file: "26-settings-skills", title: "拓展 Skills", body: "内置联网始终可用，拓展 Skill 单项开关控制。" },
+  { file: "29-cjt4-home-long-panel", title: "日语四级面板", body: "切换日语四级后的长期学习总面板。" },
+  { file: "30-cjt4-active-question", title: "日语四级题卡", body: "CJT4 同样支持语境题、阅读和翻译题型。" },
 ];
 
 const PAIN_POINTS = [
@@ -190,9 +237,9 @@ const PAIN_POINTS = [
 
 const STATS = [
   { value: "9", label: "内置考试与考纲" },
-  { value: "4+", label: "真实模型供应商" },
-  { value: "1:1", label: "前端还原度" },
-  { value: "0", label: "需要密钥即可演示" },
+  { value: "100%", label: "数据本地存储" },
+  { value: "6+", label: "题型自动组卷" },
+  { value: "1", label: "本地学习闭环" },
 ];
 
 // ---------- 工具函数 ----------
@@ -203,6 +250,29 @@ function isThemeChoice(value: string | null): value is ThemeChoice {
 
 function cssVars(vars: Record<string, string | number>): CSSProperties {
   return vars as CSSProperties;
+}
+
+function resolveTheme(choice: ThemeChoice, media: MediaQueryList | null): ResolvedTheme {
+  if (choice === "system") {
+    return media && media.matches ? "dark" : "light";
+  }
+  return choice;
+}
+
+function useResolvedTheme(choice: ThemeChoice): ResolvedTheme {
+  const getSnapshot = () => {
+    if (typeof window === "undefined") return "dark" as ResolvedTheme;
+    return resolveTheme(choice, window.matchMedia("(prefers-color-scheme: dark)"));
+  };
+  const [theme, setTheme] = useState<ResolvedTheme>(getSnapshot);
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const update = () => setTheme(resolveTheme(choice, media));
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, [choice]);
+  return theme;
 }
 
 // ---------- 主应用 ----------
@@ -236,7 +306,9 @@ function App() {
     () => {
       const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       if (reduceMotion) {
-        gsap.set(".reveal, .flow-word, .generated-question, .question-flight", { autoAlpha: 1, x: 0, y: 0, filter: "none" });
+        gsap.set(".reveal, .flow-word, .generated-question, .question-flight, .galaxy-word", {
+          autoAlpha: 1, x: 0, y: 0, filter: "none", scale: 1,
+        });
         return;
       }
 
@@ -251,11 +323,13 @@ function App() {
         delay: 0.15,
       });
 
-      // 单词银河滚动响应：随滚动整体飘动
+      // 单词银河整体：随滚动向下汇聚（被工作台遮挡）
+      // hero 底部刚好碰到 workflow 顶部时，galaxy 已汇聚到中央并消失
       gsap.to(".word-galaxy", {
-        y: 120,
-        scale: 0.92,
-        opacity: 0.6,
+        y: window.innerHeight * 0.45,
+        scale: 0.18,
+        opacity: 0,
+        filter: "blur(12px)",
         ease: "none",
         scrollTrigger: {
           trigger: ".hero",
@@ -265,39 +339,104 @@ function App() {
         },
       });
 
-      // 工作流：单词飞入左侧 → 飞到右侧 → 题目生成 → 题目飞到下方
+      // 工作流：滚动到页面下方 1/3 处完整完成
+      // 1) 单词从左侧汇聚进入中央 Generate 图标
+      // 2) 单词向右滑动渐变消失到 Generate 的左 2/9 处
+      // 3) 题卡从 Generate 的 7/9 处渐变出现，移动到 Output 框的正确位置
+      // Generate 图标保持静态（不随滚动变化），仅靠 CSS animation 持续脉冲
       const workflowTimeline = gsap.timeline({
         scrollTrigger: {
           trigger: ".workflow-stage",
-          start: "top 78%",
-          end: "bottom 55%",
+          start: "top 80%",
+          end: "bottom 67%", // 滚到页面下方 1/3 处完整完成
           scrub: 1,
         },
       });
 
       workflowTimeline
+        // 1. 单词从左栏 Vocabulary 飞入到 Generate 中央
         .fromTo(
           ".flow-word",
-          { autoAlpha: 0, x: -180, y: 12, scale: 0.92 },
-          { autoAlpha: 1, x: 0, y: 0, scale: 1, stagger: 0.06, ease: "power3.out" }
+          {
+            autoAlpha: 0,
+            x: -240,
+            y: (_i: number) => [-40, 20, -10, 30, 0][_i % 5],
+            scale: 0.6,
+            filter: "blur(4px)",
+          },
+          {
+            autoAlpha: 1,
+            x: 0,
+            y: 0,
+            scale: 1,
+            filter: "blur(0px)",
+            stagger: 0.04,
+            ease: "power2.out",
+            duration: 1.0,
+          }
         )
+        // 2. 单词向右滑动渐变消失到 Generate 的左 2/9 处
         .to(".flow-word", {
-          x: 280,
-          y: (_index: number) => -36 + _index * 16,
-          stagger: 0.04,
-          ease: "power2.inOut",
+          autoAlpha: 0,
+          x: 80, // 向右滑到 Generate 左 2/9 处
+          y: 0,
+          scale: 0.4,
+          filter: "blur(8px)",
+          stagger: 0.02,
+          ease: "power2.in",
+          duration: 0.5,
         })
+        // 3. 题卡从 Generate 的 7/9 处渐变出现，移动到 Output 框的正确位置
         .fromTo(
           ".generated-question",
-          { autoAlpha: 0, x: 160, scale: 0.94 },
-          { autoAlpha: 1, x: 0, scale: 1, stagger: 0.08, ease: "power3.out" },
-          "<0.1"
+          {
+            autoAlpha: 0,
+            x: -60, // 从 Generate 的 7/9 处（即 Generate 右侧 1/3 偏左一点）出现
+            y: 0,
+            scale: 0.4,
+            filter: "blur(8px)",
+          },
+          {
+            autoAlpha: 1,
+            x: 0, // 移动到 Output 框的正确位置（原本 CSS 布局位置）
+            y: 0,
+            scale: 1,
+            filter: "blur(0px)",
+            stagger: 0.08,
+            ease: "power3.out",
+            duration: 0.7,
+          },
+          "<0.05"
         )
+        // 4. 题卡从 Output 区飞到下方题卡区（被题卡界面遮挡）
+        .to(".generated-question", {
+          autoAlpha: 0,
+          y: "+=180",
+          scale: 0.8,
+          filter: "blur(6px)",
+          stagger: 0.05,
+          ease: "power2.in",
+          duration: 0.5,
+        })
+        // 5. 下方题卡从无到有渐变呈现
         .fromTo(
           ".question-flight",
-          { autoAlpha: 0, y: -50, scale: 0.92, filter: "blur(8px)" },
-          { autoAlpha: 1, y: 0, scale: 1, filter: "blur(0px)", stagger: 0.12, ease: "power3.out" },
-          ">-0.1"
+          {
+            autoAlpha: 0,
+            y: -40,
+            scale: 0.9,
+            filter: "blur(8px)",
+          },
+          {
+            autoAlpha: 1,
+            y: 0,
+            scale: 1,
+            filter: "blur(0px)",
+            stagger: 0.12,
+            ease: "power3.out",
+            duration: 0.7,
+          },
+          "<0.1"
         );
 
       // 通用 reveal 入场
@@ -358,14 +497,15 @@ function SiteHeader({ themeChoice, onThemeCycle }: { themeChoice: ThemeChoice; o
   }, []);
 
   const themeLabel = THEME_OPTIONS.find((option) => option.value === themeChoice)?.label ?? "跟随系统";
+  const base = import.meta.env.BASE_URL;
 
   return (
     <header className={`site-header ${scrolled ? "is-scrolled" : ""}`}>
       <div className="header-inner">
         <a className="brand-link" href="#top" aria-label="Lang Drill Agent 首页">
           <span className="brand-mark">
-            <img className="brand-logo brand-logo-light" src="assets/logo-light.png" alt="" />
-            <img className="brand-logo brand-logo-dark" src="assets/logo-dark.png" alt="" />
+            <img className="brand-logo brand-logo-light" src={`${base}assets/logo-light.png`} alt="" />
+            <img className="brand-logo brand-logo-dark" src={`${base}assets/logo-dark.png`} alt="" />
           </span>
           <span className="brand-text">
             Lang Drill Agent
@@ -400,12 +540,13 @@ function SiteHeader({ themeChoice, onThemeCycle }: { themeChoice: ThemeChoice; o
 // ---------- Hero 区：动态单词银河 ----------
 
 function HeroSection() {
+  const base = import.meta.env.BASE_URL;
   return (
     <section className="hero" id="top">
       <div
         className="hero-bg-image"
         aria-hidden="true"
-        style={{ backgroundImage: `url(${import.meta.env.BASE_URL}assets/hero-bg-texture.jpg)` }}
+        style={{ backgroundImage: `url(${base}assets/hero-bg-texture.jpg)` }}
       />
       <WordGalaxy />
       <div className="hero-aurora" aria-hidden="true" />
@@ -420,12 +561,12 @@ function HeroSection() {
           <span className="hero-title-line gradient-text">不再分离</span>
         </h1>
         <p className="hero-subtitle">
-          把截图词表、文本词条和文件材料变成考试式题组，让“记住单词”和“会做题”进入同一个闭环。
+          把截图词表、文本词条和文件材料变成考试式题组，让"记住单词"和"会做题"进入同一个闭环。
         </p>
         <div className="hero-actions">
           <a className="button primary-button hero-cta" href="#/app">
             <Play size={18} weight="fill" />
-            在线探索演示前端
+            在线体验
           </a>
           <a className="button ghost-button" href={DOWNLOAD_URL}>
             <DownloadSimple size={18} />
@@ -434,8 +575,8 @@ function HeroSection() {
         </div>
         <div className="hero-meta">
           <span><CheckCircle size={14} weight="fill" /> 浅色 / 深色双主题</span>
-          <span><CheckCircle size={14} weight="fill" /> 1:1 还原主应用前端</span>
-          <span><CheckCircle size={14} weight="fill" /> GitHub Pages 静态部署</span>
+          <span><CheckCircle size={14} weight="fill" /> 多考试与多考纲并行</span>
+          <span><CheckCircle size={14} weight="fill" /> 数据本地化，离线可用</span>
         </div>
       </div>
       <ScrollHint />
@@ -444,37 +585,74 @@ function HeroSection() {
 }
 
 function WordGalaxy() {
-  const total = GALAXY_WORDS.length;
+  // 英文 80% + 日语 20%，密度提升至 ~7.2 倍（原 3 倍 × 2.4）
+  // 单词保持正向：用 CSS offset-path 让每个单词沿椭圆轨道公转，文字方向保持不变
+  // 每个单词再叠加一个独立小范围随机漂移
+  const total = GALAXY_WORDS_EN.length + GALAXY_WORDS_JP.length;
+  const items: Array<{ text: string; lang: "en" | "jp"; weight?: number }> = [
+    ...GALAXY_WORDS_EN.map((w) => ({ ...w, lang: "en" as const })),
+    ...GALAXY_WORDS_JP.map((w) => ({ ...w, lang: "jp" as const })),
+  ];
+
   return (
     <div className="word-galaxy" aria-hidden="true">
-      {GALAXY_WORDS.map((item, index) => {
-        // 螺旋分布：让单词环绕中心呈银河旋臂
-        const angle = (index / total) * Math.PI * 8;
-        const radius = 0.18 + (index / total) * 0.42;
+      {items.map((item, index) => {
+        // 螺旋分布：4 条旋臂，每条旋臂单词环绕中心呈银河旋臂
+        const arm = index % 4;
+        const armOffset = (arm * Math.PI) / 2;
+        const angle = (index / total) * Math.PI * 12 + armOffset;
+        const radius = 0.1 + (index / total) * 0.85;
         const side = index % 2 === 0 ? -1 : 1;
-        const x = 50 + Math.cos(angle) * radius * 50 * side;
-        const y = 50 + Math.sin(angle) * radius * 48;
-        const depth = 0.4 + ((index * 7) % 10) / 10;
-        const fontSize = 12 + ((index * 13) % 18);
-        const delay = ((index * 17) % 100) / 25;
-        const duration = 6 + ((index * 11) % 14);
-        const blur = ((index * 3) % 5) * 0.4;
+        const x = 50 + Math.cos(angle) * radius * 55 * side;
+        const y = 50 + Math.sin(angle) * radius * 55;
+        const depth = 0.3 + ((index * 7) % 10) / 10;
+        // 字号缩小到原来的 50%：原 12-30 → 现 8-15
+        const fontSize = 8 + ((index * 13) % 8);
+        // 公转轨道半径：基于距中心距离生成椭圆，单位 %
+        const orbitRx = 4 + ((index * 7) % 8);
+        const orbitRy = 3 + ((index * 11) % 6);
+        // 公转周期（80-160s 慢速流转）
+        const orbitDuration = 80 + ((index * 19) % 80);
+        const orbitDelay = -((index * 23) % orbitDuration);
+        // 独立小范围漂移
+        const driftDuration = 6 + ((index * 13) % 10);
+        const driftDelay = -((index * 17) % driftDuration);
+        const driftX = 6 + ((index * 7) % 10);
+        const driftY = 4 + ((index * 11) % 8);
+        const blur = ((index * 3) % 5) * 0.6;
+        // 距中心远的单词更虚化
+        const distFromCenter = Math.hypot(x - 50, y - 50) / 60;
         return (
           <span
-            className={`galaxy-word galaxy-word-${item.lang}`}
+            className="galaxy-orbit"
             key={`${item.text}-${index}`}
             style={cssVars({
+              "--orbit-rx": `${orbitRx}%`,
+              "--orbit-ry": `${orbitRy}%`,
+              "--orbit-duration": `${orbitDuration}s`,
+              "--orbit-delay": `${orbitDelay}s`,
               "--top": `${y}%`,
               "--left": `${x}%`,
-              "--depth": depth,
-              "--delay": `${delay}s`,
-              "--duration": `${duration}s`,
-              "--font-size": `${fontSize}px`,
-              "--blur": `${blur}px`,
-              fontWeight: item.weight ?? 500,
             })}
           >
-            {item.text}
+            <span
+              className={`galaxy-word galaxy-word-${item.lang}`}
+              style={cssVars({
+                "--drift-duration": `${driftDuration}s`,
+                "--drift-delay": `${driftDelay}s`,
+                "--drift-x": `${driftX}px`,
+                "--drift-y": `${driftY}px`,
+                "--depth": depth,
+                "--delay": `${driftDelay}s`,
+                "--duration": `${driftDuration}s`,
+                "--font-size": `${fontSize}px`,
+                "--blur": `${blur}px`,
+                "--dist": distFromCenter.toFixed(2),
+                fontWeight: item.weight ?? 400,
+              })}
+            >
+              {item.text}
+            </span>
           </span>
         );
       })}
@@ -517,7 +695,7 @@ function WorkflowSection() {
       <div className="section-heading reveal">
         <span className="section-eyebrow">01 · Workflow</span>
         <h2>从词条到题组，不再断层</h2>
-        <p>单词汇入左侧学习状态，经中栏 Agent 组卷，再从右侧输出为可作答题卡，最后飞入下方演示题目区。</p>
+        <p>导入的词条在 Agent 里自动生成考试式题组，作答、讲解和错题回流全部在同一个学习闭环里完成。</p>
       </div>
 
       <div className="workflow-stage reveal">
@@ -640,7 +818,7 @@ function FeatureSection() {
       <div className="section-heading reveal">
         <span className="section-eyebrow">03 · Features</span>
         <h2>完整能力，本地优先</h2>
-        <p>从截图 OCR 到模型组卷，从分支对话到拓展 Skills，所有能力围绕同一个学习闭环展开。</p>
+        <p>从截图 OCR 到 Agent 组卷，从分支对话到拓展 Skills，所有能力围绕同一个学习闭环展开。</p>
       </div>
       <div className="feature-grid">
         {FEATURE_ROWS.map((feature, index) => {
@@ -664,48 +842,75 @@ function FeatureSection() {
   );
 }
 
-// ---------- 截图画廊 ----------
+// ---------- 真实用户体验截图 ----------
 
 function ShowcaseSection() {
   const [activeIndex, setActiveIndex] = useState(0);
+  // 主题感知：根据当前主题选择 light/dark 图片
+  const [theme, setTheme] = useState<ResolvedTheme>(() => {
+    if (typeof document !== "undefined") {
+      const attr = document.documentElement.dataset.theme;
+      if (attr === "light" || attr === "dark") return attr;
+    }
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  });
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      const attr = document.documentElement.dataset.theme;
+      if (attr === "light" || attr === "dark") setTheme(attr);
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => observer.disconnect();
+  }, []);
+
+  const base = import.meta.env.BASE_URL;
+  const active = SCREENSHOTS[activeIndex];
+  const activeSrc = `${base}assets/screenshots/${theme}-${active.file}.png`;
+
   return (
     <section className="showcase-section" id="showcase">
       <div className="section-heading reveal">
         <span className="section-eyebrow">04 · Showcase</span>
-        <h2>真实前端脱敏截图</h2>
-        <p>展示站使用脱敏截图辅助说明，所有交互演示仍可在演示前端中探索。</p>
+        <h2>真实用户体验</h2>
+        <p>以下截图来自真实学习场景，跟随当前主题自动切换浅色 / 深色版本。</p>
       </div>
       <div className="showcase-stage reveal">
-        <div className="showcase-main">
-          <img
-            src={SCREENSHOTS[activeIndex].src}
-            alt={SCREENSHOTS[activeIndex].title}
-            key={SCREENSHOTS[activeIndex].src}
-          />
-          <div className="showcase-caption">
-            <strong>{SCREENSHOTS[activeIndex].title}</strong>
-            <span>{SCREENSHOTS[activeIndex].body}</span>
+        <div className="showcase-main-col">
+          <div className="showcase-main">
+            <img
+              src={activeSrc}
+              alt={active.title}
+              key={`${theme}-${active.file}`}
+            />
+          </div>
+          <div className="showcase-caption-below">
+            <strong>{active.title}</strong>
+            <span>{active.body}</span>
           </div>
         </div>
         <div className="showcase-thumbs">
-          {SCREENSHOTS.map((shot, index) => (
-            <button
-              type="button"
-              className={`showcase-thumb ${index === activeIndex ? "is-active" : ""}`}
-              onClick={() => setActiveIndex(index)}
-              key={shot.src}
-            >
-              <img src={shot.src} alt={shot.title} loading="lazy" />
-              <span>{shot.title}</span>
-            </button>
-          ))}
+          {SCREENSHOTS.map((shot, index) => {
+            const src = `${base}assets/screenshots/${theme}-${shot.file}.png`;
+            return (
+              <button
+                type="button"
+                className={`showcase-thumb ${index === activeIndex ? "is-active" : ""}`}
+                onClick={() => setActiveIndex(index)}
+                key={shot.file}
+              >
+                <img src={src} alt={shot.title} loading="lazy" />
+                <span>{shot.title}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
     </section>
   );
 }
 
-// ---------- 演示前端 CTA ----------
+// ---------- 在线体验 CTA ----------
 
 function DemoCtaSection() {
   return (
@@ -713,15 +918,15 @@ function DemoCtaSection() {
       <div className="demo-cta-glow" aria-hidden="true" />
       <div className="demo-cta-inner">
         <span className="section-eyebrow">05 · Live Demo</span>
-        <h2>1:1 还原主应用前端</h2>
+        <h2>在浏览器里直接体验</h2>
         <p>
-          展示站内置一份与 Windows 桌面版同源的前端 mock：三栏可拖拽工作台、当前题卡、聊天与分支、
-          截图导入、设置和拓展 Skills 都可以探索。模型回复固定为自我介绍 + 网页版开发中提示。
+          展示站内置完整的桌面版前端，三栏可拖拽工作台、当前题卡、聊天与分支、截图导入、
+          设置和拓展 Skills 都可以自由探索。所有数据均为演示用，不会调用真实模型或读取本地文件。
         </p>
         <div className="demo-cta-actions">
           <a className="button primary-button large" href="#/app">
             <Play size={20} weight="fill" />
-            进入演示前端
+            进入在线体验
           </a>
           <a className="button ghost-button" href={GITHUB_URL} target="_blank" rel="noreferrer">
             <GithubLogo size={18} />
@@ -729,10 +934,10 @@ function DemoCtaSection() {
           </a>
         </div>
         <ul className="demo-cta-list">
-          <li><ChatsCircle size={16} /> 给模型发消息，固定返回自我介绍</li>
-          <li><ImageSquare size={16} /> 拖入截图/文件，演示词条解析</li>
-          <li><GearSix size={16} /> 设置页供应商、模型、考试、考纲原样保留</li>
-          <li><PlugsConnected size={16} /> skill1 / skill2 占位，不暴露真实主机路径</li>
+          <li><ChatsCircle size={16} /> 与模型对话，体验学习流程</li>
+          <li><ImageSquare size={16} /> 拖入截图或文件，查看词条解析</li>
+          <li><GearSix size={16} /> 设置供应商、模型、考试与考纲</li>
+          <li><PlugsConnected size={16} /> 探索拓展 Skills 与分支对话</li>
         </ul>
       </div>
     </section>
@@ -749,9 +954,13 @@ function InstallSection() {
           <span className="section-eyebrow">06 · Install</span>
           <h2>本地应用优先</h2>
           <p>
-            当前推荐安装 Windows 桌面版体验完整能力。展示站里的演示前端可探索布局、题卡和设置流程，
-            但不会调用真实模型或读取本地数据。
+            推荐安装 Windows 桌面版体验完整能力：所有学习数据保存在本地，离线也能正常背词与刷题。
+            当前版本为内测未签名安装包，首次运行可能触发 Windows SmartScreen 提示，请选择"仍要运行"。
           </p>
+          <div className="install-warning">
+            <Warning size={16} weight="fill" />
+            <span>测试版未代码签名，安装时如遇 SmartScreen 警告请选择"更多信息 → 仍要运行"。</span>
+          </div>
           <div className="install-actions">
             <a className="button primary-button large" href={DOWNLOAD_URL}>
               <DownloadSimple size={20} />
@@ -795,13 +1004,14 @@ powershell -File scripts/desktop/build-desktop.ps1`}</code>
 // ---------- 页脚 ----------
 
 function SiteFooter() {
+  const base = import.meta.env.BASE_URL;
   return (
     <footer className="site-footer">
       <div className="footer-inner">
         <div className="footer-brand">
           <span className="brand-mark">
-            <img className="brand-logo brand-logo-light" src="assets/logo-light.png" alt="" />
-            <img className="brand-logo brand-logo-dark" src="assets/logo-dark.png" alt="" />
+            <img className="brand-logo brand-logo-light" src={`${base}assets/logo-light.png`} alt="" />
+            <img className="brand-logo brand-logo-dark" src={`${base}assets/logo-dark.png`} alt="" />
           </span>
           <strong>Lang Drill Agent</strong>
           <span>Vocabulary in. Exam drills out.</span>

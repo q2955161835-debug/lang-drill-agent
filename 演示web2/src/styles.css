@@ -87,7 +87,7 @@ body {
   background: var(--bg);
   color: var(--text);
   overflow-x: hidden;
-  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  /* font-feature-settings 移除：cv11 等 OpenType 特性会让 fallback 的 CJK 字体字形错位（如"复"被压到左半） */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -433,18 +433,38 @@ section { position: relative; }
   pointer-events: none;
 }
 
+/* 单词轨道容器：沿椭圆公转，文字方向保持不变（offset-rotate: 0deg） */
+.galaxy-orbit {
+  position: absolute;
+  top: var(--top);
+  left: var(--left);
+  width: 0;
+  height: 0;
+  /* offset-path 让单词沿椭圆轨道运动，文字始终保持正向 */
+  offset-path: ellipse(var(--orbit-rx) var(--orbit-ry) at 0 0);
+  offset-rotate: 0deg;
+  animation: galaxy-orbit var(--orbit-duration) linear infinite;
+  animation-delay: var(--orbit-delay);
+  will-change: offset-distance;
+}
+
+@keyframes galaxy-orbit {
+  from { offset-distance: 0%; }
+  to   { offset-distance: 100%; }
+}
+
 .galaxy-core {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 380px;
-  height: 380px;
+  width: 460px;
+  height: 460px;
   transform: translate(-50%, -50%);
   background:
-    radial-gradient(circle at center, rgba(124, 92, 255, 0.45), transparent 60%),
-    radial-gradient(circle at 30% 30%, rgba(45, 212, 191, 0.25), transparent 50%),
-    radial-gradient(circle at 70% 70%, rgba(255, 77, 141, 0.18), transparent 60%);
-  filter: blur(40px);
+    radial-gradient(circle at center, rgba(124, 92, 255, 0.42), transparent 60%),
+    radial-gradient(circle at 30% 30%, rgba(45, 212, 191, 0.22), transparent 50%),
+    radial-gradient(circle at 70% 70%, rgba(255, 77, 141, 0.16), transparent 60%);
+  filter: blur(50px);
   border-radius: 50%;
   animation: core-pulse 8s ease-in-out infinite;
 }
@@ -456,46 +476,81 @@ section { position: relative; }
 
 .galaxy-word {
   position: absolute;
-  top: var(--top);
-  left: var(--left);
+  top: 0;
+  left: 0;
+  transform: translate(-50%, -50%);
   font-size: var(--font-size);
   font-weight: 500;
-  color: rgba(238, 243, 251, calc(0.18 + var(--depth) * 0.55));
+  /* 距中心越远越虚化 */
+  color: rgba(238, 243, 251, calc((0.4 + var(--depth) * 0.5) * (1.05 - var(--dist) * 0.7)));
   letter-spacing: 0.02em;
-  text-shadow: 0 0 calc(var(--font-size) * 0.5) var(--accent-glow);
-  filter: blur(var(--blur));
-  transform: translate(-50%, -50%);
-  animation: galaxy-float var(--duration) ease-in-out infinite;
-  animation-delay: var(--delay);
+  text-shadow: 0 0 calc(var(--font-size) * 0.6) var(--accent-glow);
+  filter: blur(calc(var(--blur) + var(--dist) * 1.5px));
+  animation: galaxy-drift var(--drift-duration) ease-in-out infinite;
+  animation-delay: var(--drift-delay);
   will-change: transform, opacity;
   white-space: nowrap;
+  opacity: calc(0.5 + var(--depth) * 0.4);
 }
 
 :root[data-theme="light"] .galaxy-word {
-  color: rgba(20, 24, 33, calc(0.22 + var(--depth) * 0.5));
+  color: rgba(20, 24, 33, calc((0.32 + var(--depth) * 0.5) * (1.05 - var(--dist) * 0.7)));
   text-shadow: 0 0 12px var(--accent-glow);
 }
 
 .galaxy-word-jp {
   font-family: 'Noto Sans JP', 'PingFang SC', sans-serif;
-  color: rgba(94, 234, 212, calc(0.3 + var(--depth) * 0.6));
+  color: rgba(94, 234, 212, calc((0.5 + var(--depth) * 0.5) * (1.05 - var(--dist) * 0.7)));
   text-shadow: 0 0 calc(var(--font-size) * 0.6) var(--accent-2-glow);
 }
 
 :root[data-theme="light"] .galaxy-word-jp {
-  color: rgba(13, 148, 136, calc(0.32 + var(--depth) * 0.5));
+  color: rgba(13, 148, 136, calc((0.4 + var(--depth) * 0.5) * (1.05 - var(--dist) * 0.7)));
 }
 
-@keyframes galaxy-float {
+/* 单词独立小范围漂移：让单词在轨道基础上再随机飘动 */
+@keyframes galaxy-drift {
   0%, 100% {
     transform: translate(-50%, -50%) translate(0, 0) scale(1);
-    opacity: calc(0.4 + var(--depth) * 0.55);
+    opacity: calc(0.5 + var(--depth) * 0.4);
+  }
+  25% {
+    transform: translate(calc(-50% + var(--drift-x) * 0.5), calc(-50% - var(--drift-y) * 0.5)) scale(1.05);
   }
   50% {
-    transform: translate(-50%, -50%) translate(8px, -10px) scale(1.06);
-    opacity: calc(0.6 + var(--depth) * 0.4);
+    transform: translate(calc(-50% + var(--drift-x)), calc(-50% - var(--drift-y) * 0.8)) scale(1.08);
+    opacity: calc(0.65 + var(--depth) * 0.35);
+  }
+  75% {
+    transform: translate(calc(-50% - var(--drift-x) * 0.3), calc(-50% + var(--drift-y) * 0.4)) scale(1.02);
+    opacity: calc(0.55 + var(--depth) * 0.4);
   }
 }
+
+/* 中间文字后面密度减少、虚化加深：在 hero-content 后面叠加一个 mask 让中央更干净 */
+.word-galaxy::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 56%;
+  height: 60%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(ellipse at center,
+    rgba(5, 6, 13, 0.78) 0%,
+    rgba(5, 6, 13, 0.5) 35%,
+    transparent 75%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+:root[data-theme="light"] .word-galaxy::after {
+  background: radial-gradient(ellipse at center,
+    rgba(245, 246, 251, 0.78) 0%,
+    rgba(245, 246, 251, 0.5) 35%,
+    transparent 75%);
+}
+
 
 /* ---------- Hero 内容 ---------- */
 
@@ -667,6 +722,20 @@ section { position: relative; }
   display: flex;
   flex-direction: column;
   gap: 48px;
+  position: relative;
+}
+
+/* workflow 区域毛玻璃质感背景：让飞入此区域的单词被一定程度虚化 */
+.workflow-stage::before {
+  content: "";
+  position: absolute;
+  inset: -20px -32px;
+  background: color-mix(in srgb, var(--surface-solid) 55%, transparent);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: var(--radius-xl);
+  pointer-events: none;
+  z-index: -1;
 }
 
 .workflow-frame {
@@ -1004,8 +1073,8 @@ section { position: relative; }
   margin: 0 auto;
   padding: 0 32px;
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  gap: 24px;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
   align-items: stretch;
 }
 
@@ -1096,12 +1165,12 @@ section { position: relative; }
 
 .painpoint-bridge {
   max-width: 1080px;
-  margin: 24px auto 0;
+  margin: 40px auto 0;
   padding: 0 32px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 }
 
 .bridge-arrow {
@@ -1219,9 +1288,15 @@ section { position: relative; }
   margin: 0 auto;
   padding: 0 32px;
   display: grid;
-  grid-template-columns: 1fr 280px;
+  grid-template-columns: 1fr 240px;
   gap: 24px;
   align-items: start;
+}
+
+.showcase-main-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .showcase-main {
@@ -1247,29 +1322,27 @@ section { position: relative; }
   to   { opacity: 1; transform: scale(1); }
 }
 
-.showcase-caption {
-  position: absolute;
-  left: 18px;
-  right: 18px;
-  bottom: 18px;
-  padding: 12px 16px;
+/* caption 移到图片下方，不再覆盖图片 */
+.showcase-caption-below {
+  padding: 14px 18px;
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--surface-solid) 70%, transparent);
   backdrop-filter: blur(20px);
   border: 1px solid var(--line-strong);
 }
 
-.showcase-caption strong {
+.showcase-caption-below strong {
   display: block;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--text);
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
-.showcase-caption span {
-  font-size: 12px;
+.showcase-caption-below span {
+  font-size: 13px;
   color: var(--muted);
+  line-height: 1.5;
 }
 
 .showcase-thumbs {
@@ -1543,6 +1616,65 @@ section { position: relative; }
 }
 
 /* ---------- 鼠标光晕 ---------- */
+
+/* ---------- Mock 演示前端 iframe 全屏容器 ---------- */
+
+.mock-frame-wrapper {
+  position: fixed;
+  inset: 0;
+  background: #05060d;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+}
+
+.mock-back {
+  position: fixed;
+  /* 下移约 1.5 个按钮高度（按钮 ~34px + 16px gap + 6px 余量）避免遮挡 mock 内左侧栏收起按钮 */
+  top: 64px;
+  left: 16px;
+  z-index: 1001;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #e6e8f0;
+  font-size: 13px;
+  text-decoration: none;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.mock-back:hover {
+  background: rgba(255, 255, 255, 0.16);
+  transform: translateX(-2px);
+}
+
+:root[data-theme="light"] .mock-frame-wrapper {
+  background: #f5f6fb;
+}
+
+:root[data-theme="light"] .mock-back {
+  background: rgba(20, 22, 35, 0.06);
+  border-color: rgba(20, 22, 35, 0.12);
+  color: #1a1c2a;
+}
+
+:root[data-theme="light"] .mock-back:hover {
+  background: rgba(20, 22, 35, 0.12);
+}
+
+.mock-frame {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+}
 
 .cursor-glow {
   position: fixed;

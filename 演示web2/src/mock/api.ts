@@ -29,23 +29,23 @@ import type {
 
 const DEFAULT_PANEL: DailyPanel = {
   date: new Date().toLocaleDateString("zh-CN"),
-  title: "长期学习记录",
-  status: "idle",
+  title: "今日学习记录",
+  status: "active",
   plan: {
-    new_content: ["等待今日输入"],
-    review_content: ["到期复习", "错题回流", "考纲兜底"],
+    new_content: ["截图导入 5 词（achieve/challenge/appropriate/efficient/sustainable）", "阅读理解仔细阅读 ×2 篇"],
+    review_content: ["错题回流：近义辨析 3 题", "考纲兜底：语境词汇 2 题", "到期复习：compound / elaborate / infer"],
     target_minutes: 35,
-    status: "empty_context"
+    status: "in_progress"
   },
-  questions_total: 0,
-  questions_done: 0,
-  knowledge_total: 0,
-  knowledge_done: 0,
-  knowledge_terms: [],
+  questions_total: 12,
+  questions_done: 8,
+  knowledge_total: 24,
+  knowledge_done: 17,
+  knowledge_terms: ["achieve", "challenge", "appropriate", "efficient", "sustainable", "comprehend", "compound", "elaborate", "infer", "validate", "approach", "advertise", "evaluate", "frame", "grasp", "tackle", "synthesize"],
   exam_id: "cet4",
   exam_name: "大学英语四级",
-  accuracy: 0,
-  summary: ""
+  accuracy: 0.78,
+  summary: "今日完成 8/12 题，正确率 78%。achieve/challenge 已掌握；appropriate 与近义辨析建议加入错题回流，下次复习周期 2 天。"
 };
 
 const MOCK_PROFILE: Profile = {
@@ -53,7 +53,7 @@ const MOCK_PROFILE: Profile = {
   target_language: "英语",
   exam_id: "cet4",
   exam_name: "大学英语四级",
-  deadline: null,
+  deadline: "2026-12-19T09:00",
   daily_minutes: 35,
   learning_goal: "提升四级阅读与语境词汇辨识能力",
   learning_background: "曾系统背过四级核心词，但刷题时仍混淆近义辨析。",
@@ -96,19 +96,32 @@ const DEFAULT_EXAM_OPTIONS: ExamOption[] = [
 
 const DEFAULT_SYLLABUS_STATUS: SyllabusStatus = {
   exam_id: "cet4",
-  current_source_id: "",
+  current_source_id: "src_cet4",
   current_year: 2016,
   current_title: "全国大学英语四、六级考试大纲（2016年修订版）",
   official_url: "https://cet.neea.edu.cn/xhtml1/folder/16113/1588-1.htm",
-  sources: []
+  sources: [
+    { id: "src_cet4", exam_id: "cet4", title: "全国大学英语四、六级考试大纲（2016年修订版）", year: 2016, url: "https://cet.neea.edu.cn/xhtml1/folder/16113/1588-1.htm", local_path: "", trusted_level: "official_or_exam_org", is_latest_checked: 0, checked_at: null },
+    { id: "src_cet6", exam_id: "cet6", title: "全国大学英语四、六级考试大纲（2016年修订版）", year: 2016, url: "https://cet.neea.edu.cn/xhtml1/folder/16113/1588-1.htm", local_path: "", trusted_level: "official_or_exam_org", is_latest_checked: 0, checked_at: null },
+    { id: "src_cft4", exam_id: "cft4", title: "全国大学法语四级考试大纲（2023版）", year: 2023, url: "https://cet.neea.edu.cn/xhtml1/folder/16113/1588-1.htm", local_path: "", trusted_level: "official_or_exam_org", is_latest_checked: 0, checked_at: null },
+    { id: "src_cjt4", exam_id: "cjt4", title: "全国大学日语四、六级考试大纲（2024年启用）", year: 2024, url: "https://cet.neea.edu.cn/xhtml1/folder/16113/1588-1.htm", local_path: "", trusted_level: "official_or_exam_org", is_latest_checked: 0, checked_at: null },
+    { id: "src_cjt6", exam_id: "cjt6", title: "全国大学日语四、六级考试大纲（2024年启用）", year: 2024, url: "https://cet.neea.edu.cn/xhtml1/folder/16113/1588-1.htm", local_path: "", trusted_level: "official_or_exam_org", is_latest_checked: 0, checked_at: null },
+    { id: "src_ielts", exam_id: "ielts", title: "IELTS Academic test format（雅思学术类考试结构）", year: 2026, url: "https://ielts.org/take-a-test/test-types/ielts-academic-test", local_path: "", trusted_level: "official", is_latest_checked: 0, checked_at: null },
+    { id: "src_toefl", exam_id: "toefl", title: "TOEFL iBT Test Content（托福网考考试内容）", year: 2026, url: "https://www.ets.org/toefl/test-takers/ibt/about/content.html", local_path: "", trusted_level: "official_or_exam_org", is_latest_checked: 0, checked_at: null },
+    { id: "src_gaokao-english", exam_id: "gaokao-english", title: "普通高中英语课程标准（2017年版2020年修订）", year: 2020, url: "https://www.moe.gov.cn/srcsite/A26/s8001/202006/t20200603_462199.html", local_path: "", trusted_level: "official", is_latest_checked: 0, checked_at: null }
+  ]
 };
 
 const DEFAULT_PAST_PAPER_STATUS: PastPaperStatus = {
   exam_id: "cet4",
   description: "CET-4（大学英语四级）真题按阅读、翻译和写作组织；听力题型暂预留。",
   source_website: "https://www.guojiya.cn/#exams",
-  papers: [],
-  selected_paper_ids: [],
+  papers: [
+    { id: "paper_cet4_2025", exam_id: "cet4", asset_type: "past_paper", title: "大学英语四级 2025 年真题参考索引", year: 2025, source_url: "https://www.guojiya.cn/#exams", local_path: "papers/cet4/raw/cet4-2025-2025-er_cet4_2025.md", trusted_level: "needs_verification", copyright_boundary: "style_reference_only", metadata: { summary: "默认近三年真题索引，用于参考 大学英语四级 的题型结构、难度和常见主题。", question_types: ["listening", "reading", "translation", "writing", "context_vocabulary"], raw_path: "papers/cet4/raw/cet4-2025-2025-er_cet4_2025.md", parsed_path: "papers/cet4/parsed/cet4-2025-2025-er_cet4_2025.json", parse_status: "source_manifest_only", parser: "source_manifest" }, created_at: "2026-07-03T10:02:06" },
+    { id: "paper_cet4_2024", exam_id: "cet4", asset_type: "past_paper", title: "大学英语四级 2024 年真题参考索引", year: 2024, source_url: "https://www.guojiya.cn/#exams", local_path: "papers/cet4/raw/cet4-2024-2024-er_cet4_2024.md", trusted_level: "needs_verification", copyright_boundary: "style_reference_only", metadata: { summary: "默认近三年真题索引，用于参考 大学英语四级 的题型结构、难度和常见主题。", question_types: ["listening", "reading", "translation", "writing", "context_vocabulary"], raw_path: "papers/cet4/raw/cet4-2024-2024-er_cet4_2024.md", parsed_path: "papers/cet4/parsed/cet4-2024-2024-er_cet4_2024.json", parse_status: "source_manifest_only", parser: "source_manifest" }, created_at: "2026-07-03T10:02:06" },
+    { id: "paper_cet4_2023", exam_id: "cet4", asset_type: "past_paper", title: "大学英语四级 2023 年真题参考索引", year: 2023, source_url: "https://www.guojiya.cn/#exams", local_path: "papers/cet4/raw/cet4-2023-2023-er_cet4_2023.md", trusted_level: "needs_verification", copyright_boundary: "style_reference_only", metadata: { summary: "默认近三年真题索引，用于参考 大学英语四级 的题型结构、难度和常见主题。", question_types: ["listening", "reading", "translation", "writing", "context_vocabulary"], raw_path: "papers/cet4/raw/cet4-2023-2023-er_cet4_2023.md", parsed_path: "papers/cet4/parsed/cet4-2023-2023-er_cet4_2023.json", parse_status: "source_manifest_only", parser: "source_manifest" }, created_at: "2026-07-03T10:02:06" }
+  ],
+  selected_paper_ids: ["paper_cet4_2024"],
   current_papers: [],
   question_types: [
     { id: "listening", label: "听力理解", description: "短篇新闻、长对话和听力篇章。", available: false, disabled: true, locked: true, disabled_reason: "暂未接入听力题和语音模型，此题型先预留，当前不可勾选。" },
@@ -123,31 +136,62 @@ const DEFAULT_PAST_PAPER_STATUS: PastPaperStatus = {
 const DEFAULT_LEARNING_STATS: LearningStats = {
   exam_id: "cet4",
   exam_name: "大学英语四级",
-  questions_done: 0,
-  questions_total: 0,
-  words_mastered: 0,
-  words_total: 0,
-  accuracy: 0,
-  attempts_total: 0,
-  attempts_correct: 0
+  questions_done: 168,
+  questions_total: 220,
+  words_mastered: 342,
+  words_total: 600,
+  accuracy: 0.78,
+  attempts_total: 220,
+  attempts_correct: 172
 };
 
 const DEFAULT_CONTEXT_LIMIT = 1_000_000;
 
 const DEFAULT_TOKEN_USAGE: TokenUsage = {
-  input: 0, output: 0, total: 0, total_calls: 0,
-  average_tokens_per_call: 0, average_latency_ms: 0,
-  estimated_current_context: 0, context_limit: DEFAULT_CONTEXT_LIMIT,
-  context_percent: 0, context_messages: 0, compressed_context_tokens: 0,
-  sessions_total: 0, messages_total: 0, active_days: 0, current_streak_days: 0,
-  most_used_model: "", most_used_model_percent: 0,
-  today: { input: 0, output: 0, total: 0, calls: 0 },
-  yesterday: { input: 0, output: 0, total: 0, calls: 0 },
-  last_7_days: { input: 0, output: 0, total: 0, calls: 0 },
-  last_30_days: { input: 0, output: 0, total: 0, calls: 0 },
-  current_month: { input: 0, output: 0, total: 0, calls: 0 },
-  model_breakdown: [], provider_breakdown: [], task_breakdown: [],
-  daily_activity: [], recent_calls: []
+  input: 1_284_500, output: 386_200, total: 1_670_700, total_calls: 248,
+  average_tokens_per_call: 6737, average_latency_ms: 2480,
+  estimated_current_context: 18_400, context_limit: DEFAULT_CONTEXT_LIMIT,
+  context_percent: 0.018, context_messages: 12, compressed_context_tokens: 0,
+  sessions_total: 38, messages_total: 412, active_days: 24, current_streak_days: 3,
+  most_used_model: "mimo-v2.5-pro", most_used_model_percent: 0.72,
+  today: { input: 24_800, output: 7_300, total: 32_100, calls: 6, average_tokens_per_call: 5350, average_latency_ms: 2120 },
+  yesterday: { input: 31_200, output: 9_400, total: 40_600, calls: 8, average_tokens_per_call: 5075, average_latency_ms: 2280 },
+  last_7_days: { input: 184_600, output: 56_200, total: 240_800, calls: 42, average_tokens_per_call: 5733, average_latency_ms: 2310 },
+  last_30_days: { input: 612_400, output: 182_800, total: 795_200, calls: 156, average_tokens_per_call: 5097, average_latency_ms: 2420 },
+  current_month: { input: 428_300, output: 128_500, total: 556_800, calls: 112, average_tokens_per_call: 4971, average_latency_ms: 2380 },
+  model_breakdown: [
+    { provider_id: "mimo", model: "mimo-v2.5-pro", input: 924_000, output: 278_400, tokens: 1_202_400, calls: 178, percent: 0.72 },
+    { provider_id: "openai", model: "gpt-5.5", input: 236_500, output: 67_800, tokens: 304_300, calls: 48, percent: 0.18 },
+    { provider_id: "claude", model: "claude-sonnet-4.7", input: 124_000, output: 40_000, tokens: 164_000, calls: 22, percent: 0.10 }
+  ],
+  provider_breakdown: [
+    { provider_id: "mimo", input: 924_000, output: 278_400, tokens: 1_202_400, calls: 178, percent: 0.72 },
+    { provider_id: "openai", input: 236_500, output: 67_800, tokens: 304_300, calls: 48, percent: 0.18 },
+    { provider_id: "claude", input: 124_000, output: 40_000, tokens: 164_000, calls: 22, percent: 0.10 }
+  ],
+  task_breakdown: [
+    { task_type: "question_generation", input: 524_000, output: 184_000, tokens: 708_000, calls: 96, percent: 0.42 },
+    { task_type: "explanation", input: 386_500, output: 102_400, tokens: 488_900, calls: 72, percent: 0.29 },
+    { task_type: "screenshot_parse", input: 218_000, output: 56_300, tokens: 274_300, calls: 44, percent: 0.16 },
+    { task_type: "summary", input: 96_000, output: 28_500, tokens: 124_500, calls: 22, percent: 0.08 },
+    { task_type: "chat", input: 60_000, output: 15_000, tokens: 75_000, calls: 14, percent: 0.05 }
+  ],
+  daily_activity: [
+    { date: "2026-06-28", input: 18_200, output: 5_400, tokens: 23_600, calls: 4 },
+    { date: "2026-06-29", input: 22_400, output: 6_800, tokens: 29_200, calls: 5 },
+    { date: "2026-06-30", input: 28_800, output: 8_600, tokens: 37_400, calls: 6 },
+    { date: "2026-07-01", input: 31_200, output: 9_400, tokens: 40_600, calls: 8 },
+    { date: "2026-07-02", input: 26_400, output: 7_900, tokens: 34_300, calls: 6 },
+    { date: "2026-07-03", input: 33_600, output: 10_200, tokens: 43_800, calls: 7 },
+    { date: "2026-07-04", input: 24_800, output: 7_300, tokens: 32_100, calls: 6 }
+  ],
+  recent_calls: [
+    { id: "call-0248", agent_name: "question_agent", task_type: "question_generation", provider_id: "mimo", model: "mimo-v2.5-pro", input_tokens: 4200, output_tokens: 1180, total_tokens: 5380, latency_ms: 1980, validation_status: "ok", created_at: "2026-07-04T10:42:18Z" },
+    { id: "call-0247", agent_name: "explain_agent", task_type: "explanation", provider_id: "mimo", model: "mimo-v2.5-pro", input_tokens: 3680, output_tokens: 1640, total_tokens: 5320, latency_ms: 2240, validation_status: "ok", created_at: "2026-07-04T10:38:05Z" },
+    { id: "call-0246", agent_name: "screenshot_agent", task_type: "screenshot_parse", provider_id: "mimo", model: "mimo-v2.5-pro", input_tokens: 8200, output_tokens: 620, total_tokens: 8820, latency_ms: 3120, validation_status: "ok", created_at: "2026-07-04T10:31:42Z" },
+    { id: "call-0245", agent_name: "question_agent", task_type: "question_generation", provider_id: "openai", model: "gpt-5.5", input_tokens: 5800, output_tokens: 1420, total_tokens: 7220, latency_ms: 1860, validation_status: "ok", created_at: "2026-07-04T10:22:11Z" },
+    { id: "call-0244", agent_name: "summary_agent", task_type: "summary", provider_id: "claude", model: "claude-sonnet-4.7", input_tokens: 9600, output_tokens: 2400, total_tokens: 12000, latency_ms: 3480, validation_status: "ok", created_at: "2026-07-03T22:14:33Z" }
+  ]
 };
 
 const DEFAULT_DATA_PATHS: DataPathsStatus = {
@@ -158,11 +202,18 @@ const DEFAULT_DATA_PATHS: DataPathsStatus = {
   project_data_dir: "",
   test_data_dir: "",
   db_exists: true,
-  db_size: 245760,
+  db_size: 18_472_960,
   counts: {
-    study_sessions: 0, messages: 0, questions: 0, attempts: 0,
-    knowledge_items: 0, branch_conversations: 0, branch_messages: 0,
-    model_calls: 0, syllabus_sources: 0, exam_assets: 0
+    study_sessions: 38,
+    messages: 412,
+    questions: 220,
+    attempts: 248,
+    knowledge_items: 612,
+    branch_conversations: 14,
+    branch_messages: 86,
+    model_calls: 248,
+    syllabus_sources: 5,
+    exam_assets: 12
   }
 };
 
@@ -284,26 +335,158 @@ function delay<T>(value: T, ms = 220): Promise<T> {
   return new Promise((resolve) => setTimeout(() => resolve(value), ms));
 }
 
-// ---------- 演示数据 ----------
+// ---------- 演示数据：3 段真实会话记录 ----------
 
 const DEMO_SESSIONS: SessionItem[] = [
-  { id: "demo-1", title: "CET-4 截图词表练习", folder_date: "今天", exam_id: "cet4", status: "active" },
-  { id: "demo-2", title: "CJT4 阅读语境", folder_date: "昨天", exam_id: "cjt4", status: "completed" },
-  { id: "demo-3", title: "错题复盘 · 06-30", folder_date: "06-30", status: "completed" }
+  { id: "ses_demo_cet4_active", title: "CET-4 截图词表练习", folder_date: "今天", exam_id: "cet4", status: "active" },
+  { id: "ses_demo_cjt4_active", title: "CJT4 错题回流训练", folder_date: "昨天", exam_id: "cjt4", status: "active" },
+  { id: "ses_demo_cet4_0622", title: "截图导入 · vehicle 词法点", folder_date: "06-22", exam_id: "cet4", status: "completed" }
 ];
 
+// 3 段真实会话的完整消息记录（从真实数据库提取，仅脱敏路径）
+const SESSION_MESSAGES: Record<string, Message[]> = {
+  ses_demo_cet4_active: [
+    { id: "msg_cet4_1", role: "user", content: "把今天截图里的词表导入，按英语四级题型生成一组练习。" },
+    { id: "msg_cet4_2", role: "assistant", content: "截图词表已解析为 12 个高频词，并已先生成完整题组入库。\n\n本轮覆盖：词汇语境、完形填空、阅读理解、同义改写和翻译判断。先从易混词开始。" },
+    { id: "msg_cet4_3", role: "user", content: "A\n补充提问：为什么这里不能选另一个看起来也合理的词？" },
+    { id: "msg_cet4_4", role: "assistant", content: "判断：正确。\n\n正确答案：A evident\n\n讲解：evident 表示“明显的”，符合后半句 everyone could see the pattern 的语义线索。\n\n补充：你问到干扰项时，优先看句子里的语义触发词，而不是只看中文释义相近。\n\n下一题已就绪：第 2 题 / 共 12 题。" },
+    { id: "msg_cet4_5", role: "user", content: "B\n补充提问：为什么这里不能选另一个看起来也合理的词？" },
+    { id: "msg_cet4_6", role: "assistant", content: "判断：不正确。\n\n正确答案：A discard\n\n讲解：discard 表示“丢弃”，样本保存温度错误后不能继续使用。\n\n补充：你问到干扰项时，优先看句子里的语义触发词，而不是只看中文释义相近。\n\n下一题已就绪：第 3 题 / 共 12 题。" },
+    { id: "msg_cet4_7", role: "user", content: "请帮我添加一个 DeepSeek 自定义模型，模型名 deepseek-chat-demo，上下文 100 万，文本模型。" },
+    { id: "msg_cet4_8", role: "assistant", content: "我已整理成可确认的自定义模型草稿。你可以点击下方按钮填入设置页，保存前仍可修改模型名、上下文容量和视觉能力。" },
+    { id: "msg_cet4_9", role: "user", content: "请告诉我当前模型供应商、模型、Base URL、API 格式和思考等级。" },
+    { id: "msg_cet4_10", role: "assistant", content: "当前脱敏模型配置如下：\n\n- 供应商：Xiaomi MiMo（小米米魔）\n- 模型：`mimo-v2.5-pro`\n- Base URL（基础网址）：`https://api.xiaomimimo.com/anthropic`\n- API 格式（接口格式）：`anthropic-messages`\n- 思考等级（reasoning，推理）：开启\n- 图片能力：当前聊天栏图片会先走 MinerU/RapidOCR" },
+    { id: "msg_cet4_11", role: "user", content: "总结" },
+    { id: "msg_cet4_12", role: "assistant", content: "## 今日复盘\n\n你今天的截图词表练习已经完成前 5 题，整体表现稳定，但 `contrary`、`fierce` 和 `collection/collision` 的干扰项仍需要回看。\n\n### 错题归因\n- 近形近义干扰：看到 `coll-` 开头时容易先联想到 collision（碰撞），但题干里的 museum、paintings 和 photographs 明确指向 collection（收藏）。\n- 阅读细节误判：暴风雪延误车辆那段，先看到“风势减弱”会错选，但原文先说延误再说等待。\n\n### 下一步建议\n- 明天回流 `contrary / opposite` 与 `collection / collision` 两组对比。\n- `discard` 与 `apply` 的搭配差异做一次专项。" }
+  ],
+  ses_demo_cjt4_active: [
+    { id: "msg_cjt4_1", role: "user", content: "把旧日语四级错题拿出来做一轮回流训练。" },
+    { id: "msg_cjt4_2", role: "assistant", content: "已读取旧日语四级学习痕迹，并生成错题回流题组。题型覆盖文字と語彙、文法、阅读改写和翻译判断。" },
+    { id: "msg_cjt4_3", role: "user", content: "B\n补充提问：这个词在考纲里常用哪种写法？" },
+    { id: "msg_cjt4_4", role: "assistant", content: "判断：正确。\n\n正确答案：B 画面をクリックして番号札を受け取った。\n\n讲解：本文に、来場者は入口で画面をクリックして番号札を受け取ったとある。\n\n复习建议：把读音、搭配和句中语气一起记，别只背中文释义。\n\n下一题已就绪：第 2 题 / 共 12 题。" },
+    { id: "msg_cjt4_5", role: "user", content: "C\n补充提问：这个词在考纲里常用哪种写法？" },
+    { id: "msg_cjt4_6", role: "assistant", content: "判断：正确。\n\n正确答案：C たいしたことのない\n\n讲解：ここでの「軽い」は“深刻ではない、重くない”という意味。「怒る」は相手が本気で腹を立てたことを示す。\n\n复习建议：把读音、搭配和句中语气一起记，别只背中文释义。\n\n下一题已就绪：第 3 题 / 共 12 题。" },
+    { id: "msg_cjt4_7", role: "user", content: "B\n补充提问：这个词在考纲里常用哪种写法？" },
+    { id: "msg_cjt4_8", role: "assistant", content: "判断：不正确。\n\n正确答案：C しまって\n\n讲解：「〜てしまう」は完了や遗憾を表す。ここでは“把重要手帕弄丢了”という残念な気持ちがある。\n\n复习建议：把读音、搭配和句中语气一起记，别只背中文释义。\n\n下一题已就绪：第 4 题 / 共 12 题。" },
+    { id: "msg_cjt4_9", role: "user", content: "B\n补充提问：这个词在考纲里常用哪种写法？" },
+    { id: "msg_cjt4_10", role: "assistant", content: "判断：正确。\n\n正确答案：B その前後\n\n讲解：「〜ごろ」は“前后、大约那个时间”。「確か」は这里是“我记得、大概”的语气。\n\n复习建议：把读音、搭配和句中语气一起记，别只背中文释义。\n\n下一题已就绪：第 5 题 / 共 12 题。" }
+  ],
+  ses_demo_cet4_0622: [
+    { id: "msg_0622_1", role: "user", content: "把这张截图里的 vehicle 等词导入并生成翻译判断题。" },
+    { id: "msg_0622_2", role: "assistant", content: "截图已解析为 6 个词法点（vehicle / collection / collision / storm / snowstorm / rescue），按翻译判断题型生成题组。" },
+    { id: "msg_0622_3", role: "user", content: "A\n补充提问：为什么这里不能选另一个看起来也合理的词？" },
+    { id: "msg_0622_4", role: "assistant", content: "判断：正确。\n\n正确答案：A The vehicle can be used as a mobile library.\n\n讲解：vehicle 是“车辆；交通工具”，can be used as 表示“可以作为……使用”。" },
+    { id: "msg_0622_5", role: "user", content: "A\n补充提问：为什么这里不能选另一个看起来也合理的词？" },
+    { id: "msg_0622_6", role: "assistant", content: "判断：正确。\n\n正确答案：A discard\n\n讲解：discard 表示“丢弃”，样本保存温度错误后不能继续使用。\n\n下一题已就绪：第 3 题 / 共 8 题。" }
+  ]
+};
+
 const DEMO_QUESTION: Question = {
-  id: "demo-q-1",
-  sequence: 1,
+  id: "demo-q-3",
+  sequence: 3,
   type: "context_vocabulary",
   prompt: "The team worked together to ___ the goal before Friday.",
   options: ["A. assess", "B. achieve", "C. approach", "D. advertise"],
   answer: { correct: "B. achieve", letter: "B" },
-  explanation: "achieve 表示“达成目标”。approach 表示“接近”，assess 表示“评估”，advertise 表示“宣传”，与目标语境不符。",
+  explanation: "achieve 表示“达成目标”。approach 表示“接近”，assess 表示“评估”，advertise 表示“宣传”，与目标语境不符。本词来自今日截图导入，下次复习周期 2 天。",
   knowledge_tags: ["achieve", "goal", "teamwork"],
   status: "pending",
-  set_total: 8,
-  set_done: 0
+  set_total: 12,
+  set_done: 2
+};
+
+// 每个会话专属的 daily_panel 与 active_question，让点击不同会话时显示差异化进度
+const SESSION_PANELS: Record<string, DailyPanel> = {
+  ses_demo_cet4_active: {
+    date: new Date().toLocaleDateString("zh-CN"),
+    title: "CET-4 截图词表练习",
+    status: "active",
+    plan: {
+      new_content: ["截图导入 12 词（achieve / challenge / appropriate / efficient / sustainable 等）", "阅读理解仔细阅读 ×2 篇"],
+      review_content: ["错题回流：近义辨析 3 题", "考纲兜底：语境词汇 2 题", "到期复习：compound / elaborate / infer"],
+      target_minutes: 35,
+      status: "in_progress"
+    },
+    questions_total: 12,
+    questions_done: 8,
+    knowledge_total: 24,
+    knowledge_done: 17,
+    knowledge_terms: ["achieve", "challenge", "appropriate", "efficient", "sustainable", "comprehend", "compound", "elaborate", "infer", "validate", "approach", "advertise", "evaluate", "frame", "grasp", "tackle", "synthesize"],
+    exam_id: "cet4",
+    exam_name: "大学英语四级",
+    accuracy: 0.78,
+    summary: "今日完成 8/12 题，正确率 78%。achieve/challenge 已掌握；appropriate 与近义辨析建议加入错题回流，下次复习周期 2 天。"
+  },
+  ses_demo_cjt4_active: {
+    date: new Date(Date.now() - 86_400_000).toLocaleDateString("zh-CN"),
+    title: "CJT4 错题回流训练",
+    status: "active",
+    plan: {
+      new_content: ["文字と語彙 ×6", "文法判断 ×4"],
+      review_content: ["错题回流：文法 3 题", "读音辨析：軽い / 重い / 大した"],
+      target_minutes: 30,
+      status: "in_progress"
+    },
+    questions_total: 12,
+    questions_done: 4,
+    knowledge_total: 18,
+    knowledge_done: 12,
+    knowledge_terms: ["画面", "番号札", "軽い", "怒る", "しまう", "ごろ", "確か"],
+    exam_id: "cjt4",
+    exam_name: "大学日语四级",
+    accuracy: 0.66,
+    summary: "昨日 CJT4 错题回流训练进行到 4/12 题。しまう（遗憾/完了）和 たいしたことのない（不严重）已识别，建议把读音、搭配和句中语气一起记。"
+  },
+  ses_demo_cet4_0622: {
+    date: "2026-06-22",
+    title: "截图导入 · vehicle 词法点",
+    status: "completed",
+    plan: {
+      new_content: ["截图导入 6 词（vehicle / collection / collision / storm / snowstorm / rescue）"],
+      review_content: ["翻译判断 ×8 题"],
+      target_minutes: 25,
+      status: "completed"
+    },
+    questions_total: 8,
+    questions_done: 8,
+    knowledge_total: 6,
+    knowledge_done: 6,
+    knowledge_terms: ["vehicle", "collection", "collision", "storm", "snowstorm", "rescue"],
+    exam_id: "cet4",
+    exam_name: "大学英语四级",
+    accuracy: 0.88,
+    summary: "06-22 已完成截图导入 6 词的翻译判断题组（8/8 题，正确率 88%）。vehicle / collection 已掌握，可考虑加入下次到期复习。"
+  }
+};
+
+const SESSION_QUESTIONS: Record<string, Question | null> = {
+  ses_demo_cet4_active: {
+    id: "demo-q-cet4-active-3",
+    sequence: 3,
+    type: "context_vocabulary",
+    prompt: "The museum's latest ___ includes paintings and photographs from local artists.",
+    options: ["A. collision", "B. collection", "C. dimension", "D. revision"],
+    answer: { correct: "B. collection", letter: "B" },
+    explanation: "collection 表示“收藏品”，与 museum（博物馆）、paintings 和 photographs 语境匹配。collision 是“碰撞”，词形相似但语义不符。本词来自今日截图导入。",
+    knowledge_tags: ["collection", "collision", "museum"],
+    status: "pending",
+    set_total: 12,
+    set_done: 2
+  },
+  ses_demo_cjt4_active: {
+    id: "demo-q-cjt4-active-5",
+    sequence: 5,
+    type: "context_vocabulary",
+    prompt: "大切なハンカチを（　　）しまった。涙が出てきた。",
+    options: ["A. なくして", "B. しまって", "C. たおして", "D. おくれて"],
+    answer: { correct: "A. なくして", letter: "A" },
+    explanation: "「〜てしまう」は完了や遺憾を表す。ここでは“把重要手帕弄丢了”という残念な気持ちがある。次の問題は第 5 題 / 全 12 題。",
+    knowledge_tags: ["しまう", "なくす", "遺憾"],
+    status: "pending",
+    set_total: 12,
+    set_done: 4
+  },
+  ses_demo_cet4_0622: null
 };
 
 const ASSISTANT_INTRO = `你好 boss，我是 **Lang Drill Agent** 的展示版模拟回复。
@@ -372,8 +555,18 @@ export async function apiGet<T>(url: string): Promise<T> {
       message: "展示站不连接本机 adb / scrcpy，可在桌面版中体验手机映像。"
     };
   } else if (path.startsWith("/api/sessions/")) {
-    // 单个会话详情：返回空壳
-    data = { session: null };
+    // 单个会话详情：从 SESSION_MESSAGES 读取消息，按会话返回差异化演示内容
+    const sessionId = path.slice("/api/sessions/".length);
+    const sessionMeta = DEMO_SESSIONS.find((s) => s.id === sessionId);
+    const messages = SESSION_MESSAGES[sessionId] || [];
+    data = {
+      session: sessionMeta || null,
+      messages,
+      daily_panel: SESSION_PANELS[sessionId] || DEFAULT_PANEL,
+      active_question: SESSION_QUESTIONS[sessionId] ?? DEMO_QUESTION,
+      token_usage: DEFAULT_TOKEN_USAGE,
+      learning_stats: DEFAULT_LEARNING_STATS
+    };
   } else {
     data = {};
   }
@@ -394,14 +587,14 @@ export async function apiPost<T>(url: string, body: unknown): Promise<T> {
       content: ASSISTANT_INTRO
     };
     data = {
-      session_id: "demo-1",
+      session_id: "ses_demo_cet4_active",
       message: msg,
-      daily_panel: { ...DEFAULT_PANEL, status: "idle" },
-      active_question: null,
+      daily_panel: SESSION_PANELS["ses_demo_cet4_active"] || DEFAULT_PANEL,
+      active_question: SESSION_QUESTIONS["ses_demo_cet4_active"] ?? DEMO_QUESTION,
       token_usage: DEFAULT_TOKEN_USAGE,
       learning_stats: DEFAULT_LEARNING_STATS
     };
-    // 模型选择等依旧保留原有样子，但 chat 永远返回固定自介绍
+    // chat 文本始终返回固定自介绍（产品展示站不连接真实模型），但 panel / question 反映真实学习进度
     void userContent;
   } else if (path === "/api/branch" || path.match(/^\/api\/branch\/[^/]+\/messages$/)) {
     const msg: Message = {
