@@ -15,6 +15,8 @@ $utf8 = [System.Text.UTF8Encoding]::new($false)
 $utf8Bom = [System.Text.UTF8Encoding]::new($true)
 [Console]::OutputEncoding = $utf8
 $OutputEncoding = $utf8
+$env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
 
 function Normalize-WindowsPathForPowerShell {
     param([string]$PathValue)
@@ -309,6 +311,8 @@ function Start-Backend {
         ('$env:LANGDRILL_DB_PATH = ' + (ConvertTo-PowerShellLiteral $dbPath)),
         ('$env:LANGDRILL_PAPER_ROOT = ' + (ConvertTo-PowerShellLiteral $PapersDir)),
         ('$env:PYTHONPATH = ' + (ConvertTo-PowerShellLiteral $backendPythonPath)),
+        '$env:PYTHONUTF8 = "1"',
+        '$env:PYTHONIOENCODING = "utf-8"',
         ('Set-Location ' + (ConvertTo-PowerShellLiteral $SourceDir)),
         ('& ' + (ConvertTo-PowerShellLiteral $PythonExe) + ' -m langdrill_agent.cli serve --host 127.0.0.1 --port ' + $Port + ' 1>> ' + (ConvertTo-PowerShellLiteral $BackendOutLog) + ' 2>> ' + (ConvertTo-PowerShellLiteral $BackendErrLog)),
         'exit $LASTEXITCODE'

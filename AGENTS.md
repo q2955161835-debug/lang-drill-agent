@@ -158,6 +158,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\desktop\build-de
 桌面版规则：
 - 桌面后端固定监听 `http://127.0.0.1:18080`；端口被非 Lang Drill Agent 进程占用时必须给出清晰错误。
 - 首次启动优先复用本机已有 Python 3.11+（编程语言运行时）；本机没有可用 Python 时，才在 `%LOCALAPPDATA%\Lang Drill Agent\runtime` 下载并准备 Python 3.11.9、虚拟环境和后端依赖。使用 3.11.9 是因为 Python 3.11.15（编程语言版本）官方未提供 Windows 二进制安装器。
+- 桌面后端启动脚本必须强制 `PYTHONUTF8=1` 与 `PYTHONIOENCODING=utf-8`，避免 Windows（视窗系统）非 UTF-8（统一编码）重定向环境下中文 CLI（命令行接口）输出导致初始化失败。
 - 桌面版真实配置和用户数据写入 `%APPDATA%\Lang Drill Agent\.env`、`data`、`logs` 和 `papers`，不写安装目录，不污染 Web（网页）开发期 `.env` 与数据库。
 - 桌面窗口关闭时必须停止本次拥有的后端进程；异常时通过用户目录日志定位原因。
 

@@ -6,6 +6,8 @@ from pathlib import Path
 from langdrill_agent.config import env_file_path, load_settings
 from langdrill_agent.services import ModelConfigService
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
 
 def test_langdrill_env_file_overrides_project_env(monkeypatch, tmp_path: Path) -> None:
     env_path = tmp_path / "desktop.env"
@@ -63,3 +65,14 @@ def test_model_config_service_writes_to_langdrill_env_file(monkeypatch, tmp_path
     assert "LANGDRILL_PAPER_ROOT=" in written
     assert "LANGDRILL_USER_DATA_DIR=" in written
     assert "LANGDRILL_DEFAULT_PROVIDER=project" in project_env.read_text(encoding="utf-8")
+
+
+def test_desktop_start_backend_forces_python_utf8() -> None:
+    script = (PROJECT_ROOT / "scripts" / "desktop" / "start-backend.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    assert '$env:PYTHONUTF8 = "1"' in script
+    assert '$env:PYTHONIOENCODING = "utf-8"' in script
+    assert script.count('$env:PYTHONUTF8 = "1"') >= 2
+    assert script.count('$env:PYTHONIOENCODING = "utf-8"') >= 2
