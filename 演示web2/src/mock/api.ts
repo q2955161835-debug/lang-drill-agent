@@ -336,48 +336,294 @@ function delay<T>(value: T, ms = 220): Promise<T> {
 }
 
 // ---------- 演示数据：3 段真实会话记录 ----------
+// 数据来源：真实 langdrill_agent.db，仅做路径脱敏；其中 ses_demo_cet4_active 是今天用于截图演示的会话（包含 collection 单词卡片）
 
 const DEMO_SESSIONS: SessionItem[] = [
-  { id: "ses_demo_cet4_active", title: "CET-4 截图词表练习", folder_date: "今天", exam_id: "cet4", status: "active" },
-  { id: "ses_demo_cjt4_active", title: "CJT4 错题回流训练", folder_date: "昨天", exam_id: "cjt4", status: "active" },
-  { id: "ses_demo_cet4_0622", title: "截图导入 · vehicle 词法点", folder_date: "06-22", exam_id: "cet4", status: "completed" }
+  { id: "ses_demo_cet4_active", title: "截图词表练习：collection", folder_date: "今天", exam_id: "cet4", status: "active" },
+  { id: "ses_demo_cjt4_active", title: "日语四级错题回流", folder_date: "昨天", exam_id: "cjt4", status: "active" },
+  { id: "ses_demo_cet4_0630", title: "阅读语境综合训练", folder_date: "06-30", exam_id: "cet4", status: "completed" }
 ];
 
-// 3 段真实会话的完整消息记录（从真实数据库提取，仅脱敏路径）
+// 3 段真实会话的完整消息记录（从真实数据库提取，仅脱敏路径；payload 保留以让已答题卡正确渲染）
 const SESSION_MESSAGES: Record<string, Message[]> = {
   ses_demo_cet4_active: [
-    { id: "msg_cet4_1", role: "user", content: "把今天截图里的词表导入，按英语四级题型生成一组练习。" },
-    { id: "msg_cet4_2", role: "assistant", content: "截图词表已解析为 12 个高频词，并已先生成完整题组入库。\n\n本轮覆盖：词汇语境、完形填空、阅读理解、同义改写和翻译判断。先从易混词开始。" },
-    { id: "msg_cet4_3", role: "user", content: "A\n补充提问：为什么这里不能选另一个看起来也合理的词？" },
-    { id: "msg_cet4_4", role: "assistant", content: "判断：正确。\n\n正确答案：A evident\n\n讲解：evident 表示“明显的”，符合后半句 everyone could see the pattern 的语义线索。\n\n补充：你问到干扰项时，优先看句子里的语义触发词，而不是只看中文释义相近。\n\n下一题已就绪：第 2 题 / 共 12 题。" },
-    { id: "msg_cet4_5", role: "user", content: "B\n补充提问：为什么这里不能选另一个看起来也合理的词？" },
-    { id: "msg_cet4_6", role: "assistant", content: "判断：不正确。\n\n正确答案：A discard\n\n讲解：discard 表示“丢弃”，样本保存温度错误后不能继续使用。\n\n补充：你问到干扰项时，优先看句子里的语义触发词，而不是只看中文释义相近。\n\n下一题已就绪：第 3 题 / 共 12 题。" },
-    { id: "msg_cet4_7", role: "user", content: "请帮我添加一个 DeepSeek 自定义模型，模型名 deepseek-chat-demo，上下文 100 万，文本模型。" },
-    { id: "msg_cet4_8", role: "assistant", content: "我已整理成可确认的自定义模型草稿。你可以点击下方按钮填入设置页，保存前仍可修改模型名、上下文容量和视觉能力。" },
-    { id: "msg_cet4_9", role: "user", content: "请告诉我当前模型供应商、模型、Base URL、API 格式和思考等级。" },
-    { id: "msg_cet4_10", role: "assistant", content: "当前脱敏模型配置如下：\n\n- 供应商：Xiaomi MiMo（小米米魔）\n- 模型：`mimo-v2.5-pro`\n- Base URL（基础网址）：`https://api.xiaomimimo.com/anthropic`\n- API 格式（接口格式）：`anthropic-messages`\n- 思考等级（reasoning，推理）：开启\n- 图片能力：当前聊天栏图片会先走 MinerU/RapidOCR" },
-    { id: "msg_cet4_11", role: "user", content: "总结" },
-    { id: "msg_cet4_12", role: "assistant", content: "## 今日复盘\n\n你今天的截图词表练习已经完成前 5 题，整体表现稳定，但 `contrary`、`fierce` 和 `collection/collision` 的干扰项仍需要回看。\n\n### 错题归因\n- 近形近义干扰：看到 `coll-` 开头时容易先联想到 collision（碰撞），但题干里的 museum、paintings 和 photographs 明确指向 collection（收藏）。\n- 阅读细节误判：暴风雪延误车辆那段，先看到“风势减弱”会错选，但原文先说延误再说等待。\n\n### 下一步建议\n- 明天回流 `contrary / opposite` 与 `collection / collision` 两组对比。\n- `discard` 与 `apply` 的搭配差异做一次专项。" }
+    { id: "msg_0168a18f47f1", role: "user", content: "把今天截图里的词表导入，按英语四级题型生成一组练习。" },
+    {
+      id: "msg_8a948d3493d7",
+      role: "assistant",
+      content: "截图词表已解析为 12 个高频词，并已先生成完整题组入库。\n\n本轮覆盖：词汇语境、完形填空、阅读理解、同义改写和翻译判断。先从易混词开始。"
+    },
+    { id: "msg_fc7e36c9d846", role: "user", content: "A\n补充提问：为什么这里不能选另一个看起来也合理的词？" },
+    {
+      id: "msg_3ea7a97eeb75",
+      role: "assistant",
+      content: "判断：正确。\n\n正确答案：A evident\n\n讲解：evident 表示“明显的”，符合后半句 everyone could see the pattern 的语义线索。\n\n补充：你问到干扰项时，优先看句子里的语义触发词，而不是只看中文释义相近。\n\n下一题已就绪：第 2 题 / 共 12 题。",
+      payload: {
+        answered_question: {
+          id: "q_9cb8e4178e60",
+          sequence: 1,
+          type: "multiple_choice",
+          prompt: "【词汇语境】The result was so ______ that even the least experienced student could see the pattern.",
+          options: ["evident", "fierce", "mysterious", "contrary"],
+          answer: { letter: "A", correct: "evident" },
+          explanation: "evident 表示“明显的”，符合后半句 everyone could see the pattern 的语义线索。",
+          knowledge_tags: ["vocabulary:evident"],
+          status: "answered",
+          set_total: 12,
+          set_done: 1,
+          selected_option: "A",
+          selected_answer: "evident",
+          is_correct: true
+        }
+      }
+    },
+    { id: "msg_6811343cffdd", role: "user", content: "B\n补充提问：为什么这里不能选另一个看起来也合理的词？" },
+    {
+      id: "msg_d8de296741d0",
+      role: "assistant",
+      content: "判断：不正确。\n\n正确答案：A discard\n\n讲解：discard 表示“丢弃”，样本保存温度错误后不能继续使用。\n\n补充：你问到干扰项时，优先看句子里的语义触发词，而不是只看中文释义相近。\n\n下一题已就绪：第 3 题 / 共 12 题。",
+      payload: {
+        answered_question: {
+          id: "q_8fe43d4d4358",
+          sequence: 2,
+          type: "cloze",
+          prompt: "【完形填空】The lab had to ______ the samples because they were stored at the wrong temperature.",
+          options: ["discard", "apply", "guide", "collect"],
+          answer: { letter: "A", correct: "discard" },
+          explanation: "discard 表示“丢弃”，样本保存温度错误后不能继续使用。",
+          knowledge_tags: ["vocabulary:discard"],
+          status: "answered",
+          set_total: 12,
+          set_done: 2,
+          selected_option: "B",
+          selected_answer: "apply",
+          is_correct: false
+        }
+      }
+    },
+    { id: "msg_25838257b27a", role: "user", content: "A\n补充提问：为什么这里不能选另一个看起来也合理的词？" },
+    {
+      id: "msg_91739360dd36",
+      role: "assistant",
+      content: "判断：正确。\n\n正确答案：A The new rule is opposite to the old policy.\n\n讲解：contrary to 表示“与……相反”，opposite to 是最接近的同义表达。\n\n补充：你问到干扰项时，优先看句子里的语义触发词，而不是只看中文释义相近。\n\n下一题已就绪：第 4 题 / 共 12 题。",
+      payload: {
+        answered_question: {
+          id: "q_a72ab347c94b",
+          sequence: 3,
+          type: "multiple_choice",
+          prompt: "【同义改写】Which sentence best keeps the meaning of “The new rule is contrary to the old policy”?",
+          options: [
+            "The new rule is opposite to the old policy.",
+            "The new rule is copied from the old policy.",
+            "The new rule is hidden in the old policy.",
+            "The new rule is weaker than the old policy."
+          ],
+          answer: { letter: "A", correct: "The new rule is opposite to the old policy." },
+          explanation: "contrary to 表示“与……相反”，opposite to 是最接近的同义表达。",
+          knowledge_tags: ["vocabulary:contrary"],
+          status: "answered",
+          set_total: 12,
+          set_done: 3,
+          selected_option: "A",
+          selected_answer: "The new rule is opposite to the old policy.",
+          is_correct: true
+        }
+      }
+    },
+    { id: "msg_b9e23cf18c5e", role: "user", content: "B\n补充提问：为什么这里不能选另一个看起来也合理的词？" },
+    {
+      id: "msg_0aedb76fe266",
+      role: "assistant",
+      content: "判断：不正确。\n\n正确答案：A The storm delayed traffic on the road.\n\n讲解：原文先说暴风雪延误了车辆，随后才说救援队等待风势减弱。\n\n补充：你问到干扰项时，优先看句子里的语义触发词，而不是只看中文释义相近。\n\n下一题已就绪：第 5 题 / 共 12 题。",
+      payload: {
+        answered_question: {
+          id: "q_484538b5f9e9",
+          sequence: 4,
+          type: "multiple_choice",
+          prompt: "【阅读理解】A snowstorm delayed all vehicles on the mountain road. The rescue team waited until the wind became less fierce. What happened first?",
+          options: [
+            "The storm delayed traffic on the road.",
+            "The rescue team reached the town immediately.",
+            "The wind became stronger at once.",
+            "The vehicles were discarded by the team."
+          ],
+          answer: { letter: "A", correct: "The storm delayed traffic on the road." },
+          explanation: "原文先说暴风雪延误了车辆，随后才说救援队等待风势减弱。",
+          knowledge_tags: ["vocabulary:snowstorm", "vocabulary:vehicle", "vocabulary:fierce"],
+          status: "answered",
+          set_total: 12,
+          set_done: 4,
+          selected_option: "B",
+          selected_answer: "The rescue team reached the town immediately.",
+          is_correct: false
+        }
+      }
+    },
+    { id: "msg_ce1eff5e38a2", role: "user", content: "A\n补充提问：为什么这里不能选另一个看起来也合理的词？" },
+    {
+      id: "msg_6576c46dfa00",
+      role: "assistant",
+      content: "判断：正确。\n\n正确答案：A apply\n\n讲解：apply for 表示“申请”，scholarship 奖学金通常与 apply for 搭配。\n\n补充：你问到干扰项时，优先看句子里的语义触发词，而不是只看中文释义相近。\n\n下一题已就绪：第 6 题 / 共 12 题。",
+      payload: {
+        answered_question: {
+          id: "q_e2e3a9d57a0a",
+          sequence: 5,
+          type: "multiple_choice",
+          prompt: "【词汇搭配】You must ______ for the scholarship before Friday if you want to be considered.",
+          options: ["apply", "collide", "skin", "dry"],
+          answer: { letter: "A", correct: "apply" },
+          explanation: "apply for 表示“申请”，scholarship 奖学金通常与 apply for 搭配。",
+          knowledge_tags: ["vocabulary:apply"],
+          status: "answered",
+          set_total: 12,
+          set_done: 5,
+          selected_option: "A",
+          selected_answer: "apply",
+          is_correct: true
+        }
+      }
+    },
+    { id: "msg_53efc19d0dc9", role: "user", content: "请帮我添加一个 DeepSeek 自定义模型，模型名 deepseek-chat-demo，上下文 100 万，文本模型。" },
+    {
+      id: "msg_d08a3bd43b94",
+      role: "assistant",
+      content: "我已整理成可确认的自定义模型草稿。你可以点击下方按钮填入设置页，保存前仍可修改模型名、上下文容量和视觉能力。",
+      payload: {
+        settings_action: {
+          type: "custom_model_draft",
+          feature_id: "custom_models",
+          label: "自定义模型草稿：DeepSeek",
+          draft: {
+            provider_id: "deepseek",
+            model: "deepseek-chat-demo",
+            label: "DeepSeek Chat 演示模型",
+            context_tokens: 1_000_000,
+            vision: false
+          }
+        }
+      }
+    },
+    { id: "msg_788a8346f963", role: "user", content: "请告诉我当前模型供应商、模型、Base URL、API 格式和思考等级。" },
+    {
+      id: "msg_206779750da1",
+      role: "assistant",
+      content: "当前脱敏模型配置如下：\n\n- 供应商：Xiaomi MiMo（小米米魔）\n- 模型：`mimo-v2.5-pro`\n- Base URL（基础网址）：`https://api.xiaomimimo.com/anthropic`\n- API 格式（接口格式）：`anthropic-messages`\n- 思考等级（reasoning，推理）：开启\n- 图片能力：当前聊天栏图片会先走 MinerU/RapidOCR（文档解析/本地文字识别）抽取文本。\n\nAPI Key（接口密钥）只会显示是否已配置，不会在聊天、截图或日志中回显明文。"
+    },
+    { id: "msg_2e77bb8909b6", role: "user", content: "总结" },
+    {
+      id: "msg_aabbbf285b45",
+      role: "assistant",
+      content: "## 今日复盘\n\n你今天的截图词表练习已经完成前 5 题，整体表现稳定，但 `contrary`、`fierce` 和 `collection/collision` 的干扰项仍需要回看。\n\n### 错题归因\n- 近形近义干扰：看到 `coll-` 开头时容易先联想到 collision（碰撞），但题干里的 museum、paintings 和 photographs 明确指向 collection（收藏）。\n- 语境触发词没有被优先使用：遇到 fierce、contrary 这类抽象词时，先找句子中的程度、转折和对比线索。\n\n### 下一轮建议\n先做 6 道阅读式词汇题，再用截图导入补 8-10 个低掌握词。答题时继续在补充提问里写出你排除干扰项的理由。"
+    }
   ],
   ses_demo_cjt4_active: [
-    { id: "msg_cjt4_1", role: "user", content: "把旧日语四级错题拿出来做一轮回流训练。" },
-    { id: "msg_cjt4_2", role: "assistant", content: "已读取旧日语四级学习痕迹，并生成错题回流题组。题型覆盖文字と語彙、文法、阅读改写和翻译判断。" },
-    { id: "msg_cjt4_3", role: "user", content: "B\n补充提问：这个词在考纲里常用哪种写法？" },
-    { id: "msg_cjt4_4", role: "assistant", content: "判断：正确。\n\n正确答案：B 画面をクリックして番号札を受け取った。\n\n讲解：本文に、来場者は入口で画面をクリックして番号札を受け取ったとある。\n\n复习建议：把读音、搭配和句中语气一起记，别只背中文释义。\n\n下一题已就绪：第 2 题 / 共 12 题。" },
-    { id: "msg_cjt4_5", role: "user", content: "C\n补充提问：这个词在考纲里常用哪种写法？" },
-    { id: "msg_cjt4_6", role: "assistant", content: "判断：正确。\n\n正确答案：C たいしたことのない\n\n讲解：ここでの「軽い」は“深刻ではない、重くない”という意味。「怒る」は相手が本気で腹を立てたことを示す。\n\n复习建议：把读音、搭配和句中语气一起记，别只背中文释义。\n\n下一题已就绪：第 3 题 / 共 12 题。" },
-    { id: "msg_cjt4_7", role: "user", content: "B\n补充提问：这个词在考纲里常用哪种写法？" },
-    { id: "msg_cjt4_8", role: "assistant", content: "判断：不正确。\n\n正确答案：C しまって\n\n讲解：「〜てしまう」は完了や遗憾を表す。ここでは“把重要手帕弄丢了”という残念な気持ちがある。\n\n复习建议：把读音、搭配和句中语气一起记，别只背中文释义。\n\n下一题已就绪：第 4 题 / 共 12 题。" },
-    { id: "msg_cjt4_9", role: "user", content: "B\n补充提问：这个词在考纲里常用哪种写法？" },
-    { id: "msg_cjt4_10", role: "assistant", content: "判断：正确。\n\n正确答案：B その前後\n\n讲解：「〜ごろ」は“前后、大约那个时间”。「確か」は这里是“我记得、大概”的语气。\n\n复习建议：把读音、搭配和句中语气一起记，别只背中文释义。\n\n下一题已就绪：第 5 题 / 共 12 题。" }
+    { id: "msg_cc157f970876", role: "user", content: "把旧日语四级错题拿出来做一轮回流训练。" },
+    { id: "msg_664faf98ef51", role: "assistant", content: "已读取旧日语四级学习痕迹，并生成错题回流题组。题型覆盖文字と語彙、文法、阅读改写和翻译判断。" },
+    { id: "msg_770d7c282013", role: "user", content: "B\n补充提问：这个词在考纲里常用哪种写法？" },
+    {
+      id: "msg_c1ab46bd1e3b",
+      role: "assistant",
+      content: "判断：正确。\n\n正确答案：B 画面をクリックして番号札を受け取った。\n\n讲解：本文に、来場者は入口で画面をクリックして番号札を受け取ったとある。\n\n复习建议：把读音、搭配和句中语气一起记，别只背中文释义。\n\n下一题已就绪：第 2 题 / 共 12 题。",
+      payload: {
+        answered_question: {
+          id: "q_9f26f27f93f4",
+          sequence: 1,
+          type: "multiple_choice",
+          prompt: "【読解】次の文章を読んで、後の問いに答えなさい。\n週末、市の科学館では、原子力の初期模型からハイテク通信機器までを集めた特別展が開かれた。入口で来場者は案内板の画面をクリックして番号札を受け取り、古いエンジンに触れてよい時間は一回十分以内だと説明された。展示室には各時代のテープ機器も並び、色々な技術がどのように現在の通信へ繋がったかが分かるように示されていた。閉館前、職員は安全のため鍵をかける前に全員が外へ出たかを確かめ、内容を要約した紙を一人ずつ配った。\n入口で来場者がしたこととして最も適当なものはどれか。",
+          options: [
+            "鍵を借りて展示室を閉めた。",
+            "画面をクリックして番号札を受け取った。",
+            "紙を配ってから中へ入った。",
+            "すぐにエンジンを分解し始めた。"
+          ],
+          answer: { letter: "B", correct: "画面をクリックして番号札を受け取った。" },
+          explanation: "本文に、来場者は入口で画面をクリックして番号札を受け取ったとある。",
+          knowledge_tags: ["vocabulary:クリック", "vocabulary:エンジン", "vocabulary:～以内"],
+          status: "answered",
+          set_total: 12,
+          set_done: 1,
+          selected_option: "B",
+          selected_answer: "画面をクリックして番号札を受け取った。",
+          is_correct: true
+        }
+      }
+    },
+    { id: "msg_dacc393e3877", role: "user", content: "C\n补充提问：这个词在考纲里常用哪种写法？" },
+    {
+      id: "msg_f1671b431166",
+      role: "assistant",
+      content: "判断：正确。\n\n正确答案：C たいしたことのない\n\n讲解：ここでの「軽い」は“深刻ではない、重くない”という意味。「怒る」は相手が本気で腹を立てたことを示す。\n\n复习建议：把读音、搭配和句中语气一起记，别只背中文释义。\n\n下一题已就绪：第 3 题 / 共 12 题。",
+      payload: {
+        answered_question: {
+          id: "q_c5bed8b00a26",
+          sequence: 2,
+          type: "multiple_choice",
+          prompt: "【文字と語彙】次の文の下線部の意味として最も適当なものを、[Ａ][Ｂ][Ｃ][Ｄ]から一つ選びなさい。\n彼は軽い冗談のつもりだったが、相手は本気で怒った。",
+          options: ["かなり暗い", "すでに終わった", "たいしたことのない", "非常に重たい"],
+          answer: { letter: "C", correct: "たいしたことのない" },
+          explanation: "ここでの「軽い」は“深刻ではない、重くない”という意味。「怒る」は相手が本気で腹を立てたことを示す。",
+          knowledge_tags: ["vocabulary:軽い", "vocabulary:怒る"],
+          status: "answered",
+          set_total: 12,
+          set_done: 2,
+          selected_option: "C",
+          selected_answer: "たいしたことのない",
+          is_correct: true
+        }
+      }
+    },
+    { id: "msg_8de073145944", role: "user", content: "B\n补充提问：这个词在考纲里常用哪种写法？" },
+    {
+      id: "msg_e54ca2b371b4",
+      role: "assistant",
+      content: "判断：不正确。\n\n正确答案：C しまって\n\n讲解：「〜てしまう」は完了や遗憾を表す。ここでは“把重要手帕弄丢了”という残念な気持ちがある。\n\n复习建议：把读音、搭配和句中语气一起记，别只背中文释义。\n\n下一题已就绪：第 4 题 / 共 12 题。",
+      payload: {
+        answered_question: {
+          id: "q_0da06324e55d",
+          sequence: 3,
+          type: "multiple_choice",
+          prompt: "【文法】次の文の（　）に入るのに最も適当なものを、[Ａ][Ｂ][Ｃ][Ｄ]から一つ選びなさい。\n大事なハンカチを途中で落として（　）、駅まで戻った。",
+          options: ["おいて", "みて", "しまって", "ばかりで"],
+          answer: { letter: "C", correct: "しまって" },
+          explanation: "「〜てしまう」は完了や遗憾を表す。ここでは“把重要手帕弄丢了”という残念な気持ちがある。",
+          knowledge_tags: ["grammar:〜てしまう", "vocabulary:ハンカチ", "vocabulary:途中"],
+          status: "answered",
+          set_total: 12,
+          set_done: 3,
+          selected_option: "B",
+          selected_answer: "みて",
+          is_correct: false
+        }
+      }
+    },
+    { id: "msg_58ce65434e70", role: "user", content: "B\n补充提问：这个词在考纲里常用哪种写法？" },
+    {
+      id: "msg_454522551501",
+      role: "assistant",
+      content: "判断：正确。\n\n正确答案：B その前後\n\n讲解：「〜ごろ」は“前后、大约那个时间”。「確か」は这里是“我记得、大概”的语气。\n\n复习建议：把读音、搭配和句中语气一起记，别只背中文释义。\n\n下一题已就绪：第 5 题 / 共 12 题。",
+      payload: {
+        answered_question: {
+          id: "q_832645ed5cb1",
+          sequence: 4,
+          type: "multiple_choice",
+          prompt: "【文字と語彙】次の文の下線部の意味として最も適当なものを、[Ａ][Ｂ][Ｃ][Ｄ]から一つ選びなさい。\n彼は『確か九時ごろ会社に着く』と言っていたが、まだ完全ではない資料を持っていた。",
+          options: ["共同で", "その前後", "以前のように", "ちょうどその瞬間だけ"],
+          answer: { letter: "B", correct: "その前後" },
+          explanation: "「〜ごろ」は“前后、大约那个时间”。「確か」は这里是“我记得、大概”的语气。",
+          knowledge_tags: ["vocabulary:～頃", "vocabulary:確か", "vocabulary:会社", "vocabulary:完全", "vocabulary:時"],
+          status: "answered",
+          set_total: 12,
+          set_done: 4,
+          selected_option: "B",
+          selected_answer: "その前後",
+          is_correct: true
+        }
+      }
+    }
   ],
-  ses_demo_cet4_0622: [
-    { id: "msg_0622_1", role: "user", content: "把这张截图里的 vehicle 等词导入并生成翻译判断题。" },
-    { id: "msg_0622_2", role: "assistant", content: "截图已解析为 6 个词法点（vehicle / collection / collision / storm / snowstorm / rescue），按翻译判断题型生成题组。" },
-    { id: "msg_0622_3", role: "user", content: "A\n补充提问：为什么这里不能选另一个看起来也合理的词？" },
-    { id: "msg_0622_4", role: "assistant", content: "判断：正确。\n\n正确答案：A The vehicle can be used as a mobile library.\n\n讲解：vehicle 是“车辆；交通工具”，can be used as 表示“可以作为……使用”。" },
-    { id: "msg_0622_5", role: "user", content: "A\n补充提问：为什么这里不能选另一个看起来也合理的词？" },
-    { id: "msg_0622_6", role: "assistant", content: "判断：正确。\n\n正确答案：A discard\n\n讲解：discard 表示“丢弃”，样本保存温度错误后不能继续使用。\n\n下一题已就绪：第 3 题 / 共 8 题。" }
+  ses_demo_cet4_0630: [
+    { id: "msg_0630_1", role: "user", content: "把上周阅读理解错题里的语境词做一组综合训练。" },
+    { id: "msg_0630_2", role: "assistant", content: "已读取阅读错题本，整理出 12 道语境综合题，覆盖近义辨析、推理细节和主旨概括。本组题已在 06-30 完成，可作为复习参考。" }
   ]
 };
 
@@ -396,97 +642,105 @@ const DEMO_QUESTION: Question = {
 };
 
 // 每个会话专属的 daily_panel 与 active_question，让点击不同会话时显示差异化进度
+// 数据来源：真实 langdrill_agent.db（ses_demo_cet4_active 当前题 Q6 collection，包含完整单词卡片）
 const SESSION_PANELS: Record<string, DailyPanel> = {
   ses_demo_cet4_active: {
     date: new Date().toLocaleDateString("zh-CN"),
-    title: "CET-4 截图词表练习",
+    title: "截图词表练习：collection",
     status: "active",
     plan: {
-      new_content: ["截图导入 12 词（achieve / challenge / appropriate / efficient / sustainable 等）", "阅读理解仔细阅读 ×2 篇"],
-      review_content: ["错题回流：近义辨析 3 题", "考纲兜底：语境词汇 2 题", "到期复习：compound / elaborate / infer"],
-      target_minutes: 35,
+      new_content: ["collection", "discard", "evident", "vehicle", "mysterious", "cotton"],
+      review_content: ["错题回流：contrary / fierce", "四级阅读同义改写"],
+      target_minutes: 45,
       status: "in_progress"
     },
     questions_total: 12,
-    questions_done: 8,
+    questions_done: 5,
     knowledge_total: 24,
     knowledge_done: 17,
-    knowledge_terms: ["achieve", "challenge", "appropriate", "efficient", "sustainable", "comprehend", "compound", "elaborate", "infer", "validate", "approach", "advertise", "evaluate", "frame", "grasp", "tackle", "synthesize"],
+    knowledge_terms: ["collection", "discard", "evident", "vehicle", "mysterious", "cotton", "contrary", "fierce", "apply", "snowstorm", "collision", "disguise", "vigorous", "germ", "waterfall", "bull", "guide", "skin"],
     exam_id: "cet4",
     exam_name: "大学英语四级",
     accuracy: 0.78,
-    summary: "今日完成 8/12 题，正确率 78%。achieve/challenge 已掌握；appropriate 与近义辨析建议加入错题回流，下次复习周期 2 天。"
+    summary: "已完成前 5 题，collection / discard / contrary 仍需重点复盘。当前题停在第 6 题，适合演示答题讲解和分支追问。"
   },
   ses_demo_cjt4_active: {
     date: new Date(Date.now() - 86_400_000).toLocaleDateString("zh-CN"),
-    title: "CJT4 错题回流训练",
+    title: "日语四级错题回流",
     status: "active",
     plan: {
-      new_content: ["文字と語彙 ×6", "文法判断 ×4"],
-      review_content: ["错题回流：文法 3 题", "读音辨析：軽い / 重い / 大した"],
-      target_minutes: 30,
+      new_content: ["片仮名", "何となく", "挑戦", "激しい"],
+      review_content: ["4.23 错题回流", "语法：ために / てしまう / ておく"],
+      target_minutes: 40,
       status: "in_progress"
     },
     questions_total: 12,
     questions_done: 4,
     knowledge_total: 18,
     knowledge_done: 12,
-    knowledge_terms: ["画面", "番号札", "軽い", "怒る", "しまう", "ごろ", "確か"],
+    knowledge_terms: ["片仮名", "ハンカチ", "軽い", "怒る", "しまう", "ごろ", "確か", "刺激", "外交", "向く", "絹", "ハム"],
     exam_id: "cjt4",
     exam_name: "大学日语四级",
     accuracy: 0.66,
-    summary: "昨日 CJT4 错题回流训练进行到 4/12 题。しまう（遗憾/完了）和 たいしたことのない（不严重）已识别，建议把读音、搭配和句中语气一起记。"
+    summary: "日语四级演示当前会话：已完成 4 题，下一题展示文字与语汇读音辨析。"
   },
-  ses_demo_cet4_0622: {
-    date: "2026-06-22",
-    title: "截图导入 · vehicle 词法点",
+  ses_demo_cet4_0630: {
+    date: "2026-06-30",
+    title: "阅读语境综合训练",
     status: "completed",
     plan: {
-      new_content: ["截图导入 6 词（vehicle / collection / collision / storm / snowstorm / rescue）"],
-      review_content: ["翻译判断 ×8 题"],
-      target_minutes: 25,
+      new_content: ["阅读错题 12 词"],
+      review_content: ["近义辨析专项 ×3", "推理细节题 ×2", "主旨概括 ×2"],
+      target_minutes: 35,
       status: "completed"
     },
-    questions_total: 8,
-    questions_done: 8,
-    knowledge_total: 6,
-    knowledge_done: 6,
-    knowledge_terms: ["vehicle", "collection", "collision", "storm", "snowstorm", "rescue"],
+    questions_total: 12,
+    questions_done: 12,
+    knowledge_total: 12,
+    knowledge_done: 12,
+    knowledge_terms: ["infer", "derive", "comprehend", "validate", "synthesize", "distinct", "approach", "assess", "compound", "elaborate", "frame", "grasp"],
     exam_id: "cet4",
     exam_name: "大学英语四级",
-    accuracy: 0.88,
-    summary: "06-22 已完成截图导入 6 词的翻译判断题组（8/8 题，正确率 88%）。vehicle / collection 已掌握，可考虑加入下次到期复习。"
+    accuracy: 0.83,
+    summary: "06-30 已完成阅读语境综合训练（12/12 题，正确率 83%）。infer / synthesize 已掌握，可考虑加入下次到期复习。"
   }
 };
 
 const SESSION_QUESTIONS: Record<string, Question | null> = {
+  // 当前演示题：Q6 collection，包含完整单词卡片，是今天截图演示使用的会话
   ses_demo_cet4_active: {
-    id: "demo-q-cet4-active-3",
-    sequence: 3,
+    id: "q_68c617bf9dc5",
+    sequence: 6,
     type: "context_vocabulary",
-    prompt: "The museum's latest ___ includes paintings and photographs from local artists.",
-    options: ["A. collision", "B. collection", "C. dimension", "D. revision"],
-    answer: { correct: "B. collection", letter: "B" },
-    explanation: "collection 表示“收藏品”，与 museum（博物馆）、paintings 和 photographs 语境匹配。collision 是“碰撞”，词形相似但语义不符。本词来自今日截图导入。",
-    knowledge_tags: ["collection", "collision", "museum"],
+    prompt: "【当前演示题】The museum has a large ______ of local paintings and old photographs.",
+    options: ["collection", "collision", "waterfall", "germ"],
+    answer: { letter: "A", correct: "collection" },
+    explanation: "collection 表示“收藏品；集合”，与 museum、paintings、photographs 搭配自然。",
+    knowledge_tags: ["vocabulary:collection"],
     status: "pending",
     set_total: 12,
-    set_done: 2
+    set_done: 5
   },
+  // 日语当前演示题：Q5 和文中訳
   ses_demo_cjt4_active: {
-    id: "demo-q-cjt4-active-5",
+    id: "q_756917e1560a",
     sequence: 5,
-    type: "context_vocabulary",
-    prompt: "大切なハンカチを（　　）しまった。涙が出てきた。",
-    options: ["A. なくして", "B. しまって", "C. たおして", "D. おくれて"],
-    answer: { correct: "A. なくして", letter: "A" },
-    explanation: "「〜てしまう」は完了や遺憾を表す。ここでは“把重要手帕弄丢了”という残念な気持ちがある。次の問題は第 5 題 / 全 12 題。",
-    knowledge_tags: ["しまう", "なくす", "遺憾"],
+    type: "translation",
+    prompt: "【和文中訳】次の文の意味として最も適当な中国語を、[Ａ][Ｂ][Ｃ][Ｄ]から一つ選びなさい。\n駅前の店では、絹の袋やハムをレジの横に並べ、税金を含めた料金を瓶のラベルにまできちんと書いている。",
+    options: [
+      "车站前的店里把丝袋和火腿摆在收银台旁边，连含税价格都仔细写到了瓶子的标签上。",
+      "店员不会写字，只能把价格记在自己心里。",
+      "车站前的店里不卖任何东西，只把空瓶子堆在门口。",
+      "因为税太高，所以店里把所有火腿都送走了。"
+    ],
+    answer: { letter: "A", correct: "车站前的店里把丝袋和火腿摆在收银台旁边，连含税价格都仔细写到了瓶子的标签上。" },
+    explanation: "句子说的是店里把商品摆在收银台旁边，并把含税价格仔细写在瓶子标签上。",
+    knowledge_tags: ["vocabulary:絹", "vocabulary:ハム", "vocabulary:レジ", "vocabulary:税金", "vocabulary:含める", "vocabulary:料金", "vocabulary:瓶", "vocabulary:きちんと"],
     status: "pending",
     set_total: 12,
     set_done: 4
   },
-  ses_demo_cet4_0622: null
+  ses_demo_cet4_0630: null
 };
 
 const ASSISTANT_INTRO = `你好 boss，我是 **Lang Drill Agent** 的展示版模拟回复。

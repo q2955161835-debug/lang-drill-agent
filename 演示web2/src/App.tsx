@@ -171,7 +171,7 @@ const FEATURE_ROWS = [
   },
   {
     title: "三栏学习工作台",
-    body: "左侧学习状态、中间聊天与题目、右侧分支 / 截图导入 / 手机映像，边界可拖拽，状态不丢失。",
+    body: "左侧学习状态、中间聊天与题目、右侧分支 / 截图导入，边界可拖拽，状态不丢失。",
     icon: Cards,
     tag: "Layout",
   },
@@ -195,16 +195,13 @@ const SCREENSHOTS = [
   { file: "07-cet4-active-question", title: "当前题吸附卡", body: "中栏聊天与题卡同一学习流推进，自动下一题。" },
   { file: "09-cet4-answer-feedback-extra-question", title: "答题反馈", body: "作答后判题讲解、补充提问和下一题自动推进。" },
   { file: "14-cet4-screenshot-import-parsed", title: "截图词表导入", body: "OCR 后先编辑词条，确认后再导入并生成题组。" },
-  { file: "16-cet4-screenshot-import-auto-drill", title: "导入自动开练", body: "确认词条后自动创建独立练习会话。" },
   { file: "12-branch-selected-text-reference-card", title: "分支引用", body: "划词进入右侧分支，主会话不被污染。" },
   { file: "06-cet4-daily-summary", title: "当日总结", body: "模型结合数据库明细生成复盘、错题归因与建议。" },
   { file: "13-cet4-screenshot-import-queued", title: "截图入队", body: "多张单词截图依次入队，等待 OCR 解析。" },
-  { file: "17-right-workbench-phone-mirror", title: "手机映像", body: "右侧工作台支持手机映像环境检查。" },
   { file: "18-settings-model-mimo", title: "模型配置", body: "供应商、模型、视觉能力与上下文容量集中管理。" },
   { file: "20-settings-exam", title: "考试选择", body: "目标考试、考试时间和目标语言集中设置。" },
   { file: "21-settings-syllabus-papers", title: "考纲真题", body: "考纲版本、历年真题和题型勾选一目了然。" },
   { file: "23-settings-token-ledger", title: "令牌台账", body: "使用台账、模型排行和最近调用透明可见。" },
-  { file: "24-settings-data-paths", title: "数据路径", body: "隔离数据库路径和表计数清晰可控。" },
   { file: "26-settings-skills", title: "拓展 Skills", body: "内置联网始终可用，拓展 Skill 单项开关控制。" },
   { file: "29-cjt4-home-long-panel", title: "日语四级面板", body: "切换日语四级后的长期学习总面板。" },
   { file: "30-cjt4-active-question", title: "日语四级题卡", body: "CJT4 同样支持语境题、阅读和翻译题型。" },
@@ -323,18 +320,15 @@ function App() {
         delay: 0.15,
       });
 
-      // 单词银河整体：随滚动向下汇聚（被工作台遮挡）
-      // hero 底部刚好碰到 workflow 顶部时，galaxy 已汇聚到中央并消失
+      // 单词银河整体：随滚动逐渐淡出（不缩小，避免词越滚越小）
       gsap.to(".word-galaxy", {
-        y: window.innerHeight * 0.45,
-        scale: 0.18,
+        y: 60,
         opacity: 0,
-        filter: "blur(12px)",
-        ease: "none",
+        ease: "power2.in",
         scrollTrigger: {
           trigger: ".hero",
-          start: "top top",
-          end: "bottom top",
+          start: "bottom 90%",
+          end: "bottom 40%",
           scrub: 1,
         },
       });
@@ -354,13 +348,13 @@ function App() {
       });
 
       workflowTimeline
-        // 1. 单词从左栏 Vocabulary 飞入到 Generate 中央
+        // 1. 单词从左栏 Vocabulary 飞入到原位置
         .fromTo(
           ".flow-word",
           {
             autoAlpha: 0,
-            x: -240,
-            y: (_i: number) => [-40, 20, -10, 30, 0][_i % 5],
+            x: -120,
+            y: (_i: number) => [-30, 15, -8, 22, 0][_i % 5],
             scale: 0.6,
             filter: "blur(4px)",
           },
@@ -375,34 +369,33 @@ function App() {
             duration: 1.0,
           }
         )
-        // 2. 单词向右滑动渐变消失到 Generate 的左 2/9 处
+        // 2. 单词向右滑动渐变消失到 Generate 的左 2/9 处（用 vw 单位跨栏位移）
         .to(".flow-word", {
           autoAlpha: 0,
-          x: 80, // 向右滑到 Generate 左 2/9 处
+          x: "20vw", // 视口宽度的 20%，大致是左栏中央到 Generate 左 2/9 处的距离
           y: 0,
-          scale: 0.4,
+          scale: 0.35,
           filter: "blur(8px)",
           stagger: 0.02,
           ease: "power2.in",
           duration: 0.5,
         })
         // 3. 题卡从 Generate 的 7/9 处渐变出现，移动到 Output 框的正确位置
+        //    用 xPercent 相对自身宽度偏移，避免 stagger 时多个题卡 x 位置错位
         .fromTo(
           ".generated-question",
           {
             autoAlpha: 0,
-            x: -60, // 从 Generate 的 7/9 处（即 Generate 右侧 1/3 偏左一点）出现
-            y: 0,
-            scale: 0.4,
+            xPercent: -35, // 向左偏移自身宽度的 35%（从 Generate 7/9 处出现）
+            scale: 0.5,
             filter: "blur(8px)",
           },
           {
             autoAlpha: 1,
-            x: 0, // 移动到 Output 框的正确位置（原本 CSS 布局位置）
-            y: 0,
+            xPercent: 0, // 回到 Output 框的 CSS 原位置
             scale: 1,
             filter: "blur(0px)",
-            stagger: 0.08,
+            stagger: 0.06,
             ease: "power3.out",
             duration: 0.7,
           },
@@ -411,7 +404,7 @@ function App() {
         // 4. 题卡从 Output 区飞到下方题卡区（被题卡界面遮挡）
         .to(".generated-question", {
           autoAlpha: 0,
-          y: "+=180",
+          y: "+=160",
           scale: 0.8,
           filter: "blur(6px)",
           stagger: 0.05,
@@ -584,78 +577,74 @@ function HeroSection() {
   );
 }
 
+// 伪随机数生成器（seeded），保证每次渲染位置一致
+function seededRandom(seed: number) {
+  let s = seed;
+  return () => {
+    s = (s * 16807 + 0) % 2147483647;
+    return (s - 1) / 2147483646;
+  };
+}
+
 function WordGalaxy() {
-  // 英文 80% + 日语 20%，密度提升至 ~7.2 倍（原 3 倍 × 2.4）
-  // 单词保持正向：用 CSS offset-path 让每个单词沿椭圆轨道公转，文字方向保持不变
-  // 每个单词再叠加一个独立小范围随机漂移
-  const total = GALAXY_WORDS_EN.length + GALAXY_WORDS_JP.length;
   const items: Array<{ text: string; lang: "en" | "jp"; weight?: number }> = [
     ...GALAXY_WORDS_EN.map((w) => ({ ...w, lang: "en" as const })),
     ...GALAXY_WORDS_JP.map((w) => ({ ...w, lang: "jp" as const })),
   ];
+  const total = items.length;
+  const rng = seededRandom(42);
+
+  // 预计算每个词的位置和动画参数
+  const wordData = items.map((item, i) => {
+    // 极坐标分布：角度均匀分布 + 半径从中心向外，形成银河盘面
+    const angle = rng() * Math.PI * 2;
+    // 半径用平方根分布让密度均匀（避免中心过密），范围 5%~48%
+    const r = Math.sqrt(rng()) * 43 + 5;
+    const x = 50 + Math.cos(angle) * r;
+    const y = 50 + Math.sin(angle) * r * 0.75; // 椭圆：y 轴压缩
+
+    // 距离中心归一化（0=中心，1=边缘）
+    const dist = Math.min(r / 48, 1);
+
+    // 字号：中心词大（20-24px），边缘词小（13-16px），权重词更大
+    const baseSize = item.weight ? 20 : 14;
+    const fontSize = Math.round(baseSize + (1 - dist) * 8 + rng() * 3);
+
+    // 中心词更亮不模糊，边缘词略透明轻微模糊
+    const opacity = 0.45 + (1 - dist) * 0.55;
+    const blur = dist * 1.2;
+
+    // 飘动参数：随机方向、速度
+    const driftX = (rng() - 0.5) * 30;
+    const driftY = (rng() - 0.5) * 20;
+    const driftDur = 8 + rng() * 10;
+    const driftDelay = -rng() * driftDur;
+
+    return { item, x, y, dist, fontSize, opacity, blur, driftX, driftY, driftDur, driftDelay, i };
+  });
 
   return (
     <div className="word-galaxy" aria-hidden="true">
-      {items.map((item, index) => {
-        // 螺旋分布：4 条旋臂，每条旋臂单词环绕中心呈银河旋臂
-        const arm = index % 4;
-        const armOffset = (arm * Math.PI) / 2;
-        const angle = (index / total) * Math.PI * 12 + armOffset;
-        const radius = 0.1 + (index / total) * 0.85;
-        const side = index % 2 === 0 ? -1 : 1;
-        const x = 50 + Math.cos(angle) * radius * 55 * side;
-        const y = 50 + Math.sin(angle) * radius * 55;
-        const depth = 0.3 + ((index * 7) % 10) / 10;
-        // 字号缩小到原来的 50%：原 12-30 → 现 8-15
-        const fontSize = 8 + ((index * 13) % 8);
-        // 公转轨道半径：基于距中心距离生成椭圆，单位 %
-        const orbitRx = 4 + ((index * 7) % 8);
-        const orbitRy = 3 + ((index * 11) % 6);
-        // 公转周期（80-160s 慢速流转）
-        const orbitDuration = 80 + ((index * 19) % 80);
-        const orbitDelay = -((index * 23) % orbitDuration);
-        // 独立小范围漂移
-        const driftDuration = 6 + ((index * 13) % 10);
-        const driftDelay = -((index * 17) % driftDuration);
-        const driftX = 6 + ((index * 7) % 10);
-        const driftY = 4 + ((index * 11) % 8);
-        const blur = ((index * 3) % 5) * 0.6;
-        // 距中心远的单词更虚化
-        const distFromCenter = Math.hypot(x - 50, y - 50) / 60;
-        return (
-          <span
-            className="galaxy-orbit"
-            key={`${item.text}-${index}`}
-            style={cssVars({
-              "--orbit-rx": `${orbitRx}%`,
-              "--orbit-ry": `${orbitRy}%`,
-              "--orbit-duration": `${orbitDuration}s`,
-              "--orbit-delay": `${orbitDelay}s`,
-              "--top": `${y}%`,
-              "--left": `${x}%`,
-            })}
-          >
-            <span
-              className={`galaxy-word galaxy-word-${item.lang}`}
-              style={cssVars({
-                "--drift-duration": `${driftDuration}s`,
-                "--drift-delay": `${driftDelay}s`,
-                "--drift-x": `${driftX}px`,
-                "--drift-y": `${driftY}px`,
-                "--depth": depth,
-                "--delay": `${driftDelay}s`,
-                "--duration": `${driftDuration}s`,
-                "--font-size": `${fontSize}px`,
-                "--blur": `${blur}px`,
-                "--dist": distFromCenter.toFixed(2),
-                fontWeight: item.weight ?? 400,
-              })}
-            >
-              {item.text}
-            </span>
-          </span>
-        );
-      })}
+      {wordData.map(({ item, x, y, dist, fontSize, opacity, blur, driftX, driftY, driftDur, driftDelay, i }) => (
+        <span
+          key={`${item.text}-${i}`}
+          className={`galaxy-word galaxy-word-${item.lang}`}
+          style={cssVars({
+            "--gw-x": `${x}%`,
+            "--gw-y": `${y}%`,
+            "--gw-size": `${fontSize}px`,
+            "--gw-opacity": opacity.toFixed(3),
+            "--gw-blur": `${blur.toFixed(2)}px`,
+            "--gw-dx": `${driftX.toFixed(1)}px`,
+            "--gw-dy": `${driftY.toFixed(1)}px`,
+            "--gw-dur": `${driftDur.toFixed(1)}s`,
+            "--gw-delay": `${driftDelay.toFixed(1)}s`,
+            fontWeight: item.weight ? 700 : 400 + Math.round((1 - dist) * 200),
+          })}
+        >
+          {item.text}
+        </span>
+      ))}
       <div className="galaxy-core" aria-hidden="true" />
     </div>
   );

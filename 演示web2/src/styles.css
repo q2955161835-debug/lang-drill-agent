@@ -431,40 +431,64 @@ section { position: relative; }
   inset: 0;
   z-index: 0;
   pointer-events: none;
+  overflow: hidden;
 }
 
-/* 单词轨道容器：沿椭圆公转，文字方向保持不变（offset-rotate: 0deg） */
-.galaxy-orbit {
+/* 单词直接绝对定位，简单可靠：位置用 CSS 变量，飘动用 transform 动画 */
+.galaxy-word {
   position: absolute;
-  top: var(--top);
-  left: var(--left);
-  width: 0;
-  height: 0;
-  /* offset-path 让单词沿椭圆轨道运动，文字始终保持正向 */
-  offset-path: ellipse(var(--orbit-rx) var(--orbit-ry) at 0 0);
-  offset-rotate: 0deg;
-  animation: galaxy-orbit var(--orbit-duration) linear infinite;
-  animation-delay: var(--orbit-delay);
-  will-change: offset-distance;
+  left: var(--gw-x);
+  top: var(--gw-y);
+  transform: translate(-50%, -50%);
+  font-size: var(--gw-size);
+  font-weight: 500;
+  color: rgba(238, 243, 251, var(--gw-opacity));
+  letter-spacing: 0.01em;
+  text-shadow: 0 0 calc(var(--gw-size) * 0.5) var(--accent-glow);
+  filter: blur(var(--gw-blur));
+  white-space: nowrap;
+  animation: galaxy-float var(--gw-dur) ease-in-out infinite;
+  animation-delay: var(--gw-delay);
+  will-change: transform, opacity;
+  user-select: none;
 }
 
-@keyframes galaxy-orbit {
-  from { offset-distance: 0%; }
-  to   { offset-distance: 100%; }
+@keyframes galaxy-float {
+  0%, 100% {
+    transform: translate(-50%, -50%) translate(0, 0);
+  }
+  50% {
+    transform: translate(calc(-50% + var(--gw-dx)), calc(-50% + var(--gw-dy)));
+  }
+}
+
+:root[data-theme="light"] .galaxy-word {
+  color: rgba(20, 24, 33, var(--gw-opacity));
+  text-shadow: 0 0 calc(var(--gw-size) * 0.4) var(--accent-glow);
+}
+
+.galaxy-word-jp {
+  font-family: 'Noto Sans JP', 'PingFang SC', sans-serif;
+  color: rgba(94, 234, 212, var(--gw-opacity));
+  text-shadow: 0 0 calc(var(--gw-size) * 0.5) var(--accent-2-glow);
+}
+
+:root[data-theme="light"] .galaxy-word-jp {
+  color: rgba(13, 148, 136, var(--gw-opacity));
 }
 
 .galaxy-core {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 460px;
-  height: 460px;
+  width: 520px;
+  height: 520px;
   transform: translate(-50%, -50%);
   background:
-    radial-gradient(circle at center, rgba(124, 92, 255, 0.42), transparent 60%),
-    radial-gradient(circle at 30% 30%, rgba(45, 212, 191, 0.22), transparent 50%),
-    radial-gradient(circle at 70% 70%, rgba(255, 77, 141, 0.16), transparent 60%);
-  filter: blur(50px);
+    radial-gradient(circle at center, rgba(124, 92, 255, 0.5), transparent 55%),
+    radial-gradient(circle at 30% 30%, rgba(45, 212, 191, 0.28), transparent 50%),
+    radial-gradient(circle at 70% 70%, rgba(255, 77, 141, 0.22), transparent 55%);
+  filter: blur(60px);
   border-radius: 50%;
   animation: core-pulse 8s ease-in-out infinite;
 }
@@ -474,80 +498,36 @@ section { position: relative; }
   50%      { transform: translate(-50%, -50%) scale(1.15); opacity: 1; }
 }
 
-.galaxy-word {
-  position: absolute;
-  top: 0;
-  left: 0;
-  transform: translate(-50%, -50%);
-  font-size: var(--font-size);
-  font-weight: 500;
-  /* 距中心越远越虚化 */
-  color: rgba(238, 243, 251, calc((0.4 + var(--depth) * 0.5) * (1.05 - var(--dist) * 0.7)));
-  letter-spacing: 0.02em;
-  text-shadow: 0 0 calc(var(--font-size) * 0.6) var(--accent-glow);
-  filter: blur(calc(var(--blur) + var(--dist) * 1.5px));
-  animation: galaxy-drift var(--drift-duration) ease-in-out infinite;
-  animation-delay: var(--drift-delay);
-  will-change: transform, opacity;
-  white-space: nowrap;
-  opacity: calc(0.5 + var(--depth) * 0.4);
-}
-
-:root[data-theme="light"] .galaxy-word {
-  color: rgba(20, 24, 33, calc((0.32 + var(--depth) * 0.5) * (1.05 - var(--dist) * 0.7)));
-  text-shadow: 0 0 12px var(--accent-glow);
-}
-
-.galaxy-word-jp {
-  font-family: 'Noto Sans JP', 'PingFang SC', sans-serif;
-  color: rgba(94, 234, 212, calc((0.5 + var(--depth) * 0.5) * (1.05 - var(--dist) * 0.7)));
-  text-shadow: 0 0 calc(var(--font-size) * 0.6) var(--accent-2-glow);
-}
-
-:root[data-theme="light"] .galaxy-word-jp {
-  color: rgba(13, 148, 136, calc((0.4 + var(--depth) * 0.5) * (1.05 - var(--dist) * 0.7)));
-}
-
-/* 单词独立小范围漂移：让单词在轨道基础上再随机飘动 */
-@keyframes galaxy-drift {
-  0%, 100% {
-    transform: translate(-50%, -50%) translate(0, 0) scale(1);
-    opacity: calc(0.5 + var(--depth) * 0.4);
-  }
-  25% {
-    transform: translate(calc(-50% + var(--drift-x) * 0.5), calc(-50% - var(--drift-y) * 0.5)) scale(1.05);
-  }
-  50% {
-    transform: translate(calc(-50% + var(--drift-x)), calc(-50% - var(--drift-y) * 0.8)) scale(1.08);
-    opacity: calc(0.65 + var(--depth) * 0.35);
-  }
-  75% {
-    transform: translate(calc(-50% - var(--drift-x) * 0.3), calc(-50% + var(--drift-y) * 0.4)) scale(1.02);
-    opacity: calc(0.55 + var(--depth) * 0.4);
-  }
-}
-
-/* 中间文字后面密度减少、虚化加深：在 hero-content 后面叠加一个 mask 让中央更干净 */
+/* 标题椭圆区域内：中心毛玻璃强、向外渐淡，让标题清晰不杂乱 */
 .word-galaxy::after {
   content: "";
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 56%;
-  height: 60%;
+  width: 48%;
+  height: 52%;
   transform: translate(-50%, -50%);
+  /* 毛玻璃：模糊背后的银河词 */
+  backdrop-filter: blur(28px) saturate(1.15);
+  -webkit-backdrop-filter: blur(28px) saturate(1.15);
+  /* 轻微暗化增强标题可读性，中心略深边缘透明 */
   background: radial-gradient(ellipse at center,
-    rgba(5, 6, 13, 0.78) 0%,
-    rgba(5, 6, 13, 0.5) 35%,
+    rgba(5, 6, 13, 0.28) 0%,
+    rgba(5, 6, 13, 0.10) 45%,
     transparent 75%);
+  /* mask 让毛玻璃从中心向椭圆边缘渐变消失 */
+  -webkit-mask-image: radial-gradient(ellipse at center,
+    #000 0%, #000 30%, transparent 78%);
+  mask-image: radial-gradient(ellipse at center,
+    #000 0%, #000 30%, transparent 78%);
   pointer-events: none;
   z-index: 1;
 }
 
 :root[data-theme="light"] .word-galaxy::after {
   background: radial-gradient(ellipse at center,
-    rgba(245, 246, 251, 0.78) 0%,
-    rgba(245, 246, 251, 0.5) 35%,
+    rgba(246, 247, 251, 0.35) 0%,
+    rgba(246, 247, 251, 0.12) 45%,
     transparent 75%);
 }
 
