@@ -70,16 +70,16 @@ http://127.0.0.1:5173
 
 ## 产品展示网站
 
-独立展示站点位于 [演示web](演示web)，不改动主应用 `frontend/`。它用于对外介绍 Lang Drill Agent 的核心闭环，包含默认跟随系统的双主题、动态单词银河、滚动组卷演示、脱敏截图画廊、GitHub/安装包入口和一个可探索的三栏工作台模拟器。
+独立展示站点当前以 [演示web2](演示web2) 为 GitHub Pages 发布源，不改动主应用 `frontend/`。它用于对外介绍 Lang Drill Agent 的核心闭环，包含默认跟随系统的双主题、动态单词银河、滚动组卷演示、脱敏截图画廊、GitHub/安装包入口和一个可探索的三栏工作台模拟器。
 
 ```powershell
-cd 演示web
+cd 演示web2
 npm install
 npm run dev
 npm run build
 ```
 
-该站点是静态前端，适合部署到 GitHub Pages。演示工作台不连接真实后端，不读取 `.env`，模型回复为固定模拟内容。
+该站点是静态前端，由 `.github/workflows/pages-demo-web2.yml` 构建并部署到 GitHub Pages：`https://q2955161835-debug.github.io/lang-drill-agent/`。演示工作台不连接真实后端，不读取 `.env`，模型回复为固定模拟内容。
 
 ## Windows 安装包
 
