@@ -85,13 +85,15 @@ npm run build
 
 当前 Windows 安装包发布在 GitHub Release：
 
-- 发布页：[Lang Drill Agent v0.1.0](https://github.com/q2955161835-debug/lang-drill-agent/releases/tag/v0.1.0)
-- 安装包下载：[Lang.Drill.Agent_0.1.0_x64-setup.exe](https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v0.1.0/Lang.Drill.Agent_0.1.0_x64-setup.exe)
-- SHA256：`db89330034936a89092b2b65a2cd7150de7a8b7adc94da7640962101596db384`
+- 发布页：[Lang Drill Agent v0.1.1](https://github.com/q2955161835-debug/lang-drill-agent/releases/tag/v0.1.1)
+- 安装包下载：[Lang.Drill.Agent_0.1.1_x64-setup.exe](https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v0.1.1/Lang.Drill.Agent_0.1.1_x64-setup.exe)
+- SHA256：`302fa1ca2d56684aeab22a08269ef6ce00c6b9dc642eaf164780768a078d6ce2`
 
 这是未签名的内测安装包。Windows 可能提示未知发布者，确认来源后继续安装即可。
 
-安装后，用户配置、数据库、日志和 `papers` 会写入 `%APPDATA%\Lang Drill Agent`；运行时缓存写入 `%LOCALAPPDATA%\Lang Drill Agent\runtime`。首次启动会优先复用本机已有 Python 3.11+；如果本机没有可用 Python，才会联网下载并准备 Python 3.11.9 和后端依赖。
+安装目录必须使用英文/ASCII 路径，例如 `C:\LangDrillAgent` 或 `D:\LangDrillAgent`；如果选择中文或其它非 ASCII 路径，安装器会中止并提示更换目录。
+
+安装后，用户配置、数据库、日志和 `papers` 会写入 `%APPDATA%\Lang Drill Agent`；运行时缓存写入 `%LOCALAPPDATA%\Lang Drill Agent\runtime`。首次启动会先显示初始化进度，优先复用本机已有 Python 3.11+；如果本机没有可用 Python，才会联网下载并准备 Python 3.11.9 和后端依赖。Python 安装包会在官网和国内镜像之间自动选择，后端依赖会在 PyPI 官网和国内镜像之间自动选择。
 
 如果需要自己构建安装包：
 
@@ -102,7 +104,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\desktop\build-de
 构建产物：
 
 ```text
-src-tauri\target\release\bundle\nsis\Lang Drill Agent_0.1.0_x64-setup.exe
+src-tauri\target\release\bundle\nsis\Lang Drill Agent_0.1.1_x64-setup.exe
 ```
 
 ## 验证
@@ -118,7 +120,7 @@ cargo check --manifest-path src-tauri\Cargo.toml
 
 项目已配置 GitHub Actions CI。推送和 Pull Request 会运行后端测试、Python 代码检查和前端构建。
 
-Windows 安装包在发布前已经通过临时 Windows VM 安装验收：构建安装包、安装到自定义目录、验证桌面快捷方式、启动安装目录内的桌面后端运行时、检查 `/api/health`、卸载并清理临时目录。
+Windows 安装包在发布前会通过本机构建、隔离后端启动 smoke、安装器路径校验和 Windows 安装验收：构建安装包、安装到英文自定义目录、验证桌面快捷方式、启动安装目录内的桌面后端运行时、检查 `/api/health`、卸载并清理临时目录。
 
 ## 我的职责
 

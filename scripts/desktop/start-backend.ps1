@@ -34,7 +34,35 @@ $AppDataDir = Normalize-WindowsPathForPowerShell $AppDataDir
 $LocalAppDataDir = Normalize-WindowsPathForPowerShell $LocalAppDataDir
 
 $PythonVersion = "3.11.9"
-$PythonInstallerUrl = "https://www.python.org/ftp/python/$PythonVersion/python-$PythonVersion-amd64.exe"
+$PythonInstallerFileName = "python-$PythonVersion-amd64.exe"
+$PythonDownloadSources = @(
+    @{
+        Id = "official"
+        Label = "Python official"
+        Url = "https://www.python.org/ftp/python/$PythonVersion/$PythonInstallerFileName"
+    },
+    @{
+        Id = "china"
+        Label = "Aliyun Python mirror"
+        Url = "https://mirrors.aliyun.com/python-release/windows/$PythonInstallerFileName"
+    }
+)
+$PipIndexSources = @(
+    @{
+        Id = "official"
+        Label = "PyPI official"
+        Url = "https://pypi.org/simple"
+        ProbeUrl = "https://pypi.org/simple/pip/"
+        TrustedHost = "pypi.org"
+    },
+    @{
+        Id = "china"
+        Label = "Tsinghua PyPI mirror"
+        Url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+        ProbeUrl = "https://pypi.tuna.tsinghua.edu.cn/simple/pip/"
+        TrustedHost = "pypi.tuna.tsinghua.edu.cn"
+    }
+)
 $RuntimeDir = Join-Path $LocalAppDataDir "runtime"
 $DownloadDir = Join-Path $RuntimeDir "downloads"
 $PythonDir = Join-Path $RuntimeDir "python-$PythonVersion"
@@ -51,8 +79,19 @@ $HealthUrl = "http://127.0.0.1:$Port/api/health"
 $BootstrapUrl = "http://127.0.0.1:$Port/api/bootstrap"
 
 function Write-Status {
-    param([string]$Message)
-    [Console]::Error.WriteLine("[desktop-runtime] $Message")
+    param(
+        [string]$Message,
+        [int]$Percent = -1,
+        [string]$Stage = "running",
+        [string]$Detail = ""
+    )
+    $payload = [ordered]@{
+        stage = $Stage
+        message = $Message
+        percent = $Percent
+        detail = $Detail
+    }
+    [Console]::Error.WriteLine("[langdrill-progress] " + ($payload | ConvertTo-Json -Compress))
 }
 
 function ConvertTo-PowerShellLiteral {
@@ -72,6 +111,14 @@ function Assert-ExitCode {
     }
 }
 
+function Get-LogTail {
+    param([string]$PathValue, [int]$Tail = 40)
+    if (-not (Test-Path $PathValue)) {
+        return ""
+    }
+    return ((Get-Content -LiteralPath $PathValue -Tail $Tail -ErrorAction SilentlyContinue) -join "`n").Trim()
+}
+
 function Invoke-NativeLogged {
     param(
         [Parameter(Mandatory = $true)][string]$FilePath,
@@ -87,7 +134,123 @@ function Invoke-NativeLogged {
     finally {
         $ErrorActionPreference = $previousErrorAction
     }
-    Assert-ExitCode -ExitCode $exitCode -Message $FailureMessage
+    if ($exitCode -ne 0) {
+        $stdoutTail = Get-LogTail -PathValue $InstallLog
+        $stderrTail = Get-LogTail -PathValue $InstallErrLog
+        throw "$FailureMessage Exit code: $exitCode. Recent stdout: $stdoutTail Recent stderr: $stderrTail"
+    }
+}
+
+function Test-DownloadSource {
+    param(
+        [Parameter(Mandatory = $true)][hashtable]$Source,
+        [string]$ProbeUrl = "",
+        [int]$TimeoutSec = 5
+    )
+    $url = if ($ProbeUrl) { $ProbeUrl } else { $Source.Url }
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    try {
+        Invoke-WebRequest -UseBasicParsing -Uri $url -Method Head -TimeoutSec $TimeoutSec | Out-Null
+        $sw.Stop()
+        return [ordered]@{
+            Source = $Source
+            Ok = $true
+            Milliseconds = [int]$sw.ElapsedMilliseconds
+            Error = ""
+        }
+    }
+    catch {
+        $sw.Stop()
+        return [ordered]@{
+            Source = $Source
+            Ok = $false
+            Milliseconds = [int]$sw.ElapsedMilliseconds
+            Error = $_.Exception.Message
+        }
+    }
+}
+
+function Get-OrderedSourcesByNetwork {
+    param(
+        [Parameter(Mandatory = $true)][array]$Sources,
+        [string]$ProbeUrlKey = "Url",
+        [string]$StatusLabel = "download source",
+        [int]$ProbePercent = 30
+    )
+    $results = @()
+    foreach ($source in $Sources) {
+        $probeUrl = ""
+        if ($source.ContainsKey($ProbeUrlKey)) {
+            $probeUrl = [string]$source[$ProbeUrlKey]
+        }
+        Write-Status "Testing ${StatusLabel}: $($source.Label)" -Percent $ProbePercent -Stage "network" -Detail $probeUrl
+        $results += Test-DownloadSource -Source $source -ProbeUrl $probeUrl
+    }
+
+    $available = @($results | Where-Object { $_.Ok } | Sort-Object Milliseconds)
+    if ($available.Count -gt 0) {
+        $ordered = @($available | ForEach-Object { $_.Source })
+        $failedIds = @($available | ForEach-Object { $_.Source.Id })
+        $ordered += @($Sources | Where-Object { $failedIds -notcontains $_.Id })
+        return $ordered
+    }
+    return $Sources
+}
+
+function Save-UrlToFileWithFallback {
+    param(
+        [Parameter(Mandatory = $true)][array]$Sources,
+        [Parameter(Mandatory = $true)][string]$OutFile,
+        [Parameter(Mandatory = $true)][string]$FailureMessage,
+        [int]$MinimumBytes = 1,
+        [int]$Percent = 35
+    )
+    $errors = @()
+    $tempFile = "$OutFile.tmp"
+    foreach ($source in $Sources) {
+        Remove-Item -LiteralPath $tempFile -Force -ErrorAction SilentlyContinue
+        try {
+            Write-Status "Downloading from $($source.Label)..." -Percent $Percent -Stage "download" -Detail $source.Url
+            Invoke-WebRequest -UseBasicParsing -Uri $source.Url -OutFile $tempFile -TimeoutSec 180
+            $downloaded = Get-Item -LiteralPath $tempFile -ErrorAction Stop
+            if ($downloaded.Length -lt $MinimumBytes) {
+                throw "Downloaded file is too small: $($downloaded.Length) bytes."
+            }
+            Move-Item -LiteralPath $tempFile -Destination $OutFile -Force
+            Write-Status "Downloaded from $($source.Label)." -Percent ($Percent + 5) -Stage "download" -Detail $OutFile
+            return
+        }
+        catch {
+            $errors += "$($source.Label): $($_.Exception.Message)"
+            Write-Status "Download failed from $($source.Label), trying next source..." -Percent $Percent -Stage "download" -Detail $_.Exception.Message
+        }
+    }
+    throw "$FailureMessage Tried sources: $($errors -join ' | ')"
+}
+
+function Invoke-PipLoggedWithFallback {
+    param(
+        [Parameter(Mandatory = $true)][string]$PythonExe,
+        [Parameter(Mandatory = $true)][string[]]$PipArguments,
+        [Parameter(Mandatory = $true)][string]$FailureMessage,
+        [int]$Percent = 70
+    )
+    $orderedIndexes = Get-OrderedSourcesByNetwork -Sources $PipIndexSources -ProbeUrlKey "ProbeUrl" -StatusLabel "Python package index" -ProbePercent ($Percent - 4)
+    $errors = @()
+    foreach ($source in $orderedIndexes) {
+        try {
+            Write-Status "Installing dependencies via $($source.Label)..." -Percent $Percent -Stage "dependencies" -Detail $source.Url
+            $arguments = @("-m", "pip") + $PipArguments + @("--index-url", $source.Url, "--trusted-host", $source.TrustedHost)
+            Invoke-NativeLogged -FilePath $PythonExe -Arguments $arguments -FailureMessage $FailureMessage
+            Write-Status "Dependency step completed via $($source.Label)." -Percent ($Percent + 3) -Stage "dependencies" -Detail $source.Url
+            return
+        }
+        catch {
+            $errors += "$($source.Label): $($_.Exception.Message)"
+            Write-Status "Dependency install failed via $($source.Label), trying next source..." -Percent $Percent -Stage "dependencies" -Detail $_.Exception.Message
+        }
+    }
+    throw "$FailureMessage Tried package indexes: $($errors -join ' | ')"
 }
 
 function Resolve-PythonCandidate {
@@ -173,6 +336,7 @@ function Test-AnyHttpListener {
 }
 
 function Ensure-DesktopEnv {
+    Write-Status "Preparing user configuration..." -Percent 12 -Stage "configuration" -Detail $EnvPath
     New-Item -ItemType Directory -Force -Path $AppDataDir, $LogDir, $PapersDir | Out-Null
     $defaults = [ordered]@{
         "LANGDRILL_USER_DATA_DIR" = $AppDataDir.Replace("\", "/")
@@ -210,6 +374,7 @@ function Ensure-DesktopEnv {
 }
 
 function Sync-AppSource {
+    Write-Status "Syncing bundled backend files..." -Percent 18 -Stage "files" -Detail $SourceDir
     New-Item -ItemType Directory -Force -Path $SourceDir | Out-Null
     $sourceBackend = Join-Path $ProjectRoot "backend\langdrill_agent"
     $targetBackendRoot = Join-Path $SourceDir "backend"
@@ -233,25 +398,37 @@ function Sync-AppSource {
 }
 
 function Ensure-Python {
+    Write-Status "Checking local Python 3.11+ runtime..." -Percent 24 -Stage "python"
     $existingPython = Find-ExistingPython
     if ($existingPython) {
-        Write-Status "Using existing Python runtime: $existingPython"
+        Write-Status "Using existing Python runtime." -Percent 32 -Stage "python" -Detail $existingPython
         return $existingPython
     }
 
     $pythonExe = Join-Path $PythonDir "python.exe"
     if (Test-Path $pythonExe) {
+        Write-Status "Using cached Python runtime." -Percent 32 -Stage "python" -Detail $pythonExe
         return $pythonExe
     }
 
     New-Item -ItemType Directory -Force -Path $DownloadDir, $PythonDir | Out-Null
-    $installer = Join-Path $DownloadDir "python-$PythonVersion-amd64.exe"
-    if (-not (Test-Path $installer)) {
-        Write-Status "Downloading Python $PythonVersion runtime from python.org..."
-        Invoke-WebRequest -UseBasicParsing -Uri $PythonInstallerUrl -OutFile $installer
+    $installer = Join-Path $DownloadDir $PythonInstallerFileName
+    $installerReady = $false
+    if (Test-Path $installer) {
+        $existingInstaller = Get-Item -LiteralPath $installer
+        $installerReady = $existingInstaller.Length -gt 10000000
+    }
+    if (-not $installerReady) {
+        Remove-Item -LiteralPath $installer -Force -ErrorAction SilentlyContinue
+        Write-Status "Choosing Python download source..." -Percent 30 -Stage "network"
+        $orderedPythonSources = Get-OrderedSourcesByNetwork -Sources $PythonDownloadSources -StatusLabel "Python runtime" -ProbePercent 30
+        Save-UrlToFileWithFallback -Sources $orderedPythonSources -OutFile $installer -FailureMessage "Failed to download Python runtime." -MinimumBytes 10000000 -Percent 35
+    }
+    else {
+        Write-Status "Using cached Python installer." -Percent 40 -Stage "python" -Detail $installer
     }
 
-    Write-Status "Installing Python $PythonVersion runtime into user cache..."
+    Write-Status "Installing Python $PythonVersion runtime into user cache..." -Percent 45 -Stage "python" -Detail $PythonDir
     $installerLog = Join-Path $LogDir "python-installer.log"
     $arguments = @(
         "/quiet",
@@ -277,12 +454,12 @@ function Ensure-Venv {
     param([string]$PythonExe)
     $venvPython = Join-Path $VenvDir "Scripts\python.exe"
     if (-not (Test-Path $venvPython)) {
-        Write-Status "Creating desktop virtual environment..."
+        Write-Status "Creating desktop virtual environment..." -Percent 55 -Stage "venv" -Detail $VenvDir
         Invoke-NativeLogged -FilePath $PythonExe -Arguments @("-m", "venv", $VenvDir) -FailureMessage "Failed to create desktop virtual environment."
     }
-    Write-Status "Installing/updating backend dependencies..."
-    Invoke-NativeLogged -FilePath $venvPython -Arguments @("-m", "pip", "install", "--upgrade", "pip") -FailureMessage "Failed to upgrade pip in desktop virtual environment."
-    Invoke-NativeLogged -FilePath $venvPython -Arguments @("-m", "pip", "install", "$SourceDir[paper-parsing]") -FailureMessage "Failed to install Lang Drill Agent backend dependencies."
+    Write-Status "Preparing Python package index..." -Percent 62 -Stage "network"
+    Invoke-PipLoggedWithFallback -PythonExe $venvPython -PipArguments @("install", "--upgrade", "pip") -FailureMessage "Failed to upgrade pip in desktop virtual environment." -Percent 68
+    Invoke-PipLoggedWithFallback -PythonExe $venvPython -PipArguments @("install", "$SourceDir[paper-parsing]") -FailureMessage "Failed to install Lang Drill Agent backend dependencies." -Percent 76
     return $venvPython
 }
 
@@ -299,6 +476,7 @@ function Start-Backend {
     $env:LANGDRILL_PAPER_ROOT = $PapersDir
     $env:PYTHONPATH = $backendPythonPath
 
+    Write-Status "Initializing local learning database..." -Percent 86 -Stage "database" -Detail $dbPath
     Invoke-NativeLogged -FilePath $PythonExe -Arguments @("-m", "langdrill_agent.cli", "init", "--display-name", "boss", "--exam-id", "cet4") -FailureMessage "Desktop database initialization failed."
 
     $runner = Join-Path $RuntimeDir "run-backend.ps1"
@@ -327,6 +505,7 @@ function Start-Backend {
         (ConvertTo-NativeArgument $runner)
     ) -join " "
 
+    Write-Status "Starting local backend service..." -Percent 91 -Stage "backend" -Detail $HealthUrl
     $process = Start-Process `
         -FilePath "powershell.exe" `
         -ArgumentList $runnerArguments `
@@ -335,13 +514,19 @@ function Start-Backend {
         -PassThru
 
     $deadline = (Get-Date).AddSeconds(90)
+    $lastWaitStatus = [DateTime]::MinValue
     while ((Get-Date) -lt $deadline) {
         if ($process.HasExited) {
             $stderr = if (Test-Path $BackendErrLog) { (Get-Content -LiteralPath $BackendErrLog -Tail 80 -ErrorAction SilentlyContinue) -join "`n" } else { "" }
             throw "Desktop backend exited with code $($process.ExitCode). $stderr"
         }
         if (Test-LangDrillHealth) {
+            Write-Status "Local backend is ready." -Percent 100 -Stage "ready" -Detail $HealthUrl
             return $process
+        }
+        if (((Get-Date) - $lastWaitStatus).TotalSeconds -ge 5) {
+            Write-Status "Waiting for backend health check..." -Percent 94 -Stage "backend" -Detail $HealthUrl
+            $lastWaitStatus = Get-Date
         }
         Start-Sleep -Seconds 1
     }
@@ -349,14 +534,17 @@ function Start-Backend {
     throw "Desktop backend did not pass health check within 90 seconds. See $BackendErrLog"
 }
 
+Write-Status "Preparing desktop runtime folders..." -Percent 5 -Stage "startup" -Detail $RuntimeDir
 New-Item -ItemType Directory -Force -Path $RuntimeDir, $LogDir | Out-Null
 
 if (Test-LangDrillHealth) {
     $owner = Get-PortOwner -TargetPort $Port
+    Write-Status "Reusing already running Lang Drill Agent backend." -Percent 100 -Stage "ready" -Detail $HealthUrl
     [Console]::Out.WriteLine((@{ ok = $true; owned = $false; pid = $owner; url = "http://127.0.0.1:$Port"; env = $EnvPath } | ConvertTo-Json -Compress))
     exit 0
 }
 
+Write-Status "Checking local backend port..." -Percent 8 -Stage "startup" -Detail $Port
 $portOwner = Get-PortOwner -TargetPort $Port
 if ($portOwner -ne 0 -or (Test-AnyHttpListener)) {
     throw "Port $Port is already in use by a non-Lang Drill Agent process. Close that process or change the desktop backend port."

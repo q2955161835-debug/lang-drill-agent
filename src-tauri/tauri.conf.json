@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Lang Drill Agent",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "com.langdrill.agent",
   "build": {
     "beforeDevCommand": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ../scripts/desktop/start-frontend-for-tauri.ps1",
@@ -30,6 +30,11 @@
     "icon": ["icons/icon.ico"],
     "shortDescription": "English learning agent for CET practice",
     "longDescription": "Lang Drill Agent is a local-first language learning agent with chat, practice questions, screenshot import workflows, and a local SQLite learning database.",
+    "windows": {
+      "nsis": {
+        "installerHooks": "installer-hooks.nsh"
+      }
+    },
     "resources": {
       "../backend/langdrill_agent/*.py": "app/backend/langdrill_agent/",
       "../backend/langdrill_agent/migrations/": "app/backend/langdrill_agent/migrations/",
