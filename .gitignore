@@ -14,7 +14,6 @@ frontend/*.tsbuildinfo
 演示web/*.tsbuildinfo
 演示web/vite.config.js
 演示web/vite.config.d.ts
-演示web2/
 src-tauri/target/
 src-tauri/gen/
 data/*.db

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Lang Drill Agent — 把背词截图、词表和文件材料变成考试式题组。让记住单词和会做题进入同一个闭环。"
+    />
+    <meta name="theme-color" content="#05060d" />
+    <link rel="icon" type="image/png" media="(prefers-color-scheme: light)" href="./favicon-light.png" />
+    <link rel="icon" type="image/png" media="(prefers-color-scheme: dark)" href="./favicon-dark.png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Lang Drill Agent — 背词与刷题不再分离" />
+    <meta property="og:description" content="把截图词表、文本词条和文件材料变成考试式题组，让“记住单词”和“会做题”进入同一个闭环。" />
+    <meta property="og:image" content="https://q2955161835-debug.github.io/lang-drill-agent/assets/hero-bg-texture.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Lang Drill Agent — 背词与刷题不再分离" />
+    <meta name="twitter:description" content="把截图词表、文本词条和文件材料变成考试式题组，让“记住单词”和“会做题”进入同一个闭环。" />
+    <meta name="twitter:image" content="https://q2955161835-debug.github.io/lang-drill-agent/assets/hero-bg-texture.jpg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+JP:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <title>Lang Drill Agent — Words become drills</title>
+    <script>
+      // 主题前置：避免首屏闪烁
+      (function () {
+        try {
+          var stored = localStorage.getItem("langdrill-site2-theme") || "system";
+          var theme =
+            stored === "system"
+              ? window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light"
+              : stored;
+          document.documentElement.dataset.theme = theme;
+          document.documentElement.dataset.themeChoice = stored;
+        } catch (e) {
+          document.documentElement.dataset.theme = "dark";
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
