@@ -1,6 +1,6 @@
 [package]
 name = "lang-drill-agent-desktop"
-version = "0.1.1"
+version = "0.1.2"
 description = "Lang Drill Agent desktop shell"
 authors = ["Lang Drill Agent"]
 license = "PolyForm-Noncommercial-1.0.0"

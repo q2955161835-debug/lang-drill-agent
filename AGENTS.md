@@ -83,8 +83,8 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - `frontend/src/components/`：前端可复用组件，当前重点是 `RightWorkbench.tsx`、`ContextMenu.tsx` 和 `MarkdownText.tsx`；`RightWorkbench.tsx` 折叠和页签切换必须隐藏但不卸载内部面板状态。
 - `papers/`：按考试类型分开的历年真题资产目录骨架；`raw/` 存原始试卷或粘贴文本，`parsed/` 存解析 JSON（JSON 数据交换格式），实际导入内容默认不提交。
 - `scripts/dev/`：Web（网页）开发期启动与维护脚本。`start-dev.ps1` 是一键启动主逻辑，`start.bat` 只作为 Windows 双击入口。
-- `scripts/desktop/`：桌面版开发、构建和运行时准备脚本。`build-desktop.ps1` 构建 NSIS（Windows 安装器）；`dev-desktop.ps1` 启动 Tauri（桌面应用框架）开发模式；`start-backend.ps1` 在用户目录准备 Python（编程语言）运行时、虚拟环境、依赖、独立 `.env`、数据库、日志和 `papers`（试卷资产目录），并输出结构化启动进度供桌面壳展示。
-- `src-tauri/`：Tauri（桌面应用框架）Windows 桌面封装工程，负责窗口配置、资源打包、启动/停止本地后端、后端健康检查和 NSIS（Windows 安装器）产物生成；`installer-hooks.nsh` 负责安装目录英文/ASCII（美国信息交换标准代码）校验，阻止安装到中文或其它非 ASCII 路径；当前首版为 unsigned（未代码签名）内测包，MSI（Windows Installer，Windows 安装包）保留为后续目标。
+- `scripts/desktop/`：桌面版开发、构建和运行时准备脚本。`build-desktop.ps1` 构建 NSIS（Windows 安装器），并在 Tauri（桌面应用框架）生成默认 NSIS 脚本后插入旧安装残留清理调用再重新编译安装包；`dev-desktop.ps1` 启动 Tauri 开发模式；`start-backend.ps1` 在用户目录准备 Python（编程语言）运行时、虚拟环境、依赖、独立 `.env`、数据库、日志和 `papers`（试卷资产目录），并输出结构化启动进度供桌面壳展示。
+- `src-tauri/`：Tauri（桌面应用框架）Windows 桌面封装工程，负责窗口配置、资源打包、启动/停止本地后端、后端健康检查和 NSIS（Windows 安装器）产物生成；`installer-hooks.nsh` 负责安装目录英文/ASCII（美国信息交换标准代码）校验，阻止安装到中文或其它非 ASCII 路径，并在旧安装目录被手动删除时清理旧卸载注册表残留；当前首版为 unsigned（未代码签名）内测包，MSI（Windows Installer，Windows 安装包）保留为后续目标。
 - `doc/`：本地维护目录，保存项目地图、验收标准、人工验收清单、桌面打包说明、长版 README（项目说明文档）、脱敏截图资产和进展记录；该目录已加入 `.gitignore`，不再提交到 GitHub（代码托管平台），但本地仍按项目规则维护。
 - `doc/进展记录/`：本地阶段性工作记录，包含完成内容、文件清单、错误汇报、验证结果和回退方案；记录文件不再进入 GitHub 提交。
 - `try/`：本地自动测试、调试脚本和临时验证文件；该目录已加入 `.gitignore`，不再提交到 GitHub（代码托管平台）。目录内文件必须只服务于测试/调试，可清理后不影响项目运行。
@@ -159,8 +159,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\desktop\build-de
 
 桌面版规则：
 - NSIS（Windows 安装器）安装目录必须使用英文/ASCII（美国信息交换标准代码）路径；用户选择中文或其它非 ASCII 路径时必须在复制文件前中止安装并提示改用 `C:\LangDrillAgent`、`D:\LangDrillAgent` 等路径。
+- NSIS（Windows 安装器）必须兼容旧版安装目录被用户手动删除的情况：若旧 `uninstall.exe` 和主程序都不存在，应在判断已安装前清理旧卸载注册表残留；用户看到旧版 `Already Installed` 页面且旧目录已删除时，可选择 `Do not uninstall` 继续安装。
 - 桌面后端固定监听 `http://127.0.0.1:18080`；端口被非 Lang Drill Agent 进程占用时必须给出清晰错误。
-- 首次启动优先复用本机已有 Python 3.11+（编程语言运行时）；本机没有可用 Python 时，才在 `%LOCALAPPDATA%\Lang Drill Agent\runtime` 下载并准备 Python 3.11.9、虚拟环境和后端依赖。Python 下载源在官网和国内镜像之间按可访问性自动选择，pip（Python 包安装工具）依赖源在 PyPI（Python 包仓库）官网和国内镜像之间自动选择；启动期间桌面窗口必须展示当前进度，失败时留在错误页并提示日志位置。使用 3.11.9 是因为 Python 3.11.15（编程语言版本）官方未提供 Windows 二进制安装器。
+- 首次启动优先复用本机已有 Python 3.11+（编程语言运行时）；检测 `py.exe`、`python.exe` 或 `python3.exe` 时，命令不存在必须跳过而不是启动失败；本机没有可用 Python 时，才在 `%LOCALAPPDATA%\Lang Drill Agent\runtime` 下载并准备 Python 3.11.9、虚拟环境和后端依赖。Python 下载源在官网和国内镜像之间按可访问性自动选择，pip（Python 包安装工具）依赖源在 PyPI（Python 包仓库）官网和国内镜像之间自动选择；启动期间桌面窗口必须展示当前进度，失败时留在错误页并提示日志位置。使用 3.11.9 是因为 Python 3.11.15（编程语言版本）官方未提供 Windows 二进制安装器。
 - 桌面后端启动脚本必须强制 `PYTHONUTF8=1` 与 `PYTHONIOENCODING=utf-8`，避免 Windows（视窗系统）非 UTF-8（统一编码）重定向环境下中文 CLI（命令行接口）输出导致初始化失败。
 - 桌面版真实配置和用户数据写入 `%APPDATA%\Lang Drill Agent\.env`、`data`、`logs` 和 `papers`，不写安装目录，不污染 Web（网页）开发期 `.env` 与数据库。
 - 桌面窗口关闭时必须停止本次拥有的后端进程；异常时通过用户目录日志定位原因。
@@ -202,7 +203,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\desktop\build-de
 py try/browser_acceptance_check.py
 ```
 
-GitHub（代码托管平台）桌面安装包 VM（虚拟机）验收通过 `.github/workflows/desktop-installer-vm-test.yml` 手动触发，脚本入口为 `.github/scripts/test-desktop-installer-vm.ps1`；该验收会构建 NSIS（Windows 安装器），确认中文/非 ASCII（美国信息交换标准代码）安装目录被拒绝，再安装到英文目录、启动安装目录内后端、检查 `/api/health`、验证用户数据不写安装目录并执行卸载。
+GitHub（代码托管平台）桌面安装包 VM（虚拟机）验收通过 `.github/workflows/desktop-installer-vm-test.yml` 手动触发，脚本入口为 `.github/scripts/test-desktop-installer-vm.ps1`；该验收会构建 NSIS（Windows 安装器），确认中文/非 ASCII（美国信息交换标准代码）安装目录被拒绝，写入旧安装目录被删除后的残留注册表记录，再安装到英文目录、启动安装目录内后端、检查 `/api/health`、验证用户数据不写安装目录并执行卸载。
 
 `try/browser_acceptance_check.py` 用 Playwright（浏览器自动化工具）验证设置页权限、拓展 Skills 单项开关、自定义模型增删、真题设置和截图导入状态保持；运行前需用 `LANGDRILL_DB_PATH=try\.cache\browser-acceptance\langdrill-agent.db`、`LANGDRILL_USER_DATA_DIR=try\.cache\browser-acceptance` 和 `LANGDRILL_SKILLS_ROOTS=try\.cache\browser-acceptance\skills` 启动服务，并确保 `http://127.0.0.1:8000` 与 `http://127.0.0.1:5173` 可访问。浏览器验收的临时文件统一写入 `try/.cache/`。
 

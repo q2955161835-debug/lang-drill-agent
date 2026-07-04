@@ -442,7 +442,7 @@ fn start_backend(
     let _ = stderr_handle.join();
 
     let stdout = join_lines(&stdout_lines);
-    let stderr = join_lines(&stderr_lines);
+    let stderr = join_non_progress_lines(&stderr_lines);
 
     if !status.success() {
         return Err(format!(
@@ -577,6 +577,20 @@ fn join_lines(lines: &Arc<Mutex<Vec<String>>>) -> String {
     lines
         .lock()
         .map(|value| value.join("\n"))
+        .unwrap_or_else(|_| String::new())
+}
+
+fn join_non_progress_lines(lines: &Arc<Mutex<Vec<String>>>) -> String {
+    lines
+        .lock()
+        .map(|items| {
+            items
+                .iter()
+                .filter(|line| !line.trim_start().starts_with("[langdrill-progress] "))
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
         .unwrap_or_else(|_| String::new())
 }
 

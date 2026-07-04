@@ -40,7 +40,7 @@ type ResolvedTheme = "light" | "dark";
 
 const GITHUB_URL = "https://github.com/q2955161835-debug/lang-drill-agent";
 const DOWNLOAD_URL =
-  "https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v0.1.1/Lang.Drill.Agent_0.1.1_x64-setup.exe";
+  "https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v0.1.2/Lang.Drill.Agent_0.1.2_x64-setup.exe";
 
 const THEME_OPTIONS: Array<{ value: ThemeChoice; label: string }> = [
   { value: "system", label: "跟随系统" },

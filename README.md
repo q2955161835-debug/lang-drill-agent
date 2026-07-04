@@ -85,13 +85,15 @@ npm run build
 
 当前 Windows 安装包发布在 GitHub Release：
 
-- 发布页：[Lang Drill Agent v0.1.1](https://github.com/q2955161835-debug/lang-drill-agent/releases/tag/v0.1.1)
-- 安装包下载：[Lang.Drill.Agent_0.1.1_x64-setup.exe](https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v0.1.1/Lang.Drill.Agent_0.1.1_x64-setup.exe)
-- SHA256：`302fa1ca2d56684aeab22a08269ef6ce00c6b9dc642eaf164780768a078d6ce2`
+- 发布页：[Lang Drill Agent v0.1.2](https://github.com/q2955161835-debug/lang-drill-agent/releases/tag/v0.1.2)
+- 安装包下载：[Lang.Drill.Agent_0.1.2_x64-setup.exe](https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v0.1.2/Lang.Drill.Agent_0.1.2_x64-setup.exe)
+- SHA256：`6b26f9901efd089650ed3cf584a8dcbc64ce0af808bbf5ad8d62d4924d4f1702`
 
 这是未签名的内测安装包。Windows 可能提示未知发布者，确认来源后继续安装即可。
 
 安装目录必须使用英文/ASCII 路径，例如 `C:\LangDrillAgent` 或 `D:\LangDrillAgent`；如果选择中文或其它非 ASCII 路径，安装器会中止并提示更换目录。
+
+如果旧版安装目录曾被手动删除，安装器可能先显示 `Already Installed` 页面；选择 `Do not uninstall` 继续安装即可。v0.1.2 会在安装前清理“旧卸载器和主程序都不存在”的残留卸载记录。
 
 安装后，用户配置、数据库、日志和 `papers` 会写入 `%APPDATA%\Lang Drill Agent`；运行时缓存写入 `%LOCALAPPDATA%\Lang Drill Agent\runtime`。首次启动会先显示初始化进度，优先复用本机已有 Python 3.11+；如果本机没有可用 Python，才会联网下载并准备 Python 3.11.9 和后端依赖。Python 安装包会在官网和国内镜像之间自动选择，后端依赖会在 PyPI 官网和国内镜像之间自动选择。
 
@@ -104,7 +106,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\desktop\build-de
 构建产物：
 
 ```text
-src-tauri\target\release\bundle\nsis\Lang Drill Agent_0.1.1_x64-setup.exe
+src-tauri\target\release\bundle\nsis\Lang Drill Agent_0.1.2_x64-setup.exe
 ```
 
 ## 验证

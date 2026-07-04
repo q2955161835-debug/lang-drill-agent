@@ -177,6 +177,8 @@ try {
     Assert-True ($nsi -like "*installer-hooks.nsh*") "Generated NSIS script does not include the installer hook."
     Assert-True ($hook -like "*LangDrillValidateAsciiInstallDir*") "Installer hook does not validate install paths."
     Assert-True ($hook -like "*English/ASCII*") "Installer hook does not explain the English/ASCII path requirement."
+    Assert-True ($hook -like "*LangDrillCleanStaleInstallRegistry*") "Installer hook does not define stale install cleanup."
+    Assert-True ($nsi -like "*Function PageReinstall*Call LangDrillCleanStaleInstallRegistry*") "Generated NSIS script does not clean stale install registry before the reinstall page."
     Assert-True ($nsi -like '*INSTALLMODE "currentUser"*') "Installer is not configured for current-user install mode."
 
     Write-Step "Verifying non-ASCII install path is rejected."
@@ -184,6 +186,16 @@ try {
     Assert-True ($badExitCode -ne 0) "Installer unexpectedly accepted a non-ASCII install path."
     Assert-True (-not (Test-Path -LiteralPath (Join-Path $badInstallDir "lang-drill-agent-desktop.exe"))) "Installer copied files into a non-ASCII install path."
     Remove-Item -LiteralPath $badInstallDir -Recurse -Force -ErrorAction SilentlyContinue
+
+    Write-Step "Creating stale old-install registry entries."
+    $staleDir = Join-Path $testRoot "DeletedOldInstall"
+    $uninstallKey = "HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Lang Drill Agent"
+    $productKey = "HKCU\Software\langdrill\Lang Drill Agent"
+    & reg.exe add $uninstallKey /ve /d "Lang Drill Agent" /f | Out-Null
+    & reg.exe add $uninstallKey /v "DisplayVersion" /d "0.1.1" /f | Out-Null
+    & reg.exe add $uninstallKey /v "UninstallString" /d "`"$staleDir\uninstall.exe`"" /f | Out-Null
+    & reg.exe add $uninstallKey /v "InstallLocation" /d "`"$staleDir`"" /f | Out-Null
+    & reg.exe add $productKey /ve /d "$staleDir" /f | Out-Null
 
     Write-Step "Installing to custom ASCII directory."
     Run-ProcessChecked -FilePath $installer -Arguments @("/S", "/D=$installDir") -TimeoutSeconds 900

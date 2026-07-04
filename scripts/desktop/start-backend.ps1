@@ -258,12 +258,30 @@ function Resolve-PythonCandidate {
         [Parameter(Mandatory = $true)][string]$FilePath,
         [string[]]$Arguments = @()
     )
+    $resolvedFilePath = $FilePath
+    if ([System.IO.Path]::IsPathRooted($FilePath)) {
+        if (-not (Test-Path -LiteralPath $FilePath)) {
+            return $null
+        }
+    }
+    else {
+        $command = Get-Command $FilePath -ErrorAction SilentlyContinue
+        if (-not $command) {
+            return $null
+        }
+        $resolvedFilePath = $command.Source
+    }
+
     $probe = "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}'); print(sys.executable)"
     $previousErrorAction = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
+    $exitCode = 1
     try {
-        $output = & $FilePath @Arguments "-c" $probe 2>$null
+        $output = & $resolvedFilePath @Arguments "-c" $probe 2>$null
         $exitCode = $LASTEXITCODE
+    }
+    catch {
+        return $null
     }
     finally {
         $ErrorActionPreference = $previousErrorAction

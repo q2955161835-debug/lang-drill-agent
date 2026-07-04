@@ -43,6 +43,31 @@ Function LangDrillValidateAsciiInstallDir
   Pop $0
 FunctionEnd
 
+Function LangDrillCleanStaleInstallRegistry
+  Push $5
+  Push $6
+
+  ReadRegStr $5 HKCU "Software\langdrill\Lang Drill Agent" ""
+  ${If} "$5" == ""
+    ReadRegStr $5 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Lang Drill Agent" "InstallLocation"
+    StrCpy $6 "$5" 1
+    ${If} "$6" == '"'
+      StrCpy $5 "$5" -1 1
+    ${EndIf}
+  ${EndIf}
+
+  ${If} "$5" != ""
+  ${AndIfNot} ${FileExists} "$5\uninstall.exe"
+  ${AndIfNot} ${FileExists} "$5\lang-drill-agent-desktop.exe"
+    DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Lang Drill Agent"
+    DeleteRegKey HKCU "Software\langdrill\Lang Drill Agent"
+  ${EndIf}
+
+  Pop $6
+  Pop $5
+FunctionEnd
+
 !macro NSIS_HOOK_PREINSTALL
+  Call LangDrillCleanStaleInstallRegistry
   Call LangDrillValidateAsciiInstallDir
 !macroend
