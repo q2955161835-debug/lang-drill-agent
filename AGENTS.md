@@ -202,6 +202,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\desktop\build-de
 py try/browser_acceptance_check.py
 ```
 
+GitHub（代码托管平台）桌面安装包 VM（虚拟机）验收通过 `.github/workflows/desktop-installer-vm-test.yml` 手动触发，脚本入口为 `.github/scripts/test-desktop-installer-vm.ps1`；该验收会构建 NSIS（Windows 安装器），确认中文/非 ASCII（美国信息交换标准代码）安装目录被拒绝，再安装到英文目录、启动安装目录内后端、检查 `/api/health`、验证用户数据不写安装目录并执行卸载。
+
 `try/browser_acceptance_check.py` 用 Playwright（浏览器自动化工具）验证设置页权限、拓展 Skills 单项开关、自定义模型增删、真题设置和截图导入状态保持；运行前需用 `LANGDRILL_DB_PATH=try\.cache\browser-acceptance\langdrill-agent.db`、`LANGDRILL_USER_DATA_DIR=try\.cache\browser-acceptance` 和 `LANGDRILL_SKILLS_ROOTS=try\.cache\browser-acceptance\skills` 启动服务，并确保 `http://127.0.0.1:8000` 与 `http://127.0.0.1:5173` 可访问。浏览器验收的临时文件统一写入 `try/.cache/`。
 
 针对启动脚本：
@@ -219,6 +221,7 @@ py -m ruff check backend
 # try/ 为本地目录；若远端检出不存在则跳过 try 测试
 cd frontend
 npm run build
+# GitHub Actions 手动触发 Desktop Installer VM Test 做桌面安装包验收
 ```
 
 ## 允许修改范围

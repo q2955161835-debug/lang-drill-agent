@@ -118,9 +118,9 @@ cd ..
 cargo check --manifest-path src-tauri\Cargo.toml
 ```
 
-项目已配置 GitHub Actions CI。推送和 Pull Request 会运行后端测试、Python 代码检查和前端构建。
+项目已配置 GitHub Actions CI。推送和 Pull Request 会运行后端测试、Python 代码检查和前端构建。桌面安装包可通过 `Desktop Installer VM Test` 手动触发 Windows VM 验收。
 
-Windows 安装包在发布前会通过本机构建、隔离后端启动 smoke、安装器路径校验和 Windows 安装验收：构建安装包、安装到英文自定义目录、验证桌面快捷方式、启动安装目录内的桌面后端运行时、检查 `/api/health`、卸载并清理临时目录。
+Windows 安装包在发布前会通过本机构建、隔离后端启动 smoke、安装器路径校验和 Windows 安装验收：构建安装包、拒绝中文安装目录、安装到英文自定义目录、验证桌面快捷方式、启动安装目录内的桌面后端运行时、检查 `/api/health`、卸载并清理临时目录。
 
 ## 我的职责
 

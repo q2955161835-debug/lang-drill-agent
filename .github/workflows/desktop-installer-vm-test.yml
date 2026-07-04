@@ -1,0 +1,69 @@
+name: Desktop Installer VM Test
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  installer-vm-test:
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build NSIS installer
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\desktop\build-desktop.ps1 -SkipInstall
+
+      - name: Locate installer
+        id: installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -LiteralPath "src-tauri\target\release\bundle\nsis" -Filter "*_x64-setup.exe" |
+            Sort-Object LastWriteTime |
+            Select-Object -Last 1
+          if (-not $installer) {
+            throw "NSIS installer was not found."
+          }
+          "path=$($installer.FullName)" >> $env:GITHUB_OUTPUT
+          Write-Host "Installer: $($installer.FullName)"
+
+      - name: Run installer acceptance in VM
+        shell: pwsh
+        run: .github\scripts\test-desktop-installer-vm.ps1 -InstallerPath "${{ steps.installer.outputs.path }}"
+
+      - name: Upload desktop runtime logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-installer-vm-logs
+          path: |
+            ${{ runner.temp }}\langdrill-installer-vm-test\appdata\Lang Drill Agent\logs\*
+            ${{ runner.temp }}\langdrill-installer-vm-test\localappdata\Lang Drill Agent\runtime\*.log
+            ${{ runner.temp }}\langdrill-installer-vm-test\localappdata\Lang Drill Agent\runtime\*.ps1
+          if-no-files-found: ignore
