@@ -39,6 +39,7 @@ type ThemeChoice = "system" | "light" | "dark";
 type ResolvedTheme = "light" | "dark";
 
 const GITHUB_URL = "https://github.com/q2955161835-debug/lang-drill-agent";
+const DOWNLOAD_VERSION = "v0.1.2";
 const DOWNLOAD_URL =
   "https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v0.1.2/Lang.Drill.Agent_0.1.2_x64-setup.exe";
 
@@ -521,7 +522,7 @@ function SiteHeader({ themeChoice, onThemeCycle }: { themeChoice: ThemeChoice; o
           </a>
           <a className="button primary-button" href={DOWNLOAD_URL}>
             <DownloadSimple size={18} />
-            <span>Download</span>
+            <span>Download {DOWNLOAD_VERSION}</span>
           </a>
         </div>
       </div>
@@ -562,7 +563,7 @@ function HeroSection() {
           </a>
           <a className="button ghost-button" href={DOWNLOAD_URL}>
             <DownloadSimple size={18} />
-            下载 Windows 桌面版
+            下载 Windows 桌面版 {DOWNLOAD_VERSION}
           </a>
         </div>
         <div className="hero-meta">
@@ -943,7 +944,7 @@ function InstallSection() {
           <h2>复习策略可追踪</h2>
           <p>
             推荐安装 Windows 桌面版体验完整能力：掌握度分、错题权重和间隔复习窗口会随每次作答更新，下一轮优先召回最该巩固的词和题。
-            当前版本为内测未签名安装包，首次运行可能触发 Windows SmartScreen 提示，请选择"仍要运行"。
+            当前版本 {DOWNLOAD_VERSION} 修复旧版残留安装记录和缺少 py.exe 时的启动失败；内测未签名安装包首次运行可能触发 Windows SmartScreen 提示，请选择"仍要运行"。
           </p>
           <div className="install-warning">
             <Warning size={16} weight="fill" />
@@ -952,7 +953,7 @@ function InstallSection() {
           <div className="install-actions">
             <a className="button primary-button large" href={DOWNLOAD_URL}>
               <DownloadSimple size={20} />
-              Windows 安装包
+              Windows 安装包 {DOWNLOAD_VERSION}
             </a>
             <a className="button ghost-button" href={GITHUB_URL} target="_blank" rel="noreferrer">
               <GithubLogo size={20} />
