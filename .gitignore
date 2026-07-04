@@ -30,6 +30,7 @@ logs/*.log
 %TEMP%*.log
 frontend/%TEMP%*.log
 tmp/
+try/
 try/.cache/
 doc/
 papers/**/raw/*

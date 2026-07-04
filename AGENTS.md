@@ -86,7 +86,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - `src-tauri/`：Tauri（桌面应用框架）Windows 桌面封装工程，负责窗口配置、资源打包、启动/停止本地后端、后端健康检查和 NSIS（Windows 安装器）产物生成；当前首版为 unsigned（未代码签名）内测包，MSI（Windows Installer，Windows 安装包）保留为后续目标。
 - `doc/`：本地维护目录，保存项目地图、验收标准、人工验收清单、桌面打包说明、长版 README（项目说明文档）、脱敏截图资产和进展记录；该目录已加入 `.gitignore`，不再提交到 GitHub（代码托管平台），但本地仍按项目规则维护。
 - `doc/进展记录/`：本地阶段性工作记录，包含完成内容、文件清单、错误汇报、验证结果和回退方案；记录文件不再进入 GitHub 提交。
-- `try/`：自动测试、调试脚本和临时验证文件；该目录内文件必须只服务于测试/调试，可清理后不影响项目运行。
+- `try/`：本地自动测试、调试脚本和临时验证文件；该目录已加入 `.gitignore`，不再提交到 GitHub（代码托管平台）。目录内文件必须只服务于测试/调试，可清理后不影响项目运行。
 - `测试数据/`：从正式运行路径迁出的开发/联调/污染数据，按时间戳分类保存；该目录禁止提交，可清理但清理前应确认不再需要回溯。
 - `archive/optimized-out/`：已从运行路径移除的旧功能归档，只作历史参考。
 - `logs/`：本地运行日志，禁止提交。
@@ -213,8 +213,8 @@ CI（持续集成）：
 
 ```powershell
 # GitHub Actions 在 push 和 pull_request 时运行
-py -m ruff check backend try
-py -m pytest try -q
+py -m ruff check backend
+# try/ 为本地目录；若远端检出不存在则跳过 try 测试
 cd frontend
 npm run build
 ```
@@ -222,7 +222,7 @@ npm run build
 ## 允许修改范围
 
 - 任务相关的 `backend/langdrill_agent/`、`frontend/src/`、`frontend/public/assets/`、`演示web/`、`scripts/`、`doc/`、`try/`。
-- 新增测试必须放入 `try/`。
+- 新增测试必须放入本地 `try/`，默认不提交到 GitHub（代码托管平台）；如需把测试纳入远端 CI（持续集成），必须先征得用户确认并同步调整 `.gitignore` 与工作流。
 - 新增开发脚本优先放入 `scripts/dev/`，并同步更新 `AGENTS.md` 与验收标准。
 - 文档更新优先修改 `AGENTS.md`、`doc/项目地图.md`、`doc/验收标准.md`、`README.md` 和当天进展记录。
 
