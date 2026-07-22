@@ -64,6 +64,25 @@ class AgentRunRepository:
             updated_at=row["updated_at"],
         )
 
+    def set_completion_criteria(
+        self,
+        run_id: str,
+        completion_criteria: list[str],
+    ) -> AgentRunRecord:
+        if not completion_criteria:
+            raise ValueError("agent run completion criteria are required")
+        cursor = self.conn.execute(
+            """
+            UPDATE agent_runs
+            SET completion_criteria_json=?, updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            """,
+            (dumps(completion_criteria), run_id),
+        )
+        if cursor.rowcount != 1:
+            raise KeyError(run_id)
+        return self.get(run_id)
+
     def set_status(
         self,
         run_id: str,

@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from ..db import init_db, transaction
 from ..runtime.models import RunStatus
 from ..runtime.repository import AgentRunRepository
+from ..runtime.settings import CapabilityRuntimeSettingsService
 from ..utils import dumps
 
 router = APIRouter(prefix="/api/agent-runs", tags=["agent-runs"])
@@ -33,6 +34,70 @@ def get_run(run_id: str) -> dict[str, Any]:
     with transaction() as conn:
         try:
             run = AgentRunRepository(conn).get(run_id)
+        except KeyError as exc:
+            raise _not_found(run_id) from exc
+    return {"run": run.model_dump(mode="json")}
+
+
+@router.get("/{run_id}/plan")
+def get_run_plan(run_id: str) -> dict[str, Any]:
+    init_db()
+    with transaction() as conn:
+        repo = AgentRunRepository(conn)
+        try:
+            run = repo.get(run_id)
+            steps = repo.steps(run_id)
+            tool_calls = repo.tool_calls(run_id)
+            approvals = repo.approvals(run_id)
+        except KeyError as exc:
+            raise _not_found(run_id) from exc
+    return {
+        "run": run.model_dump(mode="json"),
+        "steps": [step.model_dump(mode="json") for step in steps],
+        "tool_calls": [item.model_dump(mode="json") for item in tool_calls],
+        "approvals": [item.model_dump(mode="json") for item in approvals],
+    }
+
+
+@router.post("/{run_id}/pause")
+def pause_run(run_id: str) -> dict[str, Any]:
+    init_db()
+    with transaction() as conn:
+        repo = AgentRunRepository(conn)
+        try:
+            run = repo.get(run_id)
+            if run.status in {RunStatus.queued, RunStatus.running}:
+                run = repo.set_status(run_id, RunStatus.paused)
+                repo.append_event(run_id, "paused", {})
+        except KeyError as exc:
+            raise _not_found(run_id) from exc
+    return {"run": run.model_dump(mode="json")}
+
+
+@router.post("/{run_id}/resume")
+def resume_run(run_id: str) -> dict[str, Any]:
+    init_db()
+    with transaction() as conn:
+        repo = AgentRunRepository(conn)
+        try:
+            run = repo.get(run_id)
+            if not CapabilityRuntimeSettingsService(conn).get().enabled:
+                raise HTTPException(
+                    status_code=409,
+                    detail="capability runtime is disabled",
+                )
+            if run.status is RunStatus.paused:
+                blocked = any(
+                    step.status == "failed" and step.attempts >= step.max_attempts
+                    for step in repo.steps(run_id)
+                )
+                if blocked:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="agent run requires a replacement plan before resume",
+                    )
+                run = repo.set_status(run_id, RunStatus.queued)
+                repo.append_event(run_id, "resumed", {})
         except KeyError as exc:
             raise _not_found(run_id) from exc
     return {"run": run.model_dump(mode="json")}

@@ -61,6 +61,11 @@ from .providers import ModelProvider
 from .phone_mirror import PhoneMirrorService
 from .routers import agent_runs, knowledge, memory, past_papers
 from .prompt_engine import PromptAssembler, PromptRegistry
+from .runtime.intent import CapabilityIntentClassifier
+from .runtime.models import AgentRunStep
+from .runtime.planner import AgentPlan, AgentRunPlanner, PlannedStep
+from .runtime.repository import AgentRunRepository
+from .runtime.settings import CapabilityRuntimeSettingsService
 from .screenshot_import import ScreenshotImportService
 from .services import (
     AgentSettingsPermissionService,
@@ -86,6 +91,95 @@ app.include_router(knowledge.router)
 app.include_router(memory.router)
 app.include_router(past_papers.router)
 logger = logging.getLogger(__name__)
+
+
+def _create_agentic_run(
+    conn,
+    provider: ModelProvider,
+    *,
+    session_id: str,
+    content: str,
+    active_question: dict[str, Any] | None,
+) -> dict[str, Any]:
+    profile = ProfileService(conn).get()
+    memory_context = MemoryHooks(conn).recall(
+        content,
+        scope=f"exam:{profile.exam_id}",
+        token_budget=800,
+    )
+    repo = AgentRunRepository(conn)
+    run = repo.create(
+        session_id=session_id,
+        task_type=TaskType.agentic_task.value,
+        goal=content.strip(),
+    )
+    try:
+        plan = AgentRunPlanner(provider).plan(
+            content,
+            context={
+                "session_id": session_id,
+                "profile": profile.model_dump(exclude={"global_user_prompt"}),
+                "active_question": active_question,
+                "memory": memory_context.model_dump(mode="json"),
+            },
+            tools=["runtime.review"],
+        )
+        planning_source = "model"
+    except Exception as exc:
+        logger.warning("agent run planning failed; using safe review plan", exc_info=True)
+        plan = AgentPlan(
+            goal=content.strip(),
+            completion_criteria=[
+                "A deterministic verifier confirms the requested result before completion"
+            ],
+            steps=[
+                PlannedStep(
+                    sequence=1,
+                    title="Review requested action",
+                    description=(
+                        "Prepare the requested action for registered tool execution and "
+                        "deterministic verification."
+                    ),
+                    tool_names=["runtime.review"],
+                    completion_criteria=[
+                        "The requested action has an explicit executable and verifiable plan"
+                    ],
+                    max_attempts=2,
+                )
+            ],
+        )
+        planning_source = "program_fallback"
+        repo.append_event(
+            run.id,
+            "planning_fallback",
+            {"error_type": type(exc).__name__},
+        )
+    repo.set_completion_criteria(run.id, plan.completion_criteria)
+    repo.replace_plan(
+        run.id,
+        [
+            AgentRunStep(
+                id="",
+                run_id=run.id,
+                sequence=step.sequence,
+                title=step.title,
+                description=step.description,
+                tool_names=step.tool_names,
+                completion_criteria=step.completion_criteria,
+                max_attempts=step.max_attempts,
+            )
+            for step in plan.steps
+        ],
+    )
+    repo.append_event(
+        run.id,
+        "planning_completed",
+        {
+            "source": planning_source,
+            "completion_criteria": plan.completion_criteria,
+        },
+    )
+    return repo.get(run.id).model_dump(mode="json")
 
 
 def _missing_agent_permissions(conn, feature_ids: list[str]) -> list[str]:
@@ -1981,6 +2075,7 @@ def chat(request: ChatRequest) -> ChatResponse:
         answer_feedback_meta: dict[str, Any] | None = None
         settings_action: dict[str, Any] | None = None
         web_search_context: dict[str, Any] | None = None
+        agent_run_payload: dict[str, Any] | None = None
 
         if task.value == "answer_question" and active:
             # ── 答题：判题、回写，再自动推进到下一道库存题 ──
@@ -2162,6 +2257,22 @@ def chat(request: ChatRequest) -> ChatResponse:
             )
             assistant_content = str(general_result.get("content", ""))
             web_search_context = general_result.get("web_search")
+            capability_settings = CapabilityRuntimeSettingsService(conn).get()
+            capability_intent = CapabilityIntentClassifier().classify(
+                request.content or visible_content
+            )
+            if capability_settings.enabled and capability_intent.requires_runtime:
+                agent_run_payload = _create_agentic_run(
+                    conn,
+                    provider,
+                    session_id=session_id,
+                    content=request.content or visible_content,
+                    active_question=active_question,
+                )
+                assistant_content = (
+                    f"{assistant_content}\n\n"
+                    "已创建可暂停、恢复和验证的复杂任务计划，当前学习题目保持不变。"
+                ).strip()
 
         elif task.value == "extra_drill_setup":
             # ── 加练配置：题组已完成但用户还没指定题型/数量，先询问偏好，不写题目 ──
@@ -2213,6 +2324,8 @@ def chat(request: ChatRequest) -> ChatResponse:
             assistant_payload["web_search"] = web_search_context
         if settings_action:
             assistant_payload["settings_action"] = settings_action
+        if agent_run_payload:
+            assistant_payload["agent_run"] = agent_run_payload
         msg_id = session_service.add_message(
             session_id,
             "assistant",
@@ -2233,6 +2346,7 @@ def chat(request: ChatRequest) -> ChatResponse:
             answered_question=answered_question,
             token_usage=token_totals(conn, session_id),
             learning_stats=LearningStatsService(conn).overview(),
+            agent_run=agent_run_payload,
         )
 
 

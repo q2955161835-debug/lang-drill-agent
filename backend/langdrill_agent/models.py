@@ -65,6 +65,7 @@ class ChatResponse(BaseModel):
     answered_question: dict[str, Any] | None = None
     token_usage: dict[str, Any]
     learning_stats: dict[str, Any]
+    agent_run: dict[str, Any] | None = None
 
 
 class ContextSettingsRequest(BaseModel):
