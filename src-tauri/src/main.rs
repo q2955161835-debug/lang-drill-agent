@@ -206,6 +206,24 @@ struct BackendProcessState {
     owned: Mutex<bool>,
 }
 
+#[derive(Debug, serde::Serialize)]
+struct CreativeRuntimeStatus {
+    state: String,
+    version: String,
+    detail: String,
+    target: String,
+    status_path: String,
+    log_dir: String,
+    ready: bool,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct CreativeRuntimeRepairOutput {
+    ok: bool,
+    log_path: String,
+    detail: String,
+}
+
 #[derive(Debug, Deserialize)]
 struct BackendStartResult {
     ok: bool,
@@ -234,6 +252,11 @@ struct ProgressLine {
 fn main() {
     tauri::Builder::default()
         .manage(BackendProcessState::default())
+        .invoke_handler(tauri::generate_handler![
+            creative_runtime_status,
+            repair_creative_runtime,
+            open_creative_runtime_log,
+        ])
         .setup(|app| {
             let app_handle = app.app_handle().clone();
             install_bootstrap_page(&app_handle);
@@ -665,4 +688,135 @@ fn stop_owned_backend(app: &tauri::AppHandle) {
             let _ = Command::new("kill").arg(pid.to_string()).output();
         }
     }
+}
+
+fn pi_runtime_status_path() -> DesktopResult<PathBuf> {
+    let app_data = windows_known_dir("APPDATA", "Lang Drill Agent")?;
+    Ok(app_data.join("pi-runtime").join("status.json"))
+}
+
+fn pi_runtime_log_dir() -> DesktopResult<PathBuf> {
+    let app_data = windows_known_dir("APPDATA", "Lang Drill Agent")?;
+    Ok(app_data.join("logs"))
+}
+
+fn pi_runtime_target_root() -> DesktopResult<PathBuf> {
+    let local_app_data = windows_known_dir("LOCALAPPDATA", "Lang Drill Agent")?;
+    Ok(local_app_data.join("runtime").join("pi"))
+}
+
+#[tauri::command]
+fn creative_runtime_status(_app: tauri::AppHandle) -> Result<CreativeRuntimeStatus, String> {
+    let status_path = pi_runtime_status_path().map_err(|e| e.to_string())?;
+    let log_dir = pi_runtime_log_dir().map_err(|e| e.to_string())?;
+    let target_root = pi_runtime_target_root().map_err(|e| e.to_string())?;
+
+    let mut status = CreativeRuntimeStatus {
+        state: "not_installed".to_string(),
+        version: String::new(),
+        detail: String::new(),
+        target: target_root.display().to_string(),
+        status_path: status_path.display().to_string(),
+        log_dir: log_dir.display().to_string(),
+        ready: false,
+    };
+
+    if !status_path.is_file() {
+        return Ok(status);
+    }
+    let content = match std::fs::read_to_string(&status_path) {
+        Ok(value) => value,
+        Err(error) => {
+            status.state = "unknown".to_string();
+            status.detail = format!("failed to read status: {error}");
+            return Ok(status);
+        }
+    };
+    let value: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(value) => value,
+        Err(error) => {
+            status.state = "corrupt".to_string();
+            status.detail = format!("status file is not valid JSON: {error}");
+            return Ok(status);
+        }
+    };
+    status.state = value
+        .get("state")
+        .and_then(|item| item.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+    status.version = value
+        .get("version")
+        .and_then(|item| item.as_str())
+        .unwrap_or("")
+        .to_string();
+    status.detail = value
+        .get("detail")
+        .and_then(|item| item.as_str())
+        .unwrap_or("")
+        .to_string();
+    if let Some(target) = value.get("target").and_then(|item| item.as_str()) {
+        status.target = target.to_string();
+    }
+    status.ready = status.state == "ready";
+    Ok(status)
+}
+
+#[tauri::command]
+fn repair_creative_runtime(app: tauri::AppHandle) -> Result<CreativeRuntimeRepairOutput, String> {
+    let target_root = pi_runtime_target_root().map_err(|e| e.to_string())?;
+    let log_dir = pi_runtime_log_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&log_dir).map_err(|e| e.to_string())?;
+
+    let script = resource_or_dev_path(&app, "desktop-runtime/repair-pi-runtime.ps1")
+        .map_err(|e| e.to_string())?;
+    let log_path = log_dir.join("pi-runtime-repair-command.log");
+
+    let mut command = Command::new("powershell.exe");
+    command
+        .arg("-NoProfile")
+        .arg("-ExecutionPolicy")
+        .arg("Bypass")
+        .arg("-File")
+        .arg(path_for_powershell(&script))
+        .arg("-TargetRoot")
+        .arg(path_for_powershell(&target_root));
+    #[cfg(target_os = "windows")]
+    command.creation_flags(CREATE_NO_WINDOW);
+
+    let output = command.output().map_err(|e| e.to_string())?;
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    std::fs::write(&log_path, format!("STDOUT:\n{stdout}\nSTDERR:\n{stderr}"))
+        .map_err(|e| e.to_string())?;
+
+    if !output.status.success() {
+        return Ok(CreativeRuntimeRepairOutput {
+            ok: false,
+            log_path: log_path.display().to_string(),
+            detail: format!(
+                "repair script exited with code {:?}; see log",
+                output.status.code()
+            ),
+        });
+    }
+    Ok(CreativeRuntimeRepairOutput {
+        ok: true,
+        log_path: log_path.display().to_string(),
+        detail: stdout.lines().last().unwrap_or("repair completed").to_string(),
+    })
+}
+
+#[tauri::command]
+fn open_creative_runtime_log() -> Result<String, String> {
+    let log_dir = pi_runtime_log_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&log_dir).map_err(|e| e.to_string())?;
+    #[cfg(target_os = "windows")]
+    {
+        let _ = Command::new("explorer.exe")
+            .arg(path_for_powershell(&log_dir))
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn();
+    }
+    Ok(log_dir.display().to_string())
 }

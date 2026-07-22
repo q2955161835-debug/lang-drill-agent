@@ -39,7 +39,18 @@
       "../backend/langdrill_agent/*.py": "app/backend/langdrill_agent/",
       "../backend/langdrill_agent/migrations/": "app/backend/langdrill_agent/migrations/",
       "../pyproject.toml": "app/pyproject.toml",
-      "../scripts/desktop/start-backend.ps1": "desktop-runtime/start-backend.ps1"
+      "../scripts/desktop/start-backend.ps1": "desktop-runtime/start-backend.ps1",
+      "../scripts/desktop/prepare-pi-runtime.ps1": "desktop-runtime/prepare-pi-runtime.ps1",
+      "../scripts/desktop/install-pi-runtime.ps1": "desktop-runtime/install-pi-runtime.ps1",
+      "../scripts/desktop/repair-pi-runtime.ps1": "desktop-runtime/repair-pi-runtime.ps1",
+      "../runtime/pi-runtime-manifest.json": "desktop-runtime/pi-runtime-manifest.json",
+      "../runtime/bundled-skills/": "desktop-runtime/bundled-skills/",
+      "../runtime/pi-bridge/src/": "desktop-runtime/pi-bridge/src/",
+      "../runtime/pi-bridge/test/": "desktop-runtime/pi-bridge/test/",
+      "../runtime/pi-bridge/package.json": "desktop-runtime/pi-bridge/package.json",
+      "../runtime/pi-bridge/package-lock.json": "desktop-runtime/pi-bridge/package-lock.json",
+      "../runtime/pi-bridge/tsconfig.json": "desktop-runtime/pi-bridge/tsconfig.json",
+      "../runtime/pi-bridge/vitest.config.ts": "desktop-runtime/pi-bridge/vitest.config.ts"
     }
   }
 }

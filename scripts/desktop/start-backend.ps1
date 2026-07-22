@@ -70,6 +70,9 @@ $VenvDir = Join-Path $RuntimeDir "venv"
 $SourceDir = Join-Path $RuntimeDir "app-source"
 $LogDir = Join-Path $AppDataDir "logs"
 $PapersDir = Join-Path $AppDataDir "papers"
+$PiRuntimeDir = Join-Path $RuntimeDir "pi"
+$PiRuntimeStatusDir = Join-Path $AppDataDir "pi-runtime"
+$PiRuntimeStatusPath = Join-Path $PiRuntimeStatusDir "status.json"
 $EnvPath = Join-Path $AppDataDir ".env"
 $BackendOutLog = Join-Path $LogDir "langdrill-desktop-backend.out.log"
 $BackendErrLog = Join-Path $LogDir "langdrill-desktop-backend.err.log"
@@ -355,7 +358,17 @@ function Test-AnyHttpListener {
 
 function Ensure-DesktopEnv {
     Write-Status "Preparing user configuration..." -Percent 12 -Stage "configuration" -Detail $EnvPath
-    New-Item -ItemType Directory -Force -Path $AppDataDir, $LogDir, $PapersDir | Out-Null
+    New-Item -ItemType Directory -Force -Path $AppDataDir, $LogDir, $PapersDir, $PiRuntimeStatusDir | Out-Null
+    if (-not (Test-Path -LiteralPath $PiRuntimeStatusPath -PathType Leaf)) {
+        $piStatus = @{
+            state = "not_installed"
+            version = ""
+            updated_at = (Get-Date).ToUniversalTime().ToString("o")
+            detail = "Pi runtime has not been installed yet; creative mode is disabled until repair or install completes."
+            target = $PiRuntimeDir
+        }
+        $piStatus | ConvertTo-Json -Depth 4 | Out-File -LiteralPath $PiRuntimeStatusPath -Encoding utf8 -NoNewline
+    }
     $defaults = [ordered]@{
         "LANGDRILL_USER_DATA_DIR" = $AppDataDir.Replace("\", "/")
         "LANGDRILL_DB_PATH" = (Join-Path $AppDataDir "data\langdrill_agent.db").Replace("\", "/")
