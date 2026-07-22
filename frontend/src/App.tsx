@@ -35,6 +35,7 @@ import { ContextMenu, type ContextMenuItem } from "./components/ContextMenu";
 import { appendImportedText, extractTextFromFiles, fileTitle, fileToDataUrl, isImageFile, uploadPastPaperDraftFile, uploadPastPaperFile } from "./fileImport";
 import { MarkdownText } from "./components/MarkdownText";
 import { RightWorkbench, type WorkbenchTab } from "./components/RightWorkbench";
+import { KnowledgeSettings } from "./features/knowledge/KnowledgeSettings";
 import type {
   AnsweredQuestion,
   AgentSettingPermissionFeature,
@@ -3345,6 +3346,7 @@ function SettingsDialog({
     { id: "syllabus", label: "考纲", icon: ListBullets },
     { id: "tokens", label: "令牌", icon: Brain },
     { id: "data", label: "数据", icon: Database },
+    { id: "knowledge", label: "知识库", icon: Database },
     { id: "permissions", label: "权限", icon: ShieldCheck },
     { id: "skills", label: "拓展 Skills", icon: Sparkle },
     { id: "study", label: "学习", icon: ShieldCheck },
@@ -3374,6 +3376,11 @@ function SettingsDialog({
             })}
           </nav>
           <div className="settings-content">
+            <div className="settings-tab-panel" hidden={activeSettingsTab !== "knowledge"}>
+              <SettingSection title="用户知识库">
+                <KnowledgeSettings />
+              </SettingSection>
+            </div>
             {activeSettingsTab === "model" && (
               <SettingSection title="模型提供商">
                 <div className="inline-row">

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 
 from ..db import init_db, transaction
 from ..knowledge.ingestion import KnowledgeIngestionService
@@ -51,6 +52,38 @@ def import_document(request: KnowledgeImportRequest) -> dict[str, Any]:
         )
         documents = KnowledgeRepository(conn).list_documents()
         document = documents[-1]
+    return {
+        "run_id": run.id,
+        "run": run.model_dump(mode="json"),
+        "document": document.model_dump(mode="json"),
+    }
+
+
+@router.post("/import-file", status_code=status.HTTP_202_ACCEPTED)
+async def import_uploaded_document(
+    request: Request,
+    filename: str,
+    title: str = "",
+    language: str = "",
+) -> dict[str, Any]:
+    data = await request.body()
+    if not data:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "KNOWLEDGE_UPLOAD_EMPTY", "params": {}},
+        )
+    safe_name = Path(filename.replace("\\", "/")).name or "knowledge.txt"
+    with tempfile.TemporaryDirectory(prefix="langdrill-knowledge-") as temp_dir:
+        source = Path(temp_dir) / safe_name
+        source.write_bytes(data)
+        init_db()
+        with transaction() as conn:
+            run = KnowledgeIngestionService(conn).import_file(
+                source,
+                title=title or source.stem,
+                language=language,
+            )
+            document = KnowledgeRepository(conn).list_documents()[-1]
     return {
         "run_id": run.id,
         "run": run.model_dump(mode="json"),

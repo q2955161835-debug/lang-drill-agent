@@ -32,6 +32,18 @@ def test_import_returns_run_id(client: TestClient, tmp_path: Path) -> None:
     assert response.json()["document"]["status"] == "ready"
 
 
+def test_uploaded_file_import_returns_run_id(client: TestClient) -> None:
+    response = client.post(
+        "/api/knowledge/import-file?filename=notes.md&title=Notes&language=en",
+        content=b"# Notes\nconsecutive means following continuously",
+        headers={"Content-Type": "text/markdown"},
+    )
+
+    assert response.status_code == 202
+    assert response.json()["run_id"].startswith("run_")
+    assert response.json()["document"]["status"] == "ready"
+
+
 def test_search_returns_citations(client: TestClient) -> None:
     with connect() as conn:
         repo = KnowledgeRepository(conn)
