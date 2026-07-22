@@ -9,6 +9,7 @@ from .algorithm import MasteryInputs, mastery_score, next_review_at
 from .context import ContextService
 from .knowledge.context import build_knowledge_context
 from .models import AuthoredQuestionSet, EvaluationResult, Question, TaskType
+from .past_papers.retrieval import PastPaperQuery, PastPaperRetrievalService
 from .prompt_engine import PromptAssembler, PromptRegistry
 from .providers import ModelProvider
 from .services import PastPaperService, ProfileService, QuestionService, SessionService
@@ -231,6 +232,21 @@ class QuestionAuthorAgent:
             token_budget=1800,
             trace_id=session_id,
         )
+        enabled_paper_types = [
+            str(item.get("id") or "")
+            for item in past_paper_context.get("enabled_question_types", [])
+            if str(item.get("id") or "") and str(item.get("id") or "") != "listening"
+        ]
+        paper_evidence = PastPaperRetrievalService(self.conn).search(
+            PastPaperQuery(
+                exam_id=profile.exam_id,
+                text=knowledge_query or profile.exam_name,
+                question_types=enabled_paper_types,
+                top_k=8,
+            )
+        )
+        exam_style_evidence = [item.model_dump() for item in paper_evidence.items]
+        distilled_exam_patterns = self._distilled_exam_patterns(profile.exam_id)
         pack = self.assembler.assemble(
             task_type="question_authoring",
             exam_id=profile.exam_id,
@@ -243,7 +259,10 @@ class QuestionAuthorAgent:
                 "start_sequence": start_sequence,
                 "target_count": count,
                 "content_pool": content_pool,
+                "primary_learning_targets": content_pool,
                 "past_paper_context": past_paper_context,
+                "exam_style_evidence": exam_style_evidence,
+                "distilled_exam_patterns": distilled_exam_patterns,
                 "knowledge_retrieval": knowledge_context,
                 "question_flow": "先生成完整题组并持久化，再逐题取出展示。",
                 "quality_rules": [
@@ -284,6 +303,7 @@ class QuestionAuthorAgent:
                 exact_count=exact_count,
             )
             self._attach_knowledge_source_refs(questions, knowledge_context)
+            self._attach_past_paper_source_refs(questions, exam_style_evidence)
             question_service.save_questions(questions)
             return {
                 "created": len(questions),
@@ -293,9 +313,13 @@ class QuestionAuthorAgent:
         authored = self._try_parse_question_set(result.content, session_id, start_sequence, count)
         questions = authored["questions"]
         self._attach_knowledge_source_refs(questions, knowledge_context)
+        self._attach_past_paper_source_refs(questions, exam_style_evidence)
         validation_status = "passed"
         try:
-            self._validate_questions(questions)
+            self._validate_questions(
+                questions,
+                allowed_past_paper_question_ids={item["id"] for item in exam_style_evidence},
+            )
         except Exception:
             questions = self._fallback_question_set(
                 session_id=session_id,
@@ -319,6 +343,7 @@ class QuestionAuthorAgent:
             )
             validation_status = "fallback_after_short_set"
         self._attach_knowledge_source_refs(questions, knowledge_context)
+        self._attach_past_paper_source_refs(questions, exam_style_evidence)
         question_service.save_questions(questions)
         self._record_model_call(result, [m["id"] for m in pack.system_modules], validation_status)
         return {
@@ -326,6 +351,68 @@ class QuestionAuthorAgent:
             "opening_message": authored["opening_message"],
             "progress": question_service.question_progress(session_id),
         }
+
+    def _distilled_exam_patterns(self, exam_id: str) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            """
+            SELECT id, finding_type, label, finding_json, evidence_count,
+                   paper_count, years_json, confidence
+            FROM past_paper_distillations
+            WHERE exam_id=? AND status='ready'
+              AND version=(
+                SELECT MAX(version) FROM past_paper_distillations
+                WHERE exam_id=? AND status='ready'
+              )
+            ORDER BY confidence DESC, evidence_count DESC, id
+            LIMIT 20
+            """,
+            (exam_id, exam_id),
+        ).fetchall()
+        return [
+            {
+                "id": row["id"],
+                "finding_type": row["finding_type"],
+                "label": row["label"],
+                "finding": loads(row["finding_json"], {}),
+                "evidence_count": row["evidence_count"],
+                "paper_count": row["paper_count"],
+                "years": loads(row["years_json"], []),
+                "confidence": row["confidence"],
+            }
+            for row in rows
+        ]
+
+    @staticmethod
+    def _attach_past_paper_source_refs(
+        questions: list[Question],
+        exam_style_evidence: list[dict[str, Any]],
+    ) -> None:
+        refs = [
+            {
+                "type": "past_paper_evidence",
+                "question_id": item.get("id", ""),
+                "document_id": item.get("document_id", ""),
+                "title": item.get("document_title", ""),
+                "year": item.get("year"),
+                "source_url": item.get("source_url", ""),
+                "source_page": item.get("source_page"),
+                "verification_status": item.get("verification_status", "unverified"),
+                "correctness_evidence": bool(item.get("correctness_evidence")),
+                "boundary": item.get("boundary", "short_style_reference"),
+                "claim": "generated_practice_inspired_by_evidence",
+            }
+            for item in exam_style_evidence[:4]
+            if item.get("id")
+        ]
+        for question in questions:
+            known = {
+                str(ref.get("question_id") or "")
+                for ref in question.source_refs
+                if ref.get("type") == "past_paper_evidence"
+            }
+            question.source_refs.extend(
+                ref for ref in refs if str(ref.get("question_id") or "") not in known
+            )
 
     @staticmethod
     def _attach_knowledge_source_refs(
@@ -524,13 +611,22 @@ class QuestionAuthorAgent:
             return {"correct": correct}
         return None
 
-    def _validate_questions(self, questions: list[Question]) -> None:
+    def _validate_questions(
+        self,
+        questions: list[Question],
+        *,
+        allowed_past_paper_question_ids: set[str] | None = None,
+    ) -> None:
         if not questions:
             raise ValueError("题组为空")
         profile = self.profile_service.get()
         letters: list[str] = []
         for question in questions:
             self.validator.validate(question)
+            self.validator.validate_source_refs(
+                question,
+                allowed_past_paper_question_ids or set(),
+            )
             self._validate_exam_style(question, profile.exam_id, profile.target_language)
             letter = str(question.answer.get("letter", "")).upper()
             if letter:
