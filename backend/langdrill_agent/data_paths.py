@@ -9,9 +9,7 @@ from typing import Any
 
 from .config import PROJECT_ROOT, env_file_path, load_settings
 from .db import init_db, transaction
-from .paper_assets import BUILTIN_PAPER_EXAM_IDS
-from .services import PastPaperService, SourceService
-from .utils import dumps
+from .services import SourceService
 
 
 def _data_env_file_path() -> Path:
@@ -169,17 +167,6 @@ class DataPathService:
     def _ensure_default_reference_data(self, db_path: Path) -> None:
         with transaction(db_path) as conn:
             SourceService(conn).seed_common_sources()
-            service = PastPaperService(conn)
-            for exam_id in BUILTIN_PAPER_EXAM_IDS:
-                service.seed_default_papers(exam_id)
-                selected = [f"paper_{exam_id}_{year}" for year in PastPaperService.DEFAULT_RECENT_YEARS]
-                conn.execute(
-                    """
-                    INSERT OR IGNORE INTO app_settings (key, value_json, updated_at)
-                    VALUES (?, ?, CURRENT_TIMESTAMP)
-                    """,
-                    (f"past_papers.selected.{exam_id}", dumps({"paper_ids": selected})),
-                )
 
     def _copy_knowledge_assets(
         self,
