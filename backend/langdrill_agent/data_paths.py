@@ -30,6 +30,7 @@ class DataPathService:
             "question_database_dir": str(db_path.parent),
             "db_path": str(db_path),
             "log_dir": str(settings.log_dir),
+            "knowledge_dir": str(settings.user_data_dir / "knowledge"),
             "project_data_dir": str(PROJECT_ROOT / "data"),
             "test_data_dir": str(PROJECT_ROOT / "测试数据"),
             "db_exists": db_path.exists(),
@@ -192,6 +193,8 @@ class DataPathService:
             "model_calls",
             "syllabus_sources",
             "exam_assets",
+            "knowledge_documents",
+            "knowledge_chunks",
         ]
         counts = {table: 0 for table in tables}
         if not db_path.exists():
