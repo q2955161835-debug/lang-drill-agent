@@ -1,6 +1,6 @@
 # Agent 能力扩展实施总路线图
 
-状态：活动计划；第 01～05 阶段已通过，正在实施第 06 阶段。全部功能验收完成后再移入归档。
+状态：活动计划；第 01～06 阶段已通过，待实施第 07 阶段。全部功能验收完成后再移入归档。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -42,7 +42,7 @@
 ├── 03 Past Papers/Distillation [通过：2026-07-22]
 ├── 04 Memory [通过：2026-07-22]
 └── 05 Agent Runs [通过：2026-07-22]
-      └── 06 Pi Creative Runtime [实施中]
+      └── 06 Pi Creative Runtime [通过：2026-07-22]
 
 02 + 03 + 04 + 05 + 06
 └── 07 Update/i18n/Demo/Release
