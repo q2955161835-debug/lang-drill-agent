@@ -1,0 +1,8 @@
+# Pi runtime bundled skill files are hash-verified by prepare-pi-runtime.ps1.
+# Force LF line endings on checkout so SHA256 matches the manifest across
+# Windows CI runners (where core.autocrlf=true would otherwise convert LF to CRLF).
+runtime/bundled-skills/** text eol=lf
+
+# PowerShell scripts require CRLF for PowerShell 5.1 compatibility.
+*.ps1 text eol=crlf
+*.psm1 text eol=crlf
