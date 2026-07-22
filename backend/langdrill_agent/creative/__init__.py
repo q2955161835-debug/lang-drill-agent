@@ -5,6 +5,7 @@ from .models import (
     PiRuntimeStatus,
     PolicyDecision,
 )
+from .policy import ApprovalGrant, ToolPolicyGateway, ToolRequest
 from .repository import CreativeRepository, CreativeRuntimeUnavailable
 
 __all__ = [
@@ -12,7 +13,10 @@ __all__ = [
     "CreativeModeSettings",
     "CreativeRepository",
     "CreativeRuntimeUnavailable",
+    "ApprovalGrant",
     "PermissionProfile",
     "PiRuntimeStatus",
     "PolicyDecision",
+    "ToolPolicyGateway",
+    "ToolRequest",
 ]

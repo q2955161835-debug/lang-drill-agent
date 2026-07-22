@@ -9,6 +9,7 @@ __pycache__/
 node_modules/
 frontend/dist/
 frontend/*.tsbuildinfo
+runtime/pi-bridge/dist/
 演示web/dist/
 演示web/.vite/
 演示web/*.tsbuildinfo
