@@ -1,7 +1,12 @@
 from pathlib import Path
 
 from langdrill_agent.db import connect, init_db
-from langdrill_agent.past_papers.ingestion import PastPaperIngestionService
+import pytest
+
+from langdrill_agent.past_papers.ingestion import (
+    PastPaperImportError,
+    PastPaperIngestionService,
+)
 from langdrill_agent.past_papers.markdown import parse_paper_markdown
 from langdrill_agent.past_papers.models import PaperSourceInput
 from langdrill_agent.past_papers.repository import PastPaperRepository
@@ -89,6 +94,37 @@ def test_sync_records_resumable_job_stages(tmp_path: Path) -> None:
             (_source().id,),
         ).fetchone()
         assert tuple(job) == ("completed", "document_ready")
+
+
+def test_retry_reuses_downloaded_file_after_parse_failure(tmp_path: Path) -> None:
+    db_path = tmp_path / "papers.db"
+    init_db(db_path)
+    downloader = StubDownloader()
+
+    def fail_extract(_path: Path, **_kwargs) -> tuple[str, str]:
+        raise RuntimeError("parser interrupted")
+
+    with connect(db_path) as conn:
+        failing = PastPaperIngestionService(
+            conn,
+            papers_root=tmp_path / "library",
+            downloader=downloader,
+            extractor=fail_extract,
+        )
+        with pytest.raises(PastPaperImportError):
+            failing.sync_one(_source())
+
+        resumed = PastPaperIngestionService(
+            conn,
+            papers_root=tmp_path / "library",
+            downloader=downloader,
+            extractor=_extractor,
+        ).sync_one(_source())
+
+        assert resumed.run.status == "completed"
+        assert resumed.downloaded is False
+        assert downloader.calls == 1
+        assert PastPaperRepository(conn).get_document(resumed.document_id).status == "ready"
 
 
 def test_sync_writes_reviewable_markdown_and_structured_questions(tmp_path: Path) -> None:

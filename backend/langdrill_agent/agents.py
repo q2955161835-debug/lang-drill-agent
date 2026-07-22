@@ -451,11 +451,27 @@ class QuestionAuthorAgent:
                     },
                 )
             )
+        settings_row = self.conn.execute(
+            "SELECT value_json FROM app_settings WHERE key=?",
+            (f"past_papers.library_settings.{exam_id}",),
+        ).fetchone()
+        scheduler_settings = loads(settings_row["value_json"], {}) if settings_row else {}
         return AdaptivePracticeScheduler(self.conn).schedule(
             candidates=candidates,
             exam_id=exam_id,
             count=count,
-            config=SchedulingConfig(enabled_question_types=frozenset(enabled_types)),
+            config=SchedulingConfig(
+                long_tail_min_ratio=float(
+                    scheduler_settings.get("long_tail_min_ratio", 0.10)
+                ),
+                max_question_type_ratio=float(
+                    scheduler_settings.get("max_question_type_ratio", 0.35)
+                ),
+                rolling_question_window=int(
+                    scheduler_settings.get("coverage_window", 20)
+                ),
+                enabled_question_types=frozenset(enabled_types),
+            ),
             session_id=session_id,
         )
 

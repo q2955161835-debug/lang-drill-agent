@@ -36,6 +36,7 @@ import { appendImportedText, extractTextFromFiles, fileTitle, fileToDataUrl, isI
 import { MarkdownText } from "./components/MarkdownText";
 import { RightWorkbench, type WorkbenchTab } from "./components/RightWorkbench";
 import { KnowledgeSettings } from "./features/knowledge/KnowledgeSettings";
+import { PastPaperLibrary } from "./features/pastPapers/PastPaperLibrary";
 import type {
   AnsweredQuestion,
   AgentSettingPermissionFeature,
@@ -3347,6 +3348,7 @@ function SettingsDialog({
     { id: "tokens", label: "令牌", icon: Brain },
     { id: "data", label: "数据", icon: Database },
     { id: "knowledge", label: "知识库", icon: Database },
+    { id: "past-papers", label: "真题库", icon: ListBullets },
     { id: "permissions", label: "权限", icon: ShieldCheck },
     { id: "skills", label: "拓展 Skills", icon: Sparkle },
     { id: "study", label: "学习", icon: ShieldCheck },
@@ -3379,6 +3381,11 @@ function SettingsDialog({
             <div className="settings-tab-panel" hidden={activeSettingsTab !== "knowledge"}>
               <SettingSection title="用户知识库">
                 <KnowledgeSettings />
+              </SettingSection>
+            </div>
+            <div className="settings-tab-panel" hidden={activeSettingsTab !== "past-papers"}>
+              <SettingSection title="真实真题库">
+                <PastPaperLibrary examId={profile.exam_id} />
               </SettingSection>
             </div>
             {activeSettingsTab === "model" && (

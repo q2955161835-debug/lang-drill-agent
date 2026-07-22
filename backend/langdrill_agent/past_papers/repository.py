@@ -169,6 +169,8 @@ class PastPaperRepository:
         questions: list[PaperQuestionInput],
     ) -> list[PaperQuestion]:
         self.get_document(document_id)
+        if not questions:
+            raise ValueError("paper questions cannot be empty")
         numbers = [question.question_number for question in questions if question.question_number]
         if len(numbers) != len(set(numbers)):
             raise ValueError("duplicate question number")
@@ -250,6 +252,33 @@ class PastPaperRepository:
             self.conn.execute("ROLLBACK TO SAVEPOINT replace_paper_questions")
             self.conn.execute("RELEASE SAVEPOINT replace_paper_questions")
             raise
+
+    def rebuild_question_fts(self, document_id: str) -> int:
+        questions = self.list_questions(document_id)
+        self.conn.execute(
+            "DELETE FROM past_paper_question_fts WHERE document_id=?",
+            (document_id,),
+        )
+        self.conn.executemany(
+            """
+            INSERT INTO past_paper_question_fts
+            (question_id, document_id, question_type, prompt, options, explanation, tags)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    question.id,
+                    question.document_id,
+                    question.question_type,
+                    question.prompt,
+                    " ".join(question.options),
+                    question.explanation,
+                    " ".join(question.knowledge_tags),
+                )
+                for question in questions
+            ],
+        )
+        return len(questions)
 
     def list_questions(self, document_id: str) -> list[PaperQuestion]:
         rows = self.conn.execute(

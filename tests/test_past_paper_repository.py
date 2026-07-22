@@ -63,6 +63,9 @@ def test_replace_questions_keeps_last_verified_version_on_failure(tmp_path: Path
             ],
         )
 
+        with pytest.raises(ValueError, match="paper questions cannot be empty"):
+            repo.replace_questions(document.id, [])
+
         with pytest.raises(ValueError, match="duplicate question number"):
             repo.replace_questions(
                 document.id,

@@ -52,6 +52,30 @@ class PastPaperSourceAdapter(Protocol):
     def discover(self, exam_id: str) -> list[PaperSourceInput]: ...
 
 
+class CompositePastPaperSourceAdapter:
+    def __init__(self, adapters: list[PastPaperSourceAdapter]) -> None:
+        self.adapters = adapters
+
+    def discover(self, exam_id: str) -> list[PaperSourceInput]:
+        items: list[PaperSourceInput] = []
+        seen_urls: set[str] = set()
+        for adapter in self.adapters:
+            for item in adapter.discover(exam_id):
+                if item.source_url in seen_urls:
+                    continue
+                seen_urls.add(item.source_url)
+                items.append(item)
+        return sorted(
+            items,
+            key=lambda item: (
+                -(item.year or 0),
+                item.session,
+                item.set_number or 0,
+                item.source_url,
+            ),
+        )
+
+
 class HtmlPaperSourceAdapter:
     def __init__(
         self,
@@ -118,10 +142,14 @@ class PaperDownloader:
 
     def download(self, source_url: str, destination: Path) -> DownloadReceipt:
         current_url = source_url
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        partial = destination.with_name(destination.name + ".partial")
+        resume_from = partial.stat().st_size if partial.is_file() else 0
         response = None
         for _ in range(self.policy.max_redirects + 1):
             self.validate_url(current_url)
-            response = self.client.get(current_url, follow_redirects=False)
+            headers = {"Range": f"bytes={resume_from}-"} if resume_from else {}
+            response = self._open_response(current_url, headers=headers)
             if response.status_code in {301, 302, 303, 307, 308}:
                 location = response.headers.get("location", "").strip()
                 response.close()
@@ -143,26 +171,39 @@ class PaperDownloader:
             response.close()
             raise PaperSourcePolicyError(f"unsupported download MIME type: {mime_type}")
         declared_size = int(response.headers.get("content-length") or 0)
-        if declared_size > self.policy.max_bytes:
+        content_range = response.headers.get("content-range", "").lower()
+        resumes_existing = (
+            resume_from > 0
+            and response.status_code == 206
+            and content_range.startswith(f"bytes {resume_from}-")
+        )
+        if not resumes_existing:
+            resume_from = 0
+            partial.unlink(missing_ok=True)
+        if resume_from + declared_size > self.policy.max_bytes:
             response.close()
+            partial.unlink(missing_ok=True)
             raise PaperSourcePolicyError("download exceeds configured size limit")
 
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        partial = destination.with_name(destination.name + ".partial")
         digest = hashlib.sha256()
-        bytes_downloaded = 0
+        bytes_downloaded = resume_from
+        if resume_from:
+            with partial.open("rb") as existing:
+                for block in iter(lambda: existing.read(1024 * 1024), b""):
+                    digest.update(block)
         try:
-            with partial.open("wb") as handle:
+            with partial.open("ab" if resume_from else "wb") as handle:
                 for chunk in response.iter_bytes(chunk_size=1024 * 1024):
                     if not chunk:
                         continue
                     bytes_downloaded += len(chunk)
                     if bytes_downloaded > self.policy.max_bytes:
+                        partial.unlink(missing_ok=True)
                         raise PaperSourcePolicyError("download exceeds configured size limit")
                     digest.update(chunk)
                     handle.write(chunk)
             partial.replace(destination)
-        except Exception:
+        except PaperSourcePolicyError:
             partial.unlink(missing_ok=True)
             raise
         finally:
@@ -174,6 +215,13 @@ class PaperDownloader:
             bytes_downloaded=bytes_downloaded,
             mime_type=mime_type,
         )
+
+    def _open_response(self, url: str, *, headers: dict[str, str]):
+        build_request = getattr(self.client, "build_request", None)
+        send = getattr(self.client, "send", None)
+        if callable(build_request) and callable(send):
+            return send(build_request("GET", url, headers=headers), stream=True)
+        return self.client.get(url, follow_redirects=False, headers=headers)
 
 
 class _LinkParser(HTMLParser):

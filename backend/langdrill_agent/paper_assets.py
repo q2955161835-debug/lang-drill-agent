@@ -108,8 +108,24 @@ def source_manifest_text(
     )
 
 
-def extract_text_from_file(path: Path, *, language: str = "ch", mineru_token: str = "") -> tuple[str, str]:
+def extract_text_from_file(
+    path: Path,
+    *,
+    language: str = "ch",
+    mineru_token: str = "",
+    preferred_parser: str = "auto",
+) -> tuple[str, str]:
     suffix = path.suffix.lower()
+    if preferred_parser == "text":
+        if suffix not in TEXT_SUFFIXES:
+            raise RuntimeError("纯文本解析器只支持 Markdown/TXT/CSV 文件。")
+        return path.read_text(encoding="utf-8"), "text"
+    if preferred_parser == "mineru":
+        return _extract_with_mineru(path, language=language, mineru_token=mineru_token)
+    if preferred_parser == "rapidocr":
+        if suffix not in IMAGE_SUFFIXES:
+            raise RuntimeError("RapidOCR 解析器只支持图片文件。")
+        return _extract_with_rapidocr_image(path)
     if suffix in TEXT_SUFFIXES:
         return path.read_text(encoding="utf-8"), "text"
     if suffix == ".pdf":

@@ -7,10 +7,12 @@ from pathlib import Path
 from typing import Protocol
 from urllib.parse import urlparse
 
+from ..knowledge.embeddings import embedding_runtime_from_env
 from ..paper_assets import extract_text_from_file, write_paper_v2_assets
 from ..runtime.models import AgentRunRecord, RunStatus
 from ..runtime.repository import AgentRunRepository
 from ..utils import new_id
+from .embeddings import PastPaperEmbeddingIndexService
 from .models import PaperDocumentInput, PaperQuestionInput, PaperSourceInput
 from .repository import PastPaperRepository
 from .sources import DownloadReceipt, PastPaperSourceAdapter
@@ -37,12 +39,14 @@ class PastPaperIngestionService:
         downloader: Downloader,
         source_adapter: PastPaperSourceAdapter | None = None,
         extractor: Callable[..., tuple[str, str]] | None = None,
+        preferred_parser: str = "auto",
     ) -> None:
         self.conn = conn
         self.papers_root = papers_root
         self.downloader = downloader
         self.source_adapter = source_adapter
         self.extractor = extractor or extract_text_from_file
+        self.preferred_parser = preferred_parser
 
     def sync(self, exam_id: str, max_documents: int = 3) -> AgentRunRecord:
         if self.source_adapter is None:
@@ -126,7 +130,20 @@ class PastPaperIngestionService:
         raw_dir = self.papers_root / source.exam_id / "raw"
         destination = raw_dir / f"{source.id}{suffix}"
         try:
-            receipt = self.downloader.download(source.source_url, destination)
+            resumable = self._downloaded_document_for_source(source.id)
+            if resumable is not None and Path(resumable["raw_path"]).is_file():
+                raw_path = Path(resumable["raw_path"])
+                receipt = DownloadReceipt(
+                    path=raw_path,
+                    source_url=resumable["source_url"],
+                    content_hash=resumable["content_hash"],
+                    bytes_downloaded=raw_path.stat().st_size,
+                    mime_type="application/octet-stream",
+                )
+                downloaded = False
+            else:
+                receipt = self.downloader.download(source.source_url, destination)
+                downloaded = True
             self._update_job(
                 job_id,
                 status="running",
@@ -142,6 +159,7 @@ class PastPaperIngestionService:
                     "stage": "downloaded",
                     "content_hash": receipt.content_hash,
                     "bytes_downloaded": receipt.bytes_downloaded,
+                    "resumed": not downloaded,
                 },
             )
             document = paper_repo.find_document_by_source_hash(
@@ -149,7 +167,6 @@ class PastPaperIngestionService:
                 source_url=receipt.source_url,
                 content_hash=receipt.content_hash,
             )
-            downloaded = document is None
             if document is None:
                 document = paper_repo.create_document(
                     PaperDocumentInput(
@@ -171,7 +188,11 @@ class PastPaperIngestionService:
             structured_path = (
                 self.papers_root / source.exam_id / "structured" / f"{document.id}.json"
             )
-            extracted_text, parser = self.extractor(Path(document.raw_path), language="ch")
+            extracted_text, parser = self.extractor(
+                Path(document.raw_path),
+                language="ch",
+                preferred_parser=self.preferred_parser,
+            )
             parsed = write_paper_v2_assets(
                 extracted_text,
                 exam_id=source.exam_id,
@@ -200,6 +221,20 @@ class PastPaperIngestionService:
                     for question in parsed.questions
                 ],
             )
+            questions = paper_repo.list_questions(document.id)
+            embedding_mode = "fts"
+            embedding_count = 0
+            try:
+                embedding_config, embedding_provider = embedding_runtime_from_env()
+                if embedding_config.enabled and embedding_provider is not None:
+                    embedding_count = PastPaperEmbeddingIndexService(self.conn).index_questions(
+                        embedding_provider,
+                        questions,
+                        embedding_config,
+                    )
+                    embedding_mode = "hybrid"
+            except Exception:
+                embedding_mode = "fts_fallback"
             document = paper_repo.update_document_state(
                 document.id,
                 status="ready",
@@ -213,7 +248,13 @@ class PastPaperIngestionService:
             run_repo.append_event(
                 run.id,
                 "progress",
-                {"stage": "document_ready", "document_id": document.id},
+                {
+                    "stage": "document_ready",
+                    "document_id": document.id,
+                    "question_count": len(questions),
+                    "embedding_count": embedding_count,
+                    "search_mode": embedding_mode,
+                },
             )
             completed_run = run_repo.set_status(run.id, RunStatus.completed)
             return PaperSyncResult(
@@ -240,6 +281,17 @@ class PastPaperIngestionService:
                 error_code="PAST_PAPER_IMPORT_FAILED",
             )
             raise PastPaperImportError(failed_run, str(exc)) from exc
+
+    def _downloaded_document_for_source(self, source_id: str) -> sqlite3.Row | None:
+        return self.conn.execute(
+            """
+            SELECT id, raw_path, source_url, content_hash
+            FROM past_paper_documents
+            WHERE source_id=? AND status='downloaded'
+            ORDER BY created_at DESC LIMIT 1
+            """,
+            (source_id,),
+        ).fetchone()
 
     def _ready_document_for_source(self, source_id: str) -> sqlite3.Row | None:
         return self.conn.execute(

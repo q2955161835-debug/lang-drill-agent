@@ -62,6 +62,34 @@ def test_adapter_does_not_invent_missing_paper_metadata() -> None:
     assert adapter.discover("cet4") == []
 
 
+def test_downloader_rejects_malicious_redirect(tmp_path: Path, monkeypatch) -> None:
+    class RedirectResponse:
+        status_code = 302
+        headers = {"location": "https://evil.test/paper.pdf"}
+
+        def close(self) -> None:
+            return None
+
+    class RedirectClient:
+        def get(self, _url: str, **_kwargs) -> RedirectResponse:
+            return RedirectResponse()
+
+    downloader = PaperDownloader(
+        policy=DownloadPolicy(allowed_hosts=frozenset({"source.test"})),
+        client=RedirectClient(),
+    )
+    monkeypatch.setattr(
+        "langdrill_agent.past_papers.sources.socket.getaddrinfo",
+        lambda *_args, **_kwargs: [(2, 1, 6, "", ("93.184.216.34", 443))],
+    )
+
+    with pytest.raises(PaperSourcePolicyError):
+        downloader.download(
+            "https://source.test/paper.pdf",
+            tmp_path / "paper.pdf",
+        )
+
+
 @pytest.mark.parametrize(
     "url",
     [
