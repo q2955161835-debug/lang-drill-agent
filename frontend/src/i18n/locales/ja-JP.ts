@@ -36,6 +36,7 @@ export const jaJP: MessageCatalog = {
   "settings.tab.study": "学習",
   "settings.tab.appearance": "外観",
   "settings.tab.language": "言語",
+  "settings.savePermissions": "権限を保存",
 
   // チャットエリア
   "chat.placeholder": "今日の学習内容、解答、または学習リクエストを入力",

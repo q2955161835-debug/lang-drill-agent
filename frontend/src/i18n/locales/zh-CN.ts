@@ -36,6 +36,7 @@ export const zhCN: MessageCatalog = {
   "settings.tab.study": "学习",
   "settings.tab.appearance": "外观",
   "settings.tab.language": "语言",
+  "settings.savePermissions": "保存权限",
 
   // 聊天区
   "chat.placeholder": "输入今日学习内容、答案或任何学习请求",

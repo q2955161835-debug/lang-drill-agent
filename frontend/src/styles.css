@@ -2253,6 +2253,11 @@ body.panel-resize-active * {
   min-width: 0;
 }
 
+.language-settings { display: grid; gap: 12px; }
+.language-row { display: grid; grid-template-columns: minmax(120px, auto) minmax(0, 1fr); gap: 12px; align-items: center; }
+.language-label { font-weight: 700; color: var(--text); }
+.language-description { color: var(--muted); font-size: 0.88rem; line-height: 1.55; }
+
 .creative-head {
   display: flex;
   align-items: center;

@@ -36,6 +36,7 @@ export const enUS: MessageCatalog = {
   "settings.tab.study": "Study",
   "settings.tab.appearance": "Appearance",
   "settings.tab.language": "Language",
+  "settings.savePermissions": "Save permissions",
 
   // Chat area
   "chat.placeholder": "Enter today's learning content, answers or any study request",
