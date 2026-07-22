@@ -37,9 +37,9 @@
 ## Dependency Gates
 
 ```text
-01 Runtime Foundation
-├── 02 Knowledge/RAG
-├── 03 Past Papers/Distillation
+01 Runtime Foundation [通过：2026-07-22]
+├── 02 Knowledge/RAG [通过：2026-07-22]
+├── 03 Past Papers/Distillation [通过：2026-07-22]
 ├── 04 Memory
 └── 05 Agent Runs
       └── 06 Pi Creative Runtime
