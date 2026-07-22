@@ -37,6 +37,19 @@ jobs:
         working-directory: 演示web2
         run: npm ci
 
+      - name: Set up Python for sanitization test
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install Python dependencies for sanitization test
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run demo sanitization test
+        run: python -m pytest tests/demo/test_demo_sanitization.py -v
+
       - name: Build demo site
         working-directory: 演示web2
         env:
