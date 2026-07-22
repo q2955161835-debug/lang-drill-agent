@@ -123,6 +123,62 @@ def test_runtime_tool_rejects_unknown_input_fields() -> None:
         tool.validate_input({"text": "hello", "unexpected": True})
 
 
+def test_restart_reuses_completed_tool_call_without_duplicate_execution(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "agent-runs.db"
+    init_db(db_path)
+    executions: list[str] = []
+
+    with connect(db_path) as conn:
+        repo = AgentRunRepository(conn)
+        run = create_run(repo)
+        claimed = repo.claim_next_step(run.id, worker_id="crashed-worker", lease_seconds=1)
+        assert claimed is not None
+        call = repo.record_tool_call(
+            run_id=run.id,
+            step_id=claimed.id,
+            tool_name="test.echo",
+            input_payload={"text": "hello"},
+        )
+        repo.finish_tool_call(
+            call.id,
+            status="completed",
+            output_payload={"echo": "hello"},
+            evidence={
+                "criteria": {"echo persisted": True},
+                "echo": "hello",
+            },
+        )
+        conn.execute(
+            "UPDATE agent_run_steps SET lease_expires_at='2000-01-01 00:00:00' WHERE id=?",
+            (claimed.id,),
+        )
+
+    with connect(db_path) as restarted_conn:
+        restarted_repo = AgentRunRepository(restarted_conn)
+        registry = ToolRegistry()
+        registry.register(
+            RuntimeTool(
+                name="test.echo",
+                input_model=EchoInput,
+                input_factory=lambda step: {"text": step.description},
+                execute=lambda payload, context: executions.append(payload.text),
+            )
+        )
+
+        outcome = AgentRunExecutor(
+            restarted_repo,
+            registry,
+            worker_id="restarted-worker",
+        ).tick(run.id)
+
+        assert outcome.status == "step_completed"
+        assert executions == []
+        assert len(restarted_repo.tool_calls(run.id)) == 1
+        assert restarted_repo.steps(run.id)[0].status == "completed"
+
+
 def test_cancelled_run_does_not_start_tool(tmp_path: Path) -> None:
     db_path = tmp_path / "agent-runs.db"
     init_db(db_path)

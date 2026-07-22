@@ -96,38 +96,95 @@ class AgentRunExecutor:
                     {"detail": str(exc)[:300]},
                 )
 
-            call = self.repository.record_tool_call(
-                run_id=run_id,
-                step_id=step.id,
-                tool_name=tool_name,
-                input_payload=validated_input.model_dump(mode="json"),
-            )
-            context = ToolExecutionContext(
-                run_id=run_id,
-                step_id=step.id,
-                cancellation_requested=lambda: self._cancelled(run_id),
-                trace=lambda event_type, payload: self.repository.append_event(
-                    run_id,
-                    event_type,
-                    {"step_id": step.id, "tool_call_id": call.id, **payload},
-                ),
-            )
-            try:
-                raw_result = tool.execute(validated_input, context)
-                result = ToolExecutionResult.model_validate(raw_result)
-            except Exception as exc:
+            serialized_input = validated_input.model_dump(mode="json")
+            prior_calls = [
+                call
+                for call in reversed(self.repository.tool_calls(run_id))
+                if call.step_id == step.id
+                and call.tool_name == tool_name
+                and call.input_payload == serialized_input
+            ]
+            reusable = next(
+                (call for call in prior_calls if call.status == "completed"),
+                None,
+            ) if step.resumed_from_expired_lease else None
+            unresolved = next(
+                (call for call in prior_calls if call.status == "pending"),
+                None,
+            ) if step.resumed_from_expired_lease else None
+            if reusable is not None:
                 result = ToolExecutionResult(
-                    success=False,
-                    error_code="TOOL_EXECUTION_FAILED",
-                    evidence={"detail": str(exc)[:300]},
+                    success=True,
+                    output=reusable.output_payload,
+                    evidence=reusable.evidence,
                 )
-            self.repository.finish_tool_call(
-                call.id,
-                status="completed" if result.success else "failed",
-                output_payload=result.output,
-                evidence=result.evidence,
-                error_code=result.error_code,
-            )
+                self.repository.append_event(
+                    run_id,
+                    "tool_call_reused",
+                    {"step_id": step.id, "tool_call_id": reusable.id},
+                )
+            elif unresolved is not None:
+                self.repository.finish_tool_call(
+                    unresolved.id,
+                    status="failed",
+                    error_code="TOOL_CALL_OUTCOME_UNKNOWN",
+                )
+                failed = self.repository.fail_step(
+                    step.id,
+                    error_code="TOOL_CALL_OUTCOME_UNKNOWN",
+                    evidence={"tool_call_id": unresolved.id},
+                    worker_id=self.worker_id,
+                )
+                self.repository.set_status(
+                    run_id,
+                    RunStatus.paused,
+                    error_code="TOOL_CALL_OUTCOME_UNKNOWN",
+                )
+                self.repository.append_event(
+                    run_id,
+                    "replan_required",
+                    {"step_id": failed.id, "error_code": "TOOL_CALL_OUTCOME_UNKNOWN"},
+                )
+                return ExecutionOutcome(
+                    run_id=run_id,
+                    step_id=step.id,
+                    status="replan_required",
+                    action="replan",
+                    detail="TOOL_CALL_OUTCOME_UNKNOWN",
+                )
+            else:
+                call = self.repository.record_tool_call(
+                    run_id=run_id,
+                    step_id=step.id,
+                    tool_name=tool_name,
+                    input_payload=serialized_input,
+                )
+                context = ToolExecutionContext(
+                    run_id=run_id,
+                    step_id=step.id,
+                    cancellation_requested=lambda: self._cancelled(run_id),
+                    trace=lambda event_type, payload: self.repository.append_event(
+                        run_id,
+                        event_type,
+                        {"step_id": step.id, "tool_call_id": call.id, **payload},
+                    ),
+                )
+                try:
+                    raw_result = tool.execute(validated_input, context)
+                    result = ToolExecutionResult.model_validate(raw_result)
+                except Exception as exc:
+                    result = ToolExecutionResult(
+                        success=False,
+                        error_code="TOOL_EXECUTION_FAILED",
+                        evidence={"detail": str(exc)[:300]},
+                    )
+                self.repository.finish_tool_call(
+                    call.id,
+                    status="completed" if result.success else "failed",
+                    output_payload=result.output,
+                    evidence=result.evidence,
+                    error_code=result.error_code,
+                )
             aggregate.output["tool_results"].append(
                 {"tool_name": tool_name, "output": result.output}
             )

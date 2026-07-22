@@ -10,7 +10,10 @@ from fastapi.responses import StreamingResponse
 from ..db import init_db, transaction
 from ..runtime.models import RunStatus
 from ..runtime.repository import AgentRunRepository
-from ..runtime.settings import CapabilityRuntimeSettingsService
+from ..runtime.settings import (
+    CapabilityRuntimeSettingsService,
+    SAFE_RUNTIME_TOOL_NAMES,
+)
 from ..utils import dumps
 
 router = APIRouter(prefix="/api/agent-runs", tags=["agent-runs"])
@@ -49,6 +52,15 @@ def get_run_plan(run_id: str) -> dict[str, Any]:
             steps = repo.steps(run_id)
             tool_calls = repo.tool_calls(run_id)
             approvals = repo.approvals(run_id)
+            events = repo.events_after(run_id, 0)[-50:]
+            planning_event = next(
+                (
+                    event
+                    for event in reversed(events)
+                    if event.event_type == "planning_completed"
+                ),
+                None,
+            )
         except KeyError as exc:
             raise _not_found(run_id) from exc
     return {
@@ -56,6 +68,12 @@ def get_run_plan(run_id: str) -> dict[str, Any]:
         "steps": [step.model_dump(mode="json") for step in steps],
         "tool_calls": [item.model_dump(mode="json") for item in tool_calls],
         "approvals": [item.model_dump(mode="json") for item in approvals],
+        "events": [event.model_dump(mode="json") for event in events],
+        "workflow_skill_ids": (
+            list(planning_event.payload.get("workflow_skill_ids", []))
+            if planning_event
+            else []
+        ),
     }
 
 
@@ -87,9 +105,26 @@ def resume_run(run_id: str) -> dict[str, Any]:
                     detail="capability runtime is disabled",
                 )
             if run.status is RunStatus.paused:
+                steps = repo.steps(run_id)
+                missing_tools = sorted(
+                    {
+                        tool_name
+                        for step in steps
+                        for tool_name in step.tool_names
+                        if tool_name not in SAFE_RUNTIME_TOOL_NAMES
+                    }
+                )
+                if missing_tools:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            "saved plan requires unavailable runtime tools: "
+                            + ", ".join(missing_tools)
+                        ),
+                    )
                 blocked = any(
                     step.status == "failed" and step.attempts >= step.max_attempts
-                    for step in repo.steps(run_id)
+                    for step in steps
                 )
                 if blocked:
                     raise HTTPException(

@@ -6,9 +6,15 @@ from pydantic import BaseModel
 
 from ..utils import dumps, loads
 
+SAFE_RUNTIME_TOOL_NAMES = frozenset({"runtime.review"})
+
 
 class CapabilityRuntimeSettings(BaseModel):
     enabled: bool = False
+
+
+def safe_runtime_tool_names() -> list[str]:
+    return sorted(SAFE_RUNTIME_TOOL_NAMES)
 
 
 class CapabilityRuntimeSettingsService:

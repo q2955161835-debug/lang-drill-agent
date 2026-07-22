@@ -68,6 +68,8 @@ export type AgentRunDetail = {
   steps: AgentRunStep[];
   tool_calls: AgentToolCall[];
   approvals: AgentApproval[];
+  events?: AgentRunEvent[];
+  workflow_skill_ids?: string[];
 };
 
 export type AgentRunEvent = {

@@ -8,6 +8,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from ..models import PromptPack
+from .workflows import WorkflowResolver
 
 
 class PlanValidationError(ValueError):
@@ -46,8 +47,14 @@ class AgentPlan(BaseModel):
 
 
 class AgentRunPlanner:
-    def __init__(self, provider: PlannerProvider) -> None:
+    def __init__(
+        self,
+        provider: PlannerProvider,
+        *,
+        workflow_resolver: WorkflowResolver | None = None,
+    ) -> None:
         self.provider = provider
+        self.workflow_resolver = workflow_resolver or WorkflowResolver()
 
     def plan(
         self,
@@ -105,7 +112,15 @@ class AgentRunPlanner:
             step.model_copy(update={"sequence": index})
             for index, step in enumerate(plan.steps, start=1)
         ]
-        return plan.model_copy(update={"steps": normalized_steps})
+        workflow_skill_ids = [
+            skill.id for skill in self.workflow_resolver.resolve(clean_request)
+        ]
+        return plan.model_copy(
+            update={
+                "steps": normalized_steps,
+                "workflow_skill_ids": workflow_skill_ids,
+            }
+        )
 
 
 def _tool_names(tools: Iterable[str | object]) -> set[str]:

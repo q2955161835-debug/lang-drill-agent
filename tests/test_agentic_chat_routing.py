@@ -70,6 +70,7 @@ def test_agentic_action_starts_run_without_losing_active_question(
     plan = client.get(f"/api/agent-runs/{run_id}/plan")
     assert plan.status_code == 200
     assert plan.json()["steps"][0]["completion_criteria"]
+    assert plan.json()["workflow_skill_ids"] == []
 
 
 def test_action_without_capability_mode_remains_chat(client: TestClient) -> None:

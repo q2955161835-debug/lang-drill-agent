@@ -44,6 +44,7 @@ class AgentRunStep(BaseModel):
     lease_expires_at: str | None = None
     evidence: dict[str, Any] = Field(default_factory=dict)
     error_code: str = ""
+    resumed_from_expired_lease: bool = False
     created_at: str = ""
     updated_at: str = ""
 

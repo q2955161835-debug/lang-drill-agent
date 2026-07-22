@@ -92,6 +92,35 @@ def test_resume_requires_capability_runtime_to_remain_enabled(client: TestClient
     assert response.json()["detail"] == "capability runtime is disabled"
 
 
+def test_resume_rejects_plan_with_unavailable_tool(client: TestClient) -> None:
+    with connect() as conn:
+        repo = AgentRunRepository(conn)
+        run = repo.create(session_id="s1", task_type="agentic_task", goal="unsafe old plan")
+        repo.replace_plan(
+            run.id,
+            [
+                AgentRunStep(
+                    id="",
+                    run_id="",
+                    sequence=1,
+                    title="Run removed tool",
+                    description="This tool is no longer registered.",
+                    tool_names=["removed.tool"],
+                    completion_criteria=["removed tool completed"],
+                )
+            ],
+        )
+        repo.set_status(run.id, "paused")
+        CapabilityRuntimeSettingsService(conn).save(enabled=True)
+
+    response = client.post(f"/api/agent-runs/{run.id}/resume")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == (
+        "saved plan requires unavailable runtime tools: removed.tool"
+    )
+
+
 def test_agent_run_event_stream_uses_sse_frames(client: TestClient) -> None:
     run_id = seed_run(status="completed", with_event=True)
 

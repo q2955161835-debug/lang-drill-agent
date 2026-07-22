@@ -249,6 +249,7 @@ class AgentRunRepository:
             ).fetchone()[0]
             if not available:
                 return None
+        resumed_from_expired_lease = row["status"] == "running"
         cursor = self.conn.execute(
             """
             UPDATE agent_run_steps
@@ -277,7 +278,9 @@ class AgentRunRepository:
             """,
             (RunStatus.running.value, run_id, RunStatus.queued.value),
         )
-        step = self.get_step(str(row["id"]))
+        step = self.get_step(str(row["id"])).model_copy(
+            update={"resumed_from_expired_lease": resumed_from_expired_lease}
+        )
         self.append_event(
             run_id,
             "step_claimed",
@@ -286,6 +289,7 @@ class AgentRunRepository:
                 "sequence": step.sequence,
                 "worker_id": clean_worker_id,
                 "attempt": step.attempts,
+                "resumed_from_expired_lease": resumed_from_expired_lease,
             },
         )
         return step

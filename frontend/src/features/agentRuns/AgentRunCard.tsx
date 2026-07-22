@@ -79,6 +79,8 @@ export function AgentRunCard({
   const evidence = steps
     .map((step) => ({ step, text: evidenceText(step.evidence) }))
     .filter((item) => item.text);
+  const approvals = detail?.approvals ?? [];
+  const recentEvents = (detail?.events ?? []).slice(-5).reverse();
 
   const act = (action: "pause" | "resume" | "cancel") => {
     setBusy(true);
@@ -154,6 +156,20 @@ export function AgentRunCard({
             <div className="agent-run-evidence">
               <strong>验证证据</strong>
               {evidence.map(({ step, text }) => <code key={step.id}>{step.sequence}. {text}</code>)}
+            </div>
+          )}
+          {approvals.length > 0 && (
+            <div className="agent-run-audit">
+              <strong>审批与风险</strong>
+              {approvals.map((approval) => (
+                <span key={approval.id}>{approval.capability} · {approval.risk_level} · {approval.status}</span>
+              ))}
+            </div>
+          )}
+          {recentEvents.length > 0 && (
+            <div className="agent-run-audit">
+              <strong>最近事件</strong>
+              {recentEvents.map((event) => <span key={event.id}>{event.event_type}</span>)}
             </div>
           )}
           {currentRun.error_code && <p className="agent-run-error">{currentRun.error_code}</p>}

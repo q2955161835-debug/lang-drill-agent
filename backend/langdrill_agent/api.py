@@ -65,7 +65,11 @@ from .runtime.intent import CapabilityIntentClassifier
 from .runtime.models import AgentRunStep
 from .runtime.planner import AgentPlan, AgentRunPlanner, PlannedStep
 from .runtime.repository import AgentRunRepository
-from .runtime.settings import CapabilityRuntimeSettingsService
+from .runtime.settings import (
+    CapabilityRuntimeSettingsService,
+    safe_runtime_tool_names,
+)
+from .runtime.workflows import WorkflowResolver
 from .screenshot_import import ScreenshotImportService
 from .services import (
     AgentSettingsPermissionService,
@@ -122,7 +126,7 @@ def _create_agentic_run(
                 "active_question": active_question,
                 "memory": memory_context.model_dump(mode="json"),
             },
-            tools=["runtime.review"],
+            tools=safe_runtime_tool_names(),
         )
         planning_source = "model"
     except Exception as exc:
@@ -146,6 +150,9 @@ def _create_agentic_run(
                     ],
                     max_attempts=2,
                 )
+            ],
+            workflow_skill_ids=[
+                skill.id for skill in WorkflowResolver().resolve(content)
             ],
         )
         planning_source = "program_fallback"
@@ -177,6 +184,7 @@ def _create_agentic_run(
         {
             "source": planning_source,
             "completion_criteria": plan.completion_criteria,
+            "workflow_skill_ids": plan.workflow_skill_ids,
         },
     )
     return repo.get(run.id).model_dump(mode="json")

@@ -1569,8 +1569,10 @@ body.panel-resize-active * {
 .agent-run-step > div span, .agent-run-step > div small, .agent-run-step > span:last-child { color: var(--muted); font-size: .76rem; overflow-wrap: anywhere; }
 .agent-run-step > span:last-child { text-align: right; }
 .agent-run-tools { margin: 0; color: var(--muted-strong); font-size: .78rem; overflow-wrap: anywhere; }
-.agent-run-evidence { display: grid; gap: 5px; }
+.agent-run-evidence, .agent-run-audit { display: grid; gap: 5px; }
 .agent-run-evidence code { display: block; padding: 7px 8px; border-radius: var(--radius-xs); background: var(--surface-strong); color: var(--muted-strong); white-space: pre-wrap; overflow-wrap: anywhere; }
+.agent-run-audit strong { color: var(--text); font-size: .82rem; }
+.agent-run-audit span { color: var(--muted-strong); font-size: .78rem; overflow-wrap: anywhere; }
 .agent-run-error { margin: 0; color: var(--danger); font-size: .8rem; }
 
 .modal-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: rgba(8, 11, 16, 0.54); backdrop-filter: blur(8px); padding: 24px; }
