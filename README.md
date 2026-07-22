@@ -1,12 +1,14 @@
 # Lang Drill Agent
 
+> 语言：[简体中文](README.md) | [English](README.en.md) | [日本語](README.ja.md)
+
 Lang Drill Agent 是一个面向语言考试备考的本地学习工作台，核心目标是解决“背单词和刷题分离”的问题。
 
 很多学习工具把词表、练题、错题、讲解和统计拆成几套流程：背完词还要手动找题，做完题又很难回到具体词汇和薄弱点。Lang Drill Agent 把导入词表、生成题组、逐题作答、判题讲解、错题回流和学习统计串成一个闭环，让每个词条都能进入真实练习，让每次作答都能回到后续复习。
 
 项目重点服务英语四级/六级、法语四级、日语四级/六级等语言考试。正式学习状态统一写入 SQLite，模型负责生成题目和讲解，程序负责题目落库、判分、进度推进和统计，避免学习记录散落在聊天上下文里。
 
-当前同时提供 Web 版和 Windows 桌面版。桌面版用 Tauri 承载同一套 React/Vite 界面，并在本机启动 FastAPI 后端；Web 开发启动方式保持不变。
+当前同时提供 Web 版和 Windows 桌面版。桌面版用 Tauri 承载同一套 React/Vite 界面，并在本机启动 FastAPI 后端；Web 开发启动方式保持不变。当前版本为 `v1.0.0-experimental.1` 实验版，正式学习流程保持不变，创造模式为可选的实验性能力。
 
 ## 核心功能
 
@@ -19,6 +21,21 @@ Lang Drill Agent 是一个面向语言考试备考的本地学习工作台，核
 - 模型配置：支持 OpenAI/GPT、Claude、DeepSeek、MiMo 和自定义 OpenAI-compatible 供应商。
 - 当日复盘：输入“总结”或“复盘”后，模型基于当日题目、作答、错题和聊天记录生成学习复盘。
 - 真题参考：按考试维护近三年真题索引和本地导入资产，组卷时参考题型与风格摘要，不发布版权不明的完整真题。
+
+## 创造模式（可选 · 实验性）
+
+创造模式是可选的实验性 Agent 能力，默认关闭，不影响正常刷题与学习流程。开启后可调用本地 Pi 运行时执行目录整理、文件操作等通用任务，并提供逐次审批、智能审批和完全访问三档权限。
+
+> ⚠️ 警告：创造模式的通用权限可以修改本机文件。请仅在理解风险后启用，并优先使用逐次审批档位。创造模式仍为实验性，模型不可用时回退本地规则兜底，不阻断正式学习。
+
+## 知识库与记忆
+
+- 知识库（RAG）：用户可导入本地文档建立知识库，答题讲解和分支对话可引用知识库来源，引用结果带可核验来源标注。
+- 分层记忆：维护用户画像、学习目标、薄弱项和长期偏好，用于个性化出题和讲解；记忆写入本地数据库，可在设置页查看与清除。
+
+## 真题版权边界
+
+真题资产仅作为本地参考：默认只保留考试索引和短摘录，完整真题文件保存在用户本地 `papers/<考试>/raw` 目录，不进入默认发布资产。出题 Agent 参考真题题型与风格，不复刻或长段引用完整真题原文。请用户自行确保导入的真题内容符合版权与使用许可。
 
 ## 架构
 
@@ -42,7 +59,9 @@ flowchart LR
 - 桌面壳：[src-tauri/](src-tauri/)
 - 测试：[try/](try/)
 
-## 本地运行
+## 安装与本地运行
+
+Web 开发模式：
 
 ```powershell
 py -m venv .venv
@@ -68,6 +87,12 @@ http://127.0.0.1:5173
 
 真实 API Key 只写入本地 `.env`，不要提交。示例变量见 [.env.example](.env.example)。
 
+## Web 与桌面版使用
+
+Web 版面向开发与日常使用，桌面版面向 Windows 用户。桌面版安装后自动启动本地后端，用户配置、数据库、日志和 `papers` 写入 `%APPDATA%\Lang Drill Agent`，不污染 Web 开发环境。两种模式共享同一前端和后端业务能力。
+
+界面支持简体中文、English、日本語三种语言，可在设置 → 语言页切换；界面语言只影响应用壳文案，不影响模型回复、题目和自定义指令的语言。
+
 ## 产品展示网站
 
 独立展示站点当前以 [演示web2](演示web2) 为 GitHub Pages 发布源，不改动主应用 `frontend/`。它用于对外介绍 Lang Drill Agent 的核心闭环，包含默认跟随系统的双主题、动态单词银河、滚动组卷演示、脱敏截图画廊、GitHub/安装包入口和一个可探索的三栏工作台模拟器。
@@ -81,7 +106,7 @@ npm run build
 
 该站点是静态前端，由 `.github/workflows/pages-demo-web2.yml` 构建并部署到 GitHub Pages：`https://q2955161835-debug.github.io/lang-drill-agent/`。演示工作台不连接真实后端，不读取 `.env`，模型回复为固定模拟内容。
 
-## Windows 安装包
+## Windows 安装包与更新
 
 当前 Windows 安装包发布在 GitHub Release：
 
@@ -93,20 +118,12 @@ npm run build
 
 安装目录必须使用英文/ASCII 路径，例如 `C:\LangDrillAgent` 或 `D:\LangDrillAgent`；如果选择中文或其它非 ASCII 路径，安装器会中止并提示更换目录。
 
-如果旧版安装目录曾被手动删除，安装器可能先显示 `Already Installed` 页面；选择 `Do not uninstall` 继续安装即可。v0.1.2 会在安装前清理“旧卸载器和主程序都不存在”的残留卸载记录。
-
-安装后，用户配置、数据库、日志和 `papers` 会写入 `%APPDATA%\Lang Drill Agent`；运行时缓存写入 `%LOCALAPPDATA%\Lang Drill Agent\runtime`。首次启动会先显示初始化进度，优先复用本机已有 Python 3.11+；如果本机没有可用 Python，才会联网下载并准备 Python 3.11.9 和后端依赖。Python 安装包会在官网和国内镜像之间自动选择，后端依赖会在 PyPI 官网和国内镜像之间自动选择。
+桌面版计划接入 Tauri 官方 updater 插件，通过签名 `latest.json` 清单检查和安装更新；签名私钥只存 GitHub Actions Secrets。更新检查与安装均由用户主动触发，失败可重试并查看日志。
 
 如果需要自己构建安装包：
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\desktop\build-desktop.ps1 -SkipInstall
-```
-
-构建产物：
-
-```text
-src-tauri\target\release\bundle\nsis\Lang Drill Agent_0.1.2_x64-setup.exe
 ```
 
 ## 验证
@@ -122,40 +139,9 @@ cargo check --manifest-path src-tauri\Cargo.toml
 
 项目已配置 GitHub Actions CI。推送和 Pull Request 会运行后端测试、Python 代码检查和前端构建。桌面安装包可通过 `Desktop Installer VM Test` 手动触发 Windows VM 验收。
 
-Windows 安装包在发布前会通过本机构建、隔离后端启动 smoke、安装器路径校验和 Windows 安装验收：构建安装包、拒绝中文安装目录、安装到英文自定义目录、验证桌面快捷方式、启动安装目录内的桌面后端运行时、检查 `/api/health`、卸载并清理临时目录。
+## 实验版状态
 
-## 我的职责
-
-- 设计并实现三栏学习工作台、截图导入、模型配置、权限设置、上下文容量和学习统计体验。
-- 搭建 FastAPI + SQLite 后端状态机，保证题组、作答、掌握度和会话历史可追踪。
-- 实现多 Agent 协作：任务路由、结构化出题、校验、判题讲解和模型供应商适配。
-- 建立本地回归测试和 CI，覆盖关键学习流程、模型配置、截图导入、数据路径迁移和启动链路。
-- 构建 Windows 桌面版和 NSIS 安装包，并通过干净 Windows VM 做发布前安装验收。
-
-## 当前完成度
-
-已完成：
-
-- Web 主流程和 Windows 桌面版安装包。
-- 正式题组入库、答题推进、判题讲解和错题回流。
-- 截图词表导入、文件文本抽取、真题索引和考试式组卷。
-- 模型配置、权限设置、学习统计、上下文容量和当日复盘。
-- 本地测试、CI 和发布前 Windows VM 安装验收。
-
-仍需优化：
-
-- `api.py` 和 `services.py` 文件偏大，后续应拆分 routes 和 core 模块。
-- 前端 `App.tsx` 需要继续组件化。
-- 未签名安装包的真实用户首次安装体验仍需持续收集反馈。
-- 真实模型输出质量需要更多样例和人工验收记录。
-
-## 下一步计划
-
-- 拆分 `backend/langdrill_agent/api.py` 为聊天、设置、导入、真题和公共核心模块。
-- 增加 API endpoint contract 测试和更多前端交互验收。
-- 扩展 Windows 桌面版人工验收：配置 API Key、导入截图、刷题、退出重启和异常日志定位。
-- 补充更多脱敏截图和演示视频。
-- 为真实模型输出质量建立对比样例和人工验收记录。
+当前版本 `v1.0.0-experimental.1` 为实验性预发布：创造模式、签名更新中心、三语界面和演示站同步均为实验性能力，可能存在不稳定。正式学习流程（词表导入、组卷、答题、讲解、复盘）保持稳定。升级前请备份 `%APPDATA%\Lang Drill Agent` 数据目录；如需回退，卸载新版本后重新安装旧版即可。
 
 ## License
 
