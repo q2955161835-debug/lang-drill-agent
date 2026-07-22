@@ -252,6 +252,8 @@ struct ProgressLine {
 fn main() {
     tauri::Builder::default()
         .manage(BackendProcessState::default())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             creative_runtime_status,
             repair_creative_runtime,

@@ -42,6 +42,7 @@ import { KnowledgeSettings } from "./features/knowledge/KnowledgeSettings";
 import { LanguageSettings } from "./features/settings/LanguageSettings";
 import { MemorySettings } from "./features/memory/MemorySettings";
 import { PastPaperLibrary } from "./features/pastPapers/PastPaperLibrary";
+import { UpdateCenter } from "./features/update/UpdateCenter";
 import type {
   AnsweredQuestion,
   AgentSettingPermissionFeature,
@@ -3364,7 +3365,8 @@ function SettingsDialog({
     { id: "skills", label: t("settings.tab.skills"), icon: Sparkle },
     { id: "study", label: t("settings.tab.study"), icon: ShieldCheck },
     { id: "language", label: t("settings.tab.language"), icon: Moon },
-    { id: "appearance", label: t("settings.tab.appearance"), icon: Moon }
+    { id: "appearance", label: t("settings.tab.appearance"), icon: Moon },
+    { id: "update", label: t("settings.tab.update"), icon: ArrowClockwise }
   ];
   return (
     <div className="modal-backdrop">
@@ -4330,12 +4332,17 @@ function SettingsDialog({
                 </label>
               </SettingSection>
             )}
+            {activeSettingsTab === "update" && (
+              <SettingSection title={t("update.title")}>
+                <UpdateCenter />
+              </SettingSection>
+            )}
           </div>
         </div>
         <div className="modal-actions">
           <button onClick={() => void resetDefaults()}>{t("app.restoreDefaults")}</button>
           <button onClick={onClose}>{t("app.cancel")}</button>
-          {activeSettingsTab !== "memory" && activeSettingsTab !== "creative" && activeSettingsTab !== "language" && (
+          {activeSettingsTab !== "memory" && activeSettingsTab !== "creative" && activeSettingsTab !== "language" && activeSettingsTab !== "update" && (
             <button className="primary" onClick={() => void saveSettings()}>{activeSettingsTab === "permissions" ? t("settings.savePermissions") : t("app.save")}</button>
           )}
         </div>

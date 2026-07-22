@@ -2486,3 +2486,43 @@ body.panel-resize-active * {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }
+
+/* 更新中心 */
+.update-center { display: grid; gap: 14px; }
+.update-center-header { display: flex; align-items: center; gap: 10px; }
+.update-center-header h3 { margin: 0; font-size: 1rem; }
+.update-experimental-badge {
+  display: inline-flex; align-items: center; padding: 2px 8px;
+  font-size: 0.7rem; font-weight: 600; letter-spacing: 0.04em;
+  color: var(--surface-strong, #fff); background: var(--accent, #244d9a);
+  border-radius: 999px;
+}
+.update-experimental-note {
+  margin: 0; padding: 10px 12px; font-size: 0.8rem; line-height: 1.55;
+  color: var(--muted); border: var(--border-thin); border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.update-meta { display: grid; gap: 8px; margin: 0; }
+.update-meta > div { display: grid; grid-template-columns: 96px 1fr; gap: 8px; align-items: baseline; }
+.update-meta dt { margin: 0; font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.update-meta dd { margin: 0; font-size: 0.85rem; word-break: break-all; }
+.update-status { display: grid; gap: 8px; padding: 12px; border: var(--border-thin); border-radius: var(--radius-sm); }
+.update-status-info { background: var(--surface); color: var(--text); }
+.update-status-ok { background: rgba(34, 197, 94, 0.08); color: var(--text); }
+.update-status-error { background: rgba(180, 35, 24, 0.08); color: var(--text); }
+.update-status p { margin: 0; }
+.update-error-detail { font-family: var(--mono, monospace); font-size: 0.78rem; word-break: break-all; color: var(--danger, #b42318); }
+.update-error-hint { font-size: 0.78rem; color: var(--muted); }
+.update-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.update-actions button { padding: 6px 14px; }
+.update-link { font-size: 0.82rem; color: var(--accent, #244d9a); text-decoration: none; padding: 6px 4px; }
+.update-link:hover { text-decoration: underline; }
+.update-progress { width: 100%; height: 8px; border-radius: 999px; overflow: hidden; }
+.update-release-notes { font-size: 0.82rem; }
+.update-release-notes summary { cursor: pointer; color: var(--accent, #244d9a); }
+.update-release-notes-body {
+  margin-top: 6px; padding: 8px 10px; max-height: 180px; overflow: auto;
+  font-size: 0.78rem; line-height: 1.55; white-space: pre-wrap;
+  border: var(--border-thin); border-radius: var(--radius-sm); background: var(--surface);
+}
+
