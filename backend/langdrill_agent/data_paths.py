@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -65,6 +66,11 @@ class DataPathService:
             else:
                 self._initialize_default_database(target_db)
             self._ensure_default_reference_data(target_db)
+            self._copy_knowledge_assets(
+                settings.user_data_dir,
+                target_root,
+                overwrite=overwrite,
+            )
 
         self._write_env(
             {
@@ -169,6 +175,28 @@ class DataPathService:
                     """,
                     (f"past_papers.selected.{exam_id}", dumps({"paper_ids": selected})),
                 )
+
+    def _copy_knowledge_assets(
+        self,
+        source_root: Path,
+        target_root: Path,
+        *,
+        overwrite: bool,
+    ) -> None:
+        source_dir = source_root / "knowledge"
+        if not source_dir.exists():
+            return
+        target_dir = target_root / "knowledge"
+        for source_path in source_dir.rglob("*"):
+            relative = source_path.relative_to(source_dir)
+            target_path = target_dir / relative
+            if source_path.is_dir():
+                target_path.mkdir(parents=True, exist_ok=True)
+                continue
+            if target_path.exists() and not overwrite:
+                raise ValueError(f"目标知识库文件已存在：{target_path}")
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_path, target_path)
 
     def _backup_sqlite_database(self, source_db: Path, target_db: Path, *, overwrite: bool) -> None:
         if target_db.exists() and not overwrite:
