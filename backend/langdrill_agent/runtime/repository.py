@@ -328,6 +328,29 @@ class AgentRunRepository:
         )
         return failed
 
+    def retry_step(self, step_id: str) -> AgentRunStep:
+        step = self.get_step(step_id)
+        if step.status != "failed":
+            raise ValueError("only a failed agent run step can be retried")
+        if step.attempts >= step.max_attempts:
+            raise ValueError("agent run step exhausted its attempts")
+        self.conn.execute(
+            """
+            UPDATE agent_run_steps
+            SET status='pending', lease_owner='', lease_expires_at=NULL,
+                updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            """,
+            (step_id,),
+        )
+        retried = self.get_step(step_id)
+        self.append_event(
+            retried.run_id,
+            "step_retry_scheduled",
+            {"step_id": step_id, "next_attempt": retried.attempts + 1},
+        )
+        return retried
+
     def record_tool_call(
         self,
         *,
@@ -355,6 +378,48 @@ class AgentRunRepository:
             {"tool_call_id": tool_call_id, "step_id": step_id, "tool_name": tool_name},
         )
         return self.get_tool_call(tool_call_id)
+
+    def finish_tool_call(
+        self,
+        tool_call_id: str,
+        *,
+        status: str,
+        output_payload: dict[str, Any] | None = None,
+        evidence: dict[str, Any] | None = None,
+        error_code: str = "",
+    ) -> ToolCallRecord:
+        if status not in {"completed", "failed", "cancelled"}:
+            raise ValueError("tool call terminal status is invalid")
+        self.get_tool_call(tool_call_id)
+        cursor = self.conn.execute(
+            """
+            UPDATE tool_calls
+            SET status=?, output_json=?, evidence_json=?, error_code=?,
+                updated_at=CURRENT_TIMESTAMP
+            WHERE id=? AND status='pending'
+            """,
+            (
+                status,
+                dumps(output_payload or {}),
+                dumps(evidence or {}),
+                error_code,
+                tool_call_id,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise ValueError("tool call is no longer pending")
+        finished = self.get_tool_call(tool_call_id)
+        self.append_event(
+            finished.run_id,
+            f"tool_call_{status}",
+            {
+                "tool_call_id": finished.id,
+                "step_id": finished.step_id,
+                "tool_name": finished.tool_name,
+                "error_code": error_code,
+            },
+        )
+        return finished
 
     def get_tool_call(self, tool_call_id: str) -> ToolCallRecord:
         row = self.conn.execute(
