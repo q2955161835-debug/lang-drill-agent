@@ -24,12 +24,12 @@ class KnowledgeIngestionService:
         conn: sqlite3.Connection,
         *,
         user_data_dir: Path | None = None,
-        extractor: Extractor = extract_text_from_file,
+        extractor: Extractor | None = None,
         chunking_config: ChunkingConfig | None = None,
     ) -> None:
         self.conn = conn
         self.user_data_dir = user_data_dir or load_settings().user_data_dir
-        self.extractor = extractor
+        self.extractor = extractor or extract_text_from_file
         self.chunking_config = chunking_config or ChunkingConfig()
 
     def import_file(
@@ -38,6 +38,7 @@ class KnowledgeIngestionService:
         *,
         title: str,
         language: str = "",
+        document_id: str | None = None,
     ) -> AgentRunRecord:
         source = path.expanduser().resolve()
         if not source.is_file():
@@ -47,14 +48,23 @@ class KnowledgeIngestionService:
         mime_type = mimetypes.guess_type(source.name)[0] or "application/octet-stream"
         knowledge_repo = KnowledgeRepository(self.conn)
         run_repo = AgentRunRepository(self.conn)
-        document = knowledge_repo.create_document(
-            title=title.strip() or source.stem,
-            source_name=source.name,
-            mime_type=mime_type,
-            content_hash=content_hash,
-            language=language,
-            status=DocumentStatus.importing,
-        )
+        previous_document = knowledge_repo.get_document(document_id) if document_id else None
+        if previous_document:
+            document = knowledge_repo.set_document_status(
+                previous_document.id,
+                DocumentStatus.importing,
+                content_hash=content_hash,
+                error_code="",
+            )
+        else:
+            document = knowledge_repo.create_document(
+                title=title.strip() or source.stem,
+                source_name=source.name,
+                mime_type=mime_type,
+                content_hash=content_hash,
+                language=language,
+                status=DocumentStatus.importing,
+            )
         run = run_repo.create(
             session_id=None,
             task_type="knowledge_import",
@@ -96,6 +106,7 @@ class KnowledgeIngestionService:
                 DocumentStatus.ready,
                 raw_path=str(raw_path),
                 parsed_path=str(parsed_path),
+                content_hash=content_hash,
                 parser=parser,
                 parser_version="1",
                 error_code="",
@@ -105,14 +116,26 @@ class KnowledgeIngestionService:
         except Exception as exc:
             _remove_if_exists(raw_staging)
             _remove_if_exists(parsed_staging)
-            _remove_if_exists(raw_path)
-            _remove_if_exists(parsed_path)
             error_code = "KNOWLEDGE_EXTRACTION_FAILED"
-            knowledge_repo.set_document_status(
-                document.id,
-                DocumentStatus.failed,
-                error_code=error_code,
-            )
+            if previous_document:
+                knowledge_repo.set_document_status(
+                    document.id,
+                    previous_document.status,
+                    raw_path=previous_document.raw_path,
+                    parsed_path=previous_document.parsed_path,
+                    content_hash=previous_document.content_hash,
+                    parser=previous_document.parser,
+                    parser_version=previous_document.parser_version,
+                    error_code=error_code,
+                )
+            else:
+                _remove_if_exists(raw_path)
+                _remove_if_exists(parsed_path)
+                knowledge_repo.set_document_status(
+                    document.id,
+                    DocumentStatus.failed,
+                    error_code=error_code,
+                )
             run_repo.append_event(
                 run.id,
                 "failed",

@@ -82,6 +82,7 @@ class KnowledgeRepository:
         parser: str | None = None,
         parser_version: str | None = None,
         error_code: str | None = None,
+        content_hash: str | None = None,
     ) -> KnowledgeDocument:
         self.get_document(document_id)
         updates: dict[str, Any] = {"status": DocumentStatus(status).value}
@@ -91,6 +92,7 @@ class KnowledgeRepository:
             "parser": parser,
             "parser_version": parser_version,
             "error_code": error_code,
+            "content_hash": content_hash,
         }.items():
             if value is not None:
                 updates[key] = value
