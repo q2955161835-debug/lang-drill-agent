@@ -522,6 +522,44 @@ class AgentRunRepository:
         ).fetchall()
         return [self._approval_from_row(row) for row in rows]
 
+    def pending_approvals(self) -> list[ApprovalRequest]:
+        rows = self.conn.execute(
+            """
+            SELECT * FROM approval_requests
+            WHERE status='pending' ORDER BY created_at, id
+            """,
+        ).fetchall()
+        return [self._approval_from_row(row) for row in rows]
+
+    def resolve_approval(
+        self,
+        approval_id: str,
+        *,
+        decision: str,
+        decision_payload: dict[str, Any] | None = None,
+    ) -> ApprovalRequest:
+        if decision not in {"approved", "denied", "expired"}:
+            raise ValueError("approval decision must be approved, denied or expired")
+        approval = self.get_approval(approval_id)
+        if approval.status != "pending":
+            raise ValueError("approval is no longer pending")
+        cursor = self.conn.execute(
+            """
+            UPDATE approval_requests
+            SET status=?, decision_json=?, updated_at=CURRENT_TIMESTAMP
+            WHERE id=? AND status='pending'
+            """,
+            (decision, dumps(decision_payload or {}), approval_id),
+        )
+        if cursor.rowcount != 1:
+            raise ValueError("approval is no longer pending")
+        self.append_event(
+            approval.run_id,
+            f"approval_{decision}",
+            {"approval_id": approval_id, "capability": approval.capability},
+        )
+        return self.get_approval(approval_id)
+
     def append_event(
         self,
         run_id: str,
