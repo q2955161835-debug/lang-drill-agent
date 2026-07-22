@@ -21,6 +21,7 @@ from .data_paths import DataPathService
 from .db import init_db, transaction
 from .logging_config import configure_logging
 from .learning_stats import LearningStatsService
+from .knowledge.context import build_knowledge_context
 from .models import (
     AddCustomProviderRequest,
     AgentSettingsPermissionRequest,
@@ -697,6 +698,13 @@ def _assemble_runtime_pack(
     context_pack = {
         "task_type": task_type,
         **_runtime_context(conn, session_id=session_id, active_question=active_question),
+        "knowledge_retrieval": build_knowledge_context(
+            conn,
+            query=user_content,
+            task_type=task_type,
+            token_budget=1500,
+            trace_id=session_id or "",
+        ),
         **(extra_context or {}),
     }
     pack = PromptAssembler(PromptRegistry(conn)).assemble(

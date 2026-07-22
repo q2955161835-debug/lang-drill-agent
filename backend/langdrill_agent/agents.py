@@ -7,6 +7,7 @@ from typing import Any
 
 from .algorithm import MasteryInputs, mastery_score, next_review_at
 from .context import ContextService
+from .knowledge.context import build_knowledge_context
 from .models import AuthoredQuestionSet, EvaluationResult, Question, TaskType
 from .prompt_engine import PromptAssembler, PromptRegistry
 from .providers import ModelProvider
@@ -220,6 +221,16 @@ class QuestionAuthorAgent:
             target_count,
         )
         past_paper_context = PastPaperService(self.conn).generation_context(profile.exam_id)
+        knowledge_query = requested_content.strip() or " ".join(
+            str(item.get("term") or "") for item in content_pool[:12]
+        )
+        knowledge_context = build_knowledge_context(
+            self.conn,
+            query=knowledge_query,
+            task_type="question_authoring",
+            token_budget=1800,
+            trace_id=session_id,
+        )
         pack = self.assembler.assemble(
             task_type="question_authoring",
             exam_id=profile.exam_id,
@@ -233,6 +244,7 @@ class QuestionAuthorAgent:
                 "target_count": count,
                 "content_pool": content_pool,
                 "past_paper_context": past_paper_context,
+                "knowledge_retrieval": knowledge_context,
                 "question_flow": "先生成完整题组并持久化，再逐题取出展示。",
                 "quality_rules": [
                     "优先覆盖用户输入、截图导入、到期复习和低掌握度知识点。",
@@ -271,6 +283,7 @@ class QuestionAuthorAgent:
                 content_pool=content_pool,
                 exact_count=exact_count,
             )
+            self._attach_knowledge_source_refs(questions, knowledge_context)
             question_service.save_questions(questions)
             return {
                 "created": len(questions),
@@ -279,6 +292,7 @@ class QuestionAuthorAgent:
             }
         authored = self._try_parse_question_set(result.content, session_id, start_sequence, count)
         questions = authored["questions"]
+        self._attach_knowledge_source_refs(questions, knowledge_context)
         validation_status = "passed"
         try:
             self._validate_questions(questions)
@@ -304,6 +318,7 @@ class QuestionAuthorAgent:
                 exact_count=exact_count,
             )
             validation_status = "fallback_after_short_set"
+        self._attach_knowledge_source_refs(questions, knowledge_context)
         question_service.save_questions(questions)
         self._record_model_call(result, [m["id"] for m in pack.system_modules], validation_status)
         return {
@@ -311,6 +326,38 @@ class QuestionAuthorAgent:
             "opening_message": authored["opening_message"],
             "progress": question_service.question_progress(session_id),
         }
+
+    @staticmethod
+    def _attach_knowledge_source_refs(
+        questions: list[Question],
+        knowledge_context: dict[str, Any],
+    ) -> None:
+        refs = []
+        for item in knowledge_context.get("items", [])[:4]:
+            citation = item.get("citation", {})
+            refs.append(
+                {
+                    "type": "knowledge_document",
+                    "document_id": citation.get("document_id", ""),
+                    "title": citation.get("document_title", ""),
+                    "heading": citation.get("heading", ""),
+                    "page_start": citation.get("page_start"),
+                    "page_end": citation.get("page_end"),
+                    "content_hash": citation.get("content_hash", ""),
+                    "boundary": "short_untrusted_reference",
+                }
+            )
+        for question in questions:
+            existing = {
+                (ref.get("type"), ref.get("document_id"), ref.get("content_hash"))
+                for ref in question.source_refs
+            }
+            question.source_refs.extend(
+                ref
+                for ref in refs
+                if (ref.get("type"), ref.get("document_id"), ref.get("content_hash"))
+                not in existing
+            )
 
     def _target_count(self, daily_minutes: int, pool_size: int, default_count: int) -> int:
         minute_based = max(6, min(16, daily_minutes // 4 or default_count))
@@ -964,6 +1011,19 @@ class EvaluatorTutorAgent:
     ) -> str:
         profile = ProfileService(self.conn).get()
         context = ContextService(self.conn).prompt_context(session_id)
+        knowledge_query = " ".join(
+            [
+                str(tag) for tag in question_payload.get("knowledge_tags", [])
+            ]
+            + [str(question_payload.get("prompt") or ""), user_answer, extra_prompt]
+        ).strip()
+        knowledge_context = build_knowledge_context(
+            self.conn,
+            query=knowledge_query,
+            task_type="evaluation",
+            token_budget=1200,
+            trace_id=session_id,
+        )
         pack = self.assembler.assemble(
             task_type="evaluation",
             exam_id=profile.exam_id,
@@ -973,6 +1033,7 @@ class EvaluatorTutorAgent:
                 "session_id": session_id,
                 "profile": profile.model_dump(),
                 "conversation_context": context,
+                "knowledge_retrieval": knowledge_context,
                 "question": {
                     "id": question_payload.get("id"),
                     "sequence": question_payload.get("sequence"),
