@@ -31,10 +31,18 @@ import {
   X
 } from "@phosphor-icons/react";
 import { apiDelete, apiGet, apiPost } from "./api";
+import { useI18n } from "./i18n/I18nProvider";
 import { ContextMenu, type ContextMenuItem } from "./components/ContextMenu";
 import { appendImportedText, extractTextFromFiles, fileTitle, fileToDataUrl, isImageFile, uploadPastPaperDraftFile, uploadPastPaperFile } from "./fileImport";
 import { MarkdownText } from "./components/MarkdownText";
 import { RightWorkbench, type WorkbenchTab } from "./components/RightWorkbench";
+import { AgentRunCard } from "./features/agentRuns/AgentRunCard";
+import { CreativeModeSettings } from "./features/creative/CreativeModeSettings";
+import { KnowledgeSettings } from "./features/knowledge/KnowledgeSettings";
+import { LanguageSettings } from "./features/settings/LanguageSettings";
+import { MemorySettings } from "./features/memory/MemorySettings";
+import { PastPaperLibrary } from "./features/pastPapers/PastPaperLibrary";
+import { UpdateCenter } from "./features/update/UpdateCenter";
 import type {
   AnsweredQuestion,
   AgentSettingPermissionFeature,
@@ -79,6 +87,7 @@ function MessageItem({
   const container = useRef<HTMLElement>(null);
   const answeredQuestion = message.payload?.answered_question;
   const settingsAction = message.payload?.settings_action;
+  const agentRun = message.payload?.agent_run;
   
   useGSAP(() => {
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -101,6 +110,7 @@ function MessageItem({
       <div className="message-stack">
         {answeredQuestion && <QuestionReviewCard question={answeredQuestion} />}
         {settingsAction && <SettingsActionCard action={settingsAction} onConfirm={onConfirmSettingsAction} />}
+        {agentRun && <AgentRunCard run={agentRun} />}
         <div className="bubble"><MarkdownText content={message.content} /></div>
       </div>
     </article>
@@ -1021,6 +1031,7 @@ function groupSessions(sessions: SessionItem[]) {
 }
 
 export default function App() {
+  const { t } = useI18n();
   const appRef = useRef<HTMLDivElement | null>(null);
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1086,14 +1097,14 @@ export default function App() {
     const today = localDateString();
     const draftSession: SessionItem = {
       id: DRAFT_SESSION_ID,
-      title: "新聊天",
+      title: t("app.newChat"),
       folder_date: today,
       exam_id: profile.exam_id,
       status: "draft",
       draft: true
     };
     return [draftSession, ...sessions.filter((session) => session.id !== DRAFT_SESSION_ID)];
-  }, [pendingNewSession, profile.exam_id, sessions]);
+  }, [pendingNewSession, profile.exam_id, sessions, t]);
   const sessionsByDate = useMemo(() => groupSessions(displaySessions), [displaySessions]);
   const emptyContext = messages.length === 0;
   const quickProviders = pickerProviders(providers, modelConfig.provider_id);
@@ -1870,9 +1881,9 @@ export default function App() {
                 </section>
               ))}
             </div>
-            <button className="settings-button" onClick={() => setSettingsOpen(true)} title="打开设置">
+            <button className="settings-button" onClick={() => setSettingsOpen(true)} title={t("app.settings.open")}>
               <GearSix size={18} />
-              <span>设置</span>
+              <span>{t("app.settings")}</span>
             </button>
           </>
         )}
@@ -2476,6 +2487,7 @@ function SettingsDialog({
   onCustomModelDraftConsumed: () => void;
   onOpenOnboarding: () => void;
 }) {
+  const { t } = useI18n();
   const [draft, setDraft] = useState(profile);
   const [modelDraft, setModelDraft] = useState<ModelConfig>({ ...modelConfig, api_key: "" });
   const [modelRefreshing, setModelRefreshing] = useState(false);
@@ -3340,25 +3352,31 @@ function SettingsDialog({
       .filter((feature): feature is AgentSettingPermissionFeature => Boolean(feature))
   })).filter((group) => group.features.length);
   const settingTabs = [
-    { id: "model", label: "模型", icon: GearSix },
-    { id: "exam", label: "考试", icon: Target },
-    { id: "syllabus", label: "考纲", icon: ListBullets },
-    { id: "tokens", label: "令牌", icon: Brain },
-    { id: "data", label: "数据", icon: Database },
-    { id: "permissions", label: "权限", icon: ShieldCheck },
-    { id: "skills", label: "拓展 Skills", icon: Sparkle },
-    { id: "study", label: "学习", icon: ShieldCheck },
-    { id: "appearance", label: "外观", icon: Moon }
+    { id: "model", label: t("settings.tab.model"), icon: GearSix },
+    { id: "exam", label: t("settings.tab.exam"), icon: Target },
+    { id: "syllabus", label: t("settings.tab.syllabus"), icon: ListBullets },
+    { id: "tokens", label: t("settings.tab.tokens"), icon: Brain },
+    { id: "data", label: t("settings.tab.data"), icon: Database },
+    { id: "knowledge", label: t("settings.tab.knowledge"), icon: Database },
+    { id: "memory", label: t("settings.tab.memory"), icon: Brain },
+    { id: "creative", label: t("settings.tab.creative"), icon: Sparkle },
+    { id: "past-papers", label: t("settings.tab.pastPapers"), icon: ListBullets },
+    { id: "permissions", label: t("settings.tab.permissions"), icon: ShieldCheck },
+    { id: "skills", label: t("settings.tab.skills"), icon: Sparkle },
+    { id: "study", label: t("settings.tab.study"), icon: ShieldCheck },
+    { id: "language", label: t("settings.tab.language"), icon: Moon },
+    { id: "appearance", label: t("settings.tab.appearance"), icon: Moon },
+    { id: "update", label: t("settings.tab.update"), icon: ArrowClockwise }
   ];
   return (
     <div className="modal-backdrop">
       <div className="settings-modal">
         <div className="modal-head">
-          <h2>设置</h2>
+          <h2>{t("settings.title")}</h2>
           <button className="icon-button" onClick={onClose}><X size={18} /></button>
         </div>
         <div className="settings-layout">
-          <nav className="settings-tabs" aria-label="设置分类">
+          <nav className="settings-tabs" aria-label={t("settings.title")}>
             {settingTabs.map((tab) => {
               const Icon = tab.icon;
               return (
@@ -3374,6 +3392,26 @@ function SettingsDialog({
             })}
           </nav>
           <div className="settings-content">
+            <div className="settings-tab-panel" hidden={activeSettingsTab !== "knowledge"}>
+              <SettingSection title="用户知识库">
+                <KnowledgeSettings />
+              </SettingSection>
+            </div>
+            <div className="settings-tab-panel" hidden={activeSettingsTab !== "memory"}>
+              <SettingSection title="分层记忆">
+                <MemorySettings />
+              </SettingSection>
+            </div>
+            <div className="settings-tab-panel" hidden={activeSettingsTab !== "creative"}>
+              <SettingSection title="Pi 创造模式">
+                <CreativeModeSettings />
+              </SettingSection>
+            </div>
+            <div className="settings-tab-panel" hidden={activeSettingsTab !== "past-papers"}>
+              <SettingSection title="真实真题库">
+                <PastPaperLibrary examId={profile.exam_id} />
+              </SettingSection>
+            </div>
             {activeSettingsTab === "model" && (
               <SettingSection title="模型提供商">
                 <div className="inline-row">
@@ -4269,6 +4307,11 @@ function SettingsDialog({
                 <button className="inline-action" onClick={onOpenOnboarding}>重新打开初始化设置</button>
               </SettingSection>
             )}
+            {activeSettingsTab === "language" && (
+              <SettingSection title="界面语言">
+                <LanguageSettings />
+              </SettingSection>
+            )}
             {activeSettingsTab === "appearance" && (
               <SettingSection title="外观">
                 <div className="theme-row">
@@ -4289,12 +4332,19 @@ function SettingsDialog({
                 </label>
               </SettingSection>
             )}
+            {activeSettingsTab === "update" && (
+              <SettingSection title={t("update.title")}>
+                <UpdateCenter />
+              </SettingSection>
+            )}
           </div>
         </div>
         <div className="modal-actions">
-          <button onClick={() => void resetDefaults()}>恢复默认设置</button>
-          <button onClick={onClose}>取消</button>
-          <button className="primary" onClick={() => void saveSettings()}>{activeSettingsTab === "permissions" ? "保存权限" : "保存"}</button>
+          <button onClick={() => void resetDefaults()}>{t("app.restoreDefaults")}</button>
+          <button onClick={onClose}>{t("app.cancel")}</button>
+          {activeSettingsTab !== "memory" && activeSettingsTab !== "creative" && activeSettingsTab !== "language" && activeSettingsTab !== "update" && (
+            <button className="primary" onClick={() => void saveSettings()}>{activeSettingsTab === "permissions" ? t("settings.savePermissions") : t("app.save")}</button>
+          )}
         </div>
       </div>
     </div>

@@ -1,0 +1,340 @@
+name: Release Experimental
+
+# 触发条件：push v*-alpha.* 标签 或 手动 dispatch
+on:
+  push:
+    tags:
+      - "v*-alpha.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v1.0.0-alpha.1); defaults to GITHUB_REF"
+        required: false
+        default: ""
+
+# 权限最小化：只给 contents: write（创建 Release 和上传资源所需）
+permissions:
+  contents: write
+
+jobs:
+  # ---------- 后端 / Python 测试 ----------
+  backend-test:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Verify version consistency
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\release\verify-version.ps1
+
+      - name: Run Python lint
+        run: python -m ruff check backend
+
+      - name: Run Python tests
+        run: python -m pytest tests -q
+
+  # ---------- 前端测试 ----------
+  frontend-test:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run frontend tests
+        working-directory: frontend
+        run: npm run test -- --run
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+  # ---------- Rust / Tauri 测试 ----------
+  rust-test:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cargo check
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      - name: Cargo test
+        run: cargo test --manifest-path src-tauri/Cargo.toml --release
+
+  # ---------- Pi 运行时桥接测试 ----------
+  pi-test:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: runtime/pi-bridge/package-lock.json
+
+      - name: Install pi-bridge dependencies
+        working-directory: runtime/pi-bridge
+        run: npm ci
+
+      - name: Run pi-bridge tests
+        working-directory: runtime/pi-bridge
+        run: npm test
+
+  # ---------- 桌面构建与签名 ----------
+  desktop-build:
+    runs-on: windows-latest
+    needs: [backend-test, frontend-test, rust-test, pi-test]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Verify version consistency before build
+        shell: pwsh
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\release\verify-version.ps1
+
+      # 构建并签名 NSIS 安装包：通过环境变量注入签名私钥与口令，
+      # Tauri updater 会输出 .sig 签名文件并生成 latest.json 更新清单。
+      # 注意：不要在 echo/Write-Host 中输出密钥内容。
+      - name: Build and sign desktop installer
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\desktop\build-desktop.ps1 -SkipInstall
+
+      - name: Stage release assets
+        shell: pwsh
+        run: |
+          $stage = Join-Path $env:RUNNER_TEMP "release-stage"
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+
+          $bundleDir = Join-Path $PWD "src-tauri\target\release\bundle\nsis"
+          if (-not (Test-Path $bundleDir)) {
+            throw "NSIS bundle directory not found: $bundleDir"
+          }
+
+          # 复制安装包与签名
+          $installer = Get-ChildItem -Path $bundleDir -Filter "*-setup.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $installer) {
+            throw "NSIS installer (*-setup.exe) was not produced by the desktop build."
+          }
+          Copy-Item -LiteralPath $installer.FullName -Destination $stage
+
+          $sigFile = "$($installer.FullName).sig"
+          if (Test-Path -LiteralPath $sigFile) {
+            Copy-Item -LiteralPath $sigFile -Destination $stage
+          } else {
+            throw "Updater signature (.sig) was not produced. Check TAURI_SIGNING_PRIVATE_KEY secret."
+          }
+
+          # latest.json 由 Tauri updater 生成在 bundle 目录；不存在则用模板生成
+          $latestJson = Join-Path $bundleDir "latest.json"
+          if (Test-Path -LiteralPath $latestJson) {
+            Copy-Item -LiteralPath $latestJson -Destination $stage
+          } else {
+            $version = (Get-Content -LiteralPath "VERSION" -Raw -Encoding UTF8).Trim()
+            $pubDate = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
+            $installerName = $installer.Name
+            $signature = (Get-Content -LiteralPath $sigFile -Raw -Encoding UTF8).Trim()
+            $manifest = @{
+              version = $version
+              notes = "Lang Drill Agent $version experimental prerelease. See release notes."
+              pub_date = $pubDate
+              platforms = @{
+                "windows-x86_64" = @{
+                  signature = $signature
+                  url = "https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v$version/$installerName"
+                }
+              }
+            }
+            $manifest | ConvertTo-Json -Depth 6 | Out-File -FilePath (Join-Path $stage "latest.json") -Encoding utf8
+          }
+
+          # 校验和：SHA256
+          $checksumLines = @()
+          foreach ($f in (Get-ChildItem -Path $stage -File)) {
+            $hash = (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash.ToLower()
+            $checksumLines += "$hash  $($f.Name)"
+          }
+          $checksumLines | Out-File -FilePath (Join-Path $stage "checksums.sha256") -Encoding ascii
+
+          # Pi 运行时清单
+          $piManifest = Join-Path $PWD "runtime\pi-runtime-manifest.json"
+          if (Test-Path -LiteralPath $piManifest) {
+            Copy-Item -LiteralPath $piManifest -Destination $stage
+          }
+
+          # 发布说明
+          $notes = Join-Path $PWD "release-notes\v$((Get-Content -LiteralPath 'VERSION' -Raw -Encoding UTF8).Trim()).md"
+          if (Test-Path -LiteralPath $notes) {
+            Copy-Item -LiteralPath $notes -Destination $stage
+          }
+
+          Write-Host "Staged artifacts:"
+          Get-ChildItem -Path $stage | Format-Table Name, Length
+
+          # 暴露给后续 step
+          "STAGE_DIR=$stage" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Upload NSIS installer and signature
+        uses: actions/upload-artifact@v4
+        with:
+          name: nsis-installer
+          path: |
+            ${{ env.STAGE_DIR }}/*-setup.exe
+            ${{ env.STAGE_DIR }}/*.sig
+          if-no-files-found: error
+
+      - name: Upload latest.json updater manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: updater-manifest
+          path: ${{ env.STAGE_DIR }}/latest.json
+          if-no-files-found: error
+
+      - name: Upload checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: checksums
+          path: ${{ env.STAGE_DIR }}/checksums.sha256
+          if-no-files-found: error
+
+      - name: Upload Pi runtime manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: pi-runtime-manifest
+          path: ${{ env.STAGE_DIR }}/pi-runtime-manifest.json
+          if-no-files-found: error
+
+      - name: Upload release notes
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: ${{ env.STAGE_DIR }}/v*.md
+          if-no-files-found: error
+
+  # ---------- 创建 GitHub Pre-release ----------
+  release:
+    runs-on: windows-latest
+    # 直接依赖所有测试 job 与桌面构建 job，确保发布前所有 gate 通过
+    needs: [backend-test, frontend-test, rust-test, pi-test, desktop-build]
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all staged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Verify release assets before publishing
+        shell: pwsh
+        run: |
+          # 列出所有下载的产物；不读取密钥
+          Write-Host "Downloaded release assets:"
+          Get-ChildItem -Path release-assets -Recurse | Format-Table FullName, Length
+
+          # 确认关键产物存在
+          $required = @("latest.json", "checksums.sha256", "pi-runtime-manifest.json")
+          foreach ($name in $required) {
+            $found = Get-ChildItem -Path release-assets -Recurse -Filter $name -ErrorAction SilentlyContinue
+            if (-not $found) {
+              throw "Missing required release artifact: $name"
+            }
+          }
+
+          $sigFiles = Get-ChildItem -Path release-assets -Recurse -Filter "*.sig"
+          if (-not $sigFiles) {
+            throw "Missing updater signature (.sig) in release assets."
+          }
+
+          $exeFiles = Get-ChildItem -Path release-assets -Recurse -Filter "*-setup.exe"
+          if (-not $exeFiles) {
+            throw "Missing NSIS installer (*-setup.exe) in release assets."
+          }
+
+          Write-Host "All required release assets verified."
+
+      - name: Read release version
+        id: version
+        shell: pwsh
+        run: |
+          $version = (Get-Content -LiteralPath "VERSION" -Raw -Encoding UTF8).Trim()
+          $tag = "v$version"
+          # 验证 tag 与清单一致
+          $refTag = "${{ github.ref_name }}"
+          if ($refTag -and $refTag -ne "" -and $refTag -ne $tag) {
+            throw "Tag mismatch: github.ref_name=$refTag but VERSION=$version"
+          }
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Create GitHub Pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "Lang Drill Agent ${{ steps.version.outputs.tag }} 实验版 / Experimental / 実験版"
+          body_path: release-notes/v${{ steps.version.outputs.version }}.md
+          files: |
+            release-assets/nsis-installer/*-setup.exe
+            release-assets/nsis-installer/*.sig
+            release-assets/updater-manifest/latest.json
+            release-assets/checksums/checksums.sha256
+            release-assets/pi-runtime-manifest/pi-runtime-manifest.json
+            release-assets/release-notes/v*.md

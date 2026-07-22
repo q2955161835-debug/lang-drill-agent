@@ -23,6 +23,7 @@ class TaskType(str, Enum):
     branch_chat = "branch_chat"
     settings = "settings"
     summary = "summary"
+    agentic_task = "agentic_task"
 
 
 class UserProfile(BaseModel):
@@ -64,6 +65,8 @@ class ChatResponse(BaseModel):
     answered_question: dict[str, Any] | None = None
     token_usage: dict[str, Any]
     learning_stats: dict[str, Any]
+    agent_run: dict[str, Any] | None = None
+    creative_runtime: dict[str, Any] | None = None
 
 
 class ContextSettingsRequest(BaseModel):
@@ -74,6 +77,24 @@ class ContextSettingsRequest(BaseModel):
 class ContextCompressRequest(BaseModel):
     session_id: str
     target_tokens: int | None = Field(default=None, ge=500, le=200_000)
+
+
+class KnowledgeImportRequest(BaseModel):
+    local_path: str = Field(min_length=1, max_length=4096)
+    title: str = Field(default="", max_length=240)
+    language: str = Field(default="", max_length=32)
+
+
+class KnowledgeSearchRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=2000)
+    document_ids: list[str] = Field(default_factory=list)
+    top_k: int = Field(default=8, ge=1, le=50)
+    token_budget: int = Field(default=2000, ge=100, le=20_000)
+    trace_id: str = Field(default="", max_length=240)
+
+
+class KnowledgeReindexRequest(BaseModel):
+    document_id: str = Field(min_length=1, max_length=240)
 
 
 class Question(BaseModel):

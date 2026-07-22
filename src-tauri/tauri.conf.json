@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Lang Drill Agent",
-  "version": "0.1.2",
+  "version": "1.0.0-alpha.1",
   "identifier": "com.langdrill.agent",
   "build": {
     "beforeDevCommand": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ../scripts/desktop/start-frontend-for-tauri.ps1",
@@ -23,11 +23,27 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/q2955161835-debug/lang-drill-agent/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQzRjQ4RjM3NDQ5RkU1RUYKUldUdjVaOUVONC8wMDMwUFZYd2VBQ0phVXRsbFlOTjZhTXJzY3BEVkZScjlHQ2F3VDg1d0lKZWUK",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "category": "Education",
-    "icon": ["icons/icon.ico"],
+    "icon": [
+      "icons/icon.ico"
+    ],
     "shortDescription": "English learning agent for CET practice",
     "longDescription": "Lang Drill Agent is a local-first language learning agent with chat, practice questions, screenshot import workflows, and a local SQLite learning database.",
     "windows": {
@@ -38,8 +54,25 @@
     "resources": {
       "../backend/langdrill_agent/*.py": "app/backend/langdrill_agent/",
       "../backend/langdrill_agent/migrations/": "app/backend/langdrill_agent/migrations/",
+      "../backend/langdrill_agent/past_papers/": "app/backend/langdrill_agent/past_papers/",
+      "../backend/langdrill_agent/creative/": "app/backend/langdrill_agent/creative/",
+      "../backend/langdrill_agent/knowledge/": "app/backend/langdrill_agent/knowledge/",
+      "../backend/langdrill_agent/memory/": "app/backend/langdrill_agent/memory/",
+      "../backend/langdrill_agent/routers/": "app/backend/langdrill_agent/routers/",
+      "../backend/langdrill_agent/runtime/": "app/backend/langdrill_agent/runtime/",
       "../pyproject.toml": "app/pyproject.toml",
-      "../scripts/desktop/start-backend.ps1": "desktop-runtime/start-backend.ps1"
+      "../scripts/desktop/start-backend.ps1": "desktop-runtime/start-backend.ps1",
+      "../scripts/desktop/prepare-pi-runtime.ps1": "desktop-runtime/prepare-pi-runtime.ps1",
+      "../scripts/desktop/install-pi-runtime.ps1": "desktop-runtime/install-pi-runtime.ps1",
+      "../scripts/desktop/repair-pi-runtime.ps1": "desktop-runtime/repair-pi-runtime.ps1",
+      "../runtime/pi-runtime-manifest.json": "desktop-runtime/pi-runtime-manifest.json",
+      "../runtime/bundled-skills/": "desktop-runtime/bundled-skills/",
+      "../runtime/pi-bridge/src/": "desktop-runtime/pi-bridge/src/",
+      "../runtime/pi-bridge/test/": "desktop-runtime/pi-bridge/test/",
+      "../runtime/pi-bridge/package.json": "desktop-runtime/pi-bridge/package.json",
+      "../runtime/pi-bridge/package-lock.json": "desktop-runtime/pi-bridge/package-lock.json",
+      "../runtime/pi-bridge/tsconfig.json": "desktop-runtime/pi-bridge/tsconfig.json",
+      "../runtime/pi-bridge/vitest.config.ts": "desktop-runtime/pi-bridge/vitest.config.ts"
     }
   }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "lang-drill-agent-desktop"
-version = "0.1.2"
+version = "1.0.0-alpha.1"
 description = "Lang Drill Agent desktop shell"
 authors = ["Lang Drill Agent"]
 license = "PolyForm-Noncommercial-1.0.0"
@@ -13,6 +13,8 @@ tauri-build = { version = "2.5.1", features = [] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tauri = { version = "2.9.5", features = [] }
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 [profile.release]
 codegen-units = 1

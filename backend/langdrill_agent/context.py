@@ -5,6 +5,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from typing import Any
 
+from .memory.hooks import MemoryHooks
 from .utils import dumps, estimate_tokens, loads, new_id, today_str
 
 
@@ -120,16 +121,38 @@ class ContextService:
     def prompt_context(self, session_id: str | None) -> dict[str, Any]:
         snapshot = self.session_context_snapshot(session_id, max_messages=120)
         usage = self.usage(session_id)
+        session_scope = "global"
+        if snapshot:
+            session_scope = f"exam:{snapshot.get('session', {}).get('exam_id') or 'global'}"
+        memory_query = " ".join(
+            [
+                str(item.get("content") or "")
+                for item in (snapshot.get("messages", [])[-8:] if snapshot else [])
+            ]
+            + [
+                str(item.get("feedback") or "")
+                for item in (snapshot.get("recent_attempts", [])[:4] if snapshot else [])
+            ]
+        ).strip()
+        memory_context = MemoryHooks(self.conn).recall(
+            memory_query,
+            scope=session_scope,
+        )
         return {
             "context_usage": usage,
             "compressed_summary": snapshot.get("session", {}).get("summary", "") if snapshot else "",
             "conversation": snapshot.get("messages", []) if snapshot else [],
             "recent_attempts": snapshot.get("recent_attempts", []) if snapshot else [],
             "profile": snapshot.get("profile", {}) if snapshot else {},
+            "memory": memory_context.model_dump(mode="json"),
         }
 
     def compress_session(self, session_id: str, target_tokens: int | None = None) -> dict[str, Any]:
         snapshot = self.session_context_snapshot(session_id, max_messages=400)
+        MemoryHooks(self.conn).before_context_compaction(
+            messages=snapshot.get("messages", []) if snapshot else [],
+            scope=f"exam:{snapshot.get('session', {}).get('exam_id') or 'global'}" if snapshot else "global",
+        )
         if not snapshot:
             raise ValueError("会话不存在，无法压缩上下文。")
         raw_text = self._format_snapshot(snapshot)

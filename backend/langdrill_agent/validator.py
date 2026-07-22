@@ -34,3 +34,23 @@ class QuestionValidator:
         if question.difficulty < 0 or question.difficulty > 1:
             raise QuestionValidationError("difficulty 必须在 0 到 1 之间")
         return question
+
+    def validate_source_refs(
+        self,
+        question: Question,
+        allowed_past_paper_question_ids: set[str],
+    ) -> Question:
+        forbidden_claims = {
+            "original_paper_question",
+            "original_exam_question",
+            "verbatim_past_paper",
+        }
+        for source_ref in question.source_refs:
+            if source_ref.get("type") != "past_paper_evidence":
+                continue
+            question_id = str(source_ref.get("question_id") or "")
+            if question_id not in allowed_past_paper_question_ids:
+                raise QuestionValidationError("真题来源引用不在本轮检索证据中")
+            if str(source_ref.get("claim") or "") in forbidden_claims:
+                raise QuestionValidationError("生成题不得声明为真题原题")
+        return question

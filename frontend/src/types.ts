@@ -240,6 +240,7 @@ export type MessagePayload = {
   active_question?: Question | null;
   answered_question?: AnsweredQuestion;
   settings_action?: SettingsAction;
+  agent_run?: import("./features/agentRuns/types").AgentRun;
   source?: string;
   [key: string]: unknown;
 };
@@ -431,6 +432,9 @@ export type PastPaperStatus = {
   description: string;
   source_website: string;
   papers: PastPaper[];
+  source_catalog?: Array<Record<string, unknown>>;
+  remote_count?: number;
+  installed_count?: number;
   selected_paper_ids: string[];
   current_papers: PastPaper[];
   question_types: QuestionTypeOption[];

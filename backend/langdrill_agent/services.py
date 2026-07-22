@@ -18,12 +18,15 @@ from .models import Question, UserProfile
 from .paper_assets import (
     ensure_exam_paper_dirs,
     extract_text_from_file,
+    paper_root,
     paper_slug,
     parse_paper_text,
     relative_display_path,
     source_manifest_text,
     write_parsed_json,
 )
+from .past_papers.legacy_migration import migrate_legacy_manifests
+from .past_papers.repository import PastPaperRepository
 from .utils import dumps, loads, new_id, normalize_api_key, today_str, validate_http_header_value
 
 
@@ -1549,9 +1552,12 @@ class PastPaperService:
     def status(self, exam_id: str | None = None) -> dict[str, Any]:
         profile = ProfileService(self.conn).get()
         target_exam = exam_id or profile.exam_id
-        self.seed_default_papers(target_exam)
+        migrate_legacy_manifests(self.conn, paper_root())
         papers = self._papers(target_exam)
-        selected_ids = self._selected_paper_ids(target_exam)
+        available_ids = {paper["id"] for paper in papers}
+        selected_ids = [
+            paper_id for paper_id in self._selected_paper_ids(target_exam) if paper_id in available_ids
+        ]
         if not selected_ids:
             selected_ids = [paper["id"] for paper in papers[:3]]
         selected_set = set(selected_ids)
@@ -1571,6 +1577,11 @@ class PastPaperService:
             "description": source_info["description"],
             "source_website": source_info["source_website"],
             "papers": papers,
+            "source_catalog": [
+                source.model_dump() for source in PastPaperRepository(self.conn).list_sources(target_exam)
+            ],
+            "remote_count": len(PastPaperRepository(self.conn).list_sources(target_exam)),
+            "installed_count": len(papers),
             "selected_paper_ids": selected_ids,
             "current_papers": current_papers,
             "question_types": question_types,
@@ -1688,7 +1699,6 @@ class PastPaperService:
             )
 
     def select_papers(self, exam_id: str, paper_ids: list[str]) -> dict[str, Any]:
-        self.seed_default_papers(exam_id)
         existing = {paper["id"] for paper in self._papers(exam_id)}
         clean_ids = [paper_id for paper_id in paper_ids if paper_id in existing]
         if not clean_ids and paper_ids:
@@ -1806,24 +1816,12 @@ class PastPaperService:
     def search_import(self, exam_id: str, source_website: str = "") -> dict[str, Any]:
         source_info = self._source_info(exam_id)
         clean_source = source_website.strip() or source_info["source_website"]
-        self.seed_default_papers(exam_id)
-        for year in self.DEFAULT_RECENT_YEARS:
-            paper_id = f"paper_{exam_id}_{year}"
-            self.conn.execute(
-                """
-                UPDATE exam_assets
-                SET source_url=CASE WHEN source_url='' THEN ? ELSE source_url END,
-                    trusted_level='needs_verification'
-                WHERE id=? AND exam_id=?
-                """,
-                (clean_source, paper_id, exam_id),
-            )
         status = self.status(exam_id)
         return {
             **status,
+            "source_website": clean_source,
             "message": (
-                "已按当前考试生成近三年真题搜索导入索引；"
-                "本地版本记录来源网站和题型摘要，完整原文需用户按版权边界手动核验。"
+                "已保留真实来源目录入口；未发现可核验的具体试卷链接时不会虚构年份、套卷或本地真题。"
             ),
         }
 
@@ -1934,6 +1932,40 @@ class PastPaperService:
         }
 
     def _papers(self, exam_id: str) -> list[dict[str, Any]]:
+        documents = PastPaperRepository(self.conn).list_documents(exam_id)
+        papers = [
+            {
+                "id": document.id,
+                "exam_id": document.exam_id,
+                "asset_type": "past_paper",
+                "title": document.title,
+                "year": document.year,
+                "source_url": document.source_url,
+                "local_path": document.raw_path,
+                "trusted_level": (
+                    "verified" if document.status == "ready" else "needs_verification"
+                ),
+                "copyright_boundary": "reference_only",
+                "metadata_json": dumps(
+                    {
+                        "raw_path": document.raw_path,
+                        "parsed_path": document.markdown_path,
+                        "structured_path": document.structured_path,
+                        "parse_status": document.status,
+                        "parser": document.parser,
+                    }
+                ),
+                "created_at": document.created_at,
+                "metadata": {
+                    "raw_path": document.raw_path,
+                    "parsed_path": document.markdown_path,
+                    "structured_path": document.structured_path,
+                    "parse_status": document.status,
+                    "parser": document.parser,
+                },
+            }
+            for document in documents
+        ]
         rows = self.conn.execute(
             """
             SELECT id, exam_id, asset_type, title, year, source_url, local_path,
@@ -1944,12 +1976,18 @@ class PastPaperService:
             """,
             (exam_id,),
         ).fetchall()
-        papers = []
+        known_ids = {paper["id"] for paper in papers}
         for row in rows:
+            if row["id"] in known_ids:
+                continue
             paper = dict(row)
             paper["metadata"] = loads(paper.get("metadata_json", "{}"), {})
             papers.append(paper)
-        return papers
+        return sorted(
+            papers,
+            key=lambda paper: (paper.get("year") or 0, paper.get("created_at") or ""),
+            reverse=True,
+        )
 
     def _selected_paper_ids(self, exam_id: str) -> list[str]:
         row = self.conn.execute(

@@ -29,6 +29,12 @@ jobs:
       - name: Run Python tests
         shell: pwsh
         run: |
+          # tests/ 是提交到仓库的正式契约测试；try/ 是本地调试目录，可不存在。
+          if (Test-Path tests) {
+            python -m pytest tests -q
+          } else {
+            Write-Host "tests/ directory missing; skipping contract test suite."
+          }
           if (Test-Path try) {
             python -m pytest try -q
           } else {

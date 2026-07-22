@@ -11,8 +11,30 @@ from .config import PROJECT_ROOT, load_settings
 import logging
 
 
-SCHEMA_PATH = Path(__file__).resolve().parent / "migrations" / "001_initial.sql"
+MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
+SCHEMA_PATH = MIGRATIONS_DIR / "001_initial.sql"
 logger = logging.getLogger(__name__)
+
+
+def iter_migration_files() -> list[Path]:
+    return sorted(MIGRATIONS_DIR.glob("[0-9][0-9][0-9]_*.sql"))
+
+
+def apply_migrations(conn: sqlite3.Connection) -> list[str]:
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS schema_migrations "
+        "(version TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+    )
+    applied = {row[0] for row in conn.execute("SELECT version FROM schema_migrations")}
+    completed: list[str] = []
+    for path in iter_migration_files():
+        version = path.stem
+        if version in applied:
+            continue
+        conn.executescript(path.read_text(encoding="utf-8"))
+        conn.execute("INSERT INTO schema_migrations(version) VALUES (?)", (version,))
+        completed.append(version)
+    return completed
 
 
 def prepare_user_database_path(db_path: Path | None = None) -> Path:
@@ -58,7 +80,7 @@ def transaction(db_path: Path | None = None) -> Iterator[sqlite3.Connection]:
 def init_db(db_path: Path | None = None) -> Path:
     target = prepare_user_database_path(db_path)
     with transaction(target) as conn:
-        conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+        apply_migrations(conn)
         ensure_schema_columns(conn)
         seed_prompt_modules(conn)
     logger.info("initialized database", extra={"db_path": str(target)})

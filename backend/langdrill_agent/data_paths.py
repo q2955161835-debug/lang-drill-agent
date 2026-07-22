@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -8,9 +9,7 @@ from typing import Any
 
 from .config import PROJECT_ROOT, env_file_path, load_settings
 from .db import init_db, transaction
-from .paper_assets import BUILTIN_PAPER_EXAM_IDS
-from .services import PastPaperService, SourceService
-from .utils import dumps
+from .services import SourceService
 
 
 def _data_env_file_path() -> Path:
@@ -30,6 +29,7 @@ class DataPathService:
             "question_database_dir": str(db_path.parent),
             "db_path": str(db_path),
             "log_dir": str(settings.log_dir),
+            "knowledge_dir": str(settings.user_data_dir / "knowledge"),
             "project_data_dir": str(PROJECT_ROOT / "data"),
             "test_data_dir": str(PROJECT_ROOT / "测试数据"),
             "db_exists": db_path.exists(),
@@ -64,6 +64,16 @@ class DataPathService:
             else:
                 self._initialize_default_database(target_db)
             self._ensure_default_reference_data(target_db)
+            self._copy_knowledge_assets(
+                settings.user_data_dir,
+                target_root,
+                overwrite=overwrite,
+            )
+            self._rewrite_knowledge_asset_paths(
+                target_db,
+                settings.user_data_dir,
+                target_root,
+            )
 
         self._write_env(
             {
@@ -157,17 +167,58 @@ class DataPathService:
     def _ensure_default_reference_data(self, db_path: Path) -> None:
         with transaction(db_path) as conn:
             SourceService(conn).seed_common_sources()
-            service = PastPaperService(conn)
-            for exam_id in BUILTIN_PAPER_EXAM_IDS:
-                service.seed_default_papers(exam_id)
-                selected = [f"paper_{exam_id}_{year}" for year in PastPaperService.DEFAULT_RECENT_YEARS]
-                conn.execute(
-                    """
-                    INSERT OR IGNORE INTO app_settings (key, value_json, updated_at)
-                    VALUES (?, ?, CURRENT_TIMESTAMP)
-                    """,
-                    (f"past_papers.selected.{exam_id}", dumps({"paper_ids": selected})),
-                )
+
+    def _copy_knowledge_assets(
+        self,
+        source_root: Path,
+        target_root: Path,
+        *,
+        overwrite: bool,
+    ) -> None:
+        source_dir = source_root / "knowledge"
+        if not source_dir.exists():
+            return
+        target_dir = target_root / "knowledge"
+        for source_path in source_dir.rglob("*"):
+            relative = source_path.relative_to(source_dir)
+            target_path = target_dir / relative
+            if source_path.is_dir():
+                target_path.mkdir(parents=True, exist_ok=True)
+                continue
+            if target_path.exists() and not overwrite:
+                raise ValueError(f"目标知识库文件已存在：{target_path}")
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_path, target_path)
+
+    def _rewrite_knowledge_asset_paths(
+        self,
+        db_path: Path,
+        source_root: Path,
+        target_root: Path,
+    ) -> None:
+        source_root = source_root.resolve()
+        target_root = target_root.resolve()
+        with transaction(db_path) as conn:
+            rows = conn.execute(
+                "SELECT id, raw_path, parsed_path FROM knowledge_documents"
+            ).fetchall()
+            for row in rows:
+                updates: dict[str, str] = {}
+                for column in ("raw_path", "parsed_path"):
+                    raw_path = str(row[column] or "").strip()
+                    if not raw_path:
+                        continue
+                    try:
+                        relative = Path(raw_path).resolve().relative_to(source_root)
+                    except (OSError, ValueError):
+                        continue
+                    updates[column] = str(target_root / relative)
+                if updates:
+                    assignments = ", ".join(f"{key}=?" for key in updates)
+                    conn.execute(
+                        f"UPDATE knowledge_documents SET {assignments}, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                        [*updates.values(), row["id"]],
+                    )
 
     def _backup_sqlite_database(self, source_db: Path, target_db: Path, *, overwrite: bool) -> None:
         if target_db.exists() and not overwrite:
@@ -192,6 +243,8 @@ class DataPathService:
             "model_calls",
             "syllabus_sources",
             "exam_assets",
+            "knowledge_documents",
+            "knowledge_chunks",
         ]
         counts = {table: 0 for table in tables}
         if not db_path.exists():

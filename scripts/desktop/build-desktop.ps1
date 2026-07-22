@@ -14,6 +14,17 @@ $FrontendDir = Join-Path $Root "frontend"
 $TauriConfig = Join-Path $Root "src-tauri\tauri.conf.json"
 $TauriBin = Join-Path $FrontendDir "node_modules\.bin\tauri.cmd"
 
+$PiRuntimeManifest = Join-Path $Root "runtime\pi-runtime-manifest.json"
+if (Test-Path -LiteralPath $PiRuntimeManifest -PathType Leaf) {
+    Write-Host "Verifying Pi runtime manifest before desktop build..."
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "prepare-pi-runtime.ps1") -VerifyOnly
+    if ($LASTEXITCODE -ne 0) {
+        throw "Pi runtime manifest verification failed; refusing to build desktop installer."
+    }
+} else {
+    Write-Host "Pi runtime manifest not found; building desktop without creative runtime payload."
+}
+
 $npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
 if (-not $npm) {
     $npm = Get-Command npm -ErrorAction SilentlyContinue

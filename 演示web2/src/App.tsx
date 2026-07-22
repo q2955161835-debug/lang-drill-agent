@@ -39,9 +39,9 @@ type ThemeChoice = "system" | "light" | "dark";
 type ResolvedTheme = "light" | "dark";
 
 const GITHUB_URL = "https://github.com/q2955161835-debug/lang-drill-agent";
-const DOWNLOAD_VERSION = "v0.1.2";
+const DOWNLOAD_VERSION = "v1.0.0-alpha.1";
 const DOWNLOAD_URL =
-  "https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v0.1.2/Lang.Drill.Agent_0.1.2_x64-setup.exe";
+  "https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v1.0.0-alpha.1/Lang.Drill.Agent_1.0.0-alpha.1_x64-setup.exe";
 
 const THEME_OPTIONS: Array<{ value: ThemeChoice; label: string }> = [
   { value: "system", label: "跟随系统" },
@@ -943,8 +943,8 @@ function InstallSection() {
           <span className="section-eyebrow">06 · Install</span>
           <h2>复习策略可追踪</h2>
           <p>
-            推荐安装 Windows 桌面版体验完整能力：掌握度分、错题权重和间隔复习窗口会随每次作答更新，下一轮优先召回最该巩固的词和题。
-            当前版本 {DOWNLOAD_VERSION} 修复旧版残留安装记录和缺少 py.exe 时的启动失败；内测未签名安装包首次运行可能触发 Windows SmartScreen 提示，请选择"仍要运行"。
+            推荐安装 Windows 桌面版体验完整能力：掌握度分、错题权重和间隔复习窗口会随每次作答更新，下一轮优先召回最应该巩固的词和题。
+            当前版本 {DOWNLOAD_VERSION} 为实验版（Experimental），首次集成分层记忆、知识库 RAG 引用、Agent 计划时间线、Pi 创造模式、真实真题检索与蒸馏、三语 UI 和应用内签名更新中心；内测未签名安装包首次运行可能触发 Windows SmartScreen 提示，请选择"仍要运行"。
           </p>
           <div className="install-warning">
             <Warning size={16} weight="fill" />

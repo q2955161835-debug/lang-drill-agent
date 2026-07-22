@@ -1,0 +1,61 @@
+{
+  "manifest_version": 1,
+  "runtime_version": "0.1.0",
+  "runtime_name": "pi-creative-runtime",
+  "description": "Bundled, relocatable Pi creative runtime for Lang Drill Agent desktop builds. Prepared and hash-verified by scripts/desktop/prepare-pi-runtime.ps1 before the NSIS installer is repacked.",
+  "node": {
+    "version": "20.18.0",
+    "flavor": "node-win-x64",
+    "downloads": {
+      "x86_64-windows": {
+        "url": "https://nodejs.org/dist/v20.18.0/node-v20.18.0-win-x64.zip",
+        "mirror_url": "https://mirrors.aliyun.com/nodejs-release/v20.18.0/node-v20.18.0-win-x64.zip",
+        "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "sha256_source": "pending_verification",
+        "sha256_verified": false
+      }
+    }
+  },
+  "pi": {
+    "package": "@earendil-works/pi-coding-agent",
+    "version": "0.80.10",
+    "extra_packages": [
+      "@earendil-works/pi-ai@0.80.10",
+      "typebox@1.1.38"
+    ]
+  },
+  "bridge": {
+    "root": "runtime/pi-bridge",
+    "entrypoint": "runtime/pi-bridge/src/index.ts",
+    "package": "runtime/pi-bridge/package.json",
+    "build_command": "npm run build",
+    "test_command": "npm test"
+  },
+  "platforms": [
+    "x86_64-windows"
+  ],
+  "arches": [
+    "x86_64"
+  ],
+  "install_targets": {
+    "windows": {
+      "runtime_dir": "%LOCALAPPDATA%\\Lang Drill Agent\\runtime\\pi",
+      "status_dir": "%APPDATA%\\Lang Drill Agent\\pi-runtime",
+      "log_dir": "%APPDATA%\\Lang Drill Agent\\logs"
+    }
+  },
+  "bundled_skills": [
+    {
+      "id": "superpowers",
+      "manifest_path": "runtime/bundled-skills/superpowers/manifest.json",
+      "origin_commit": "d884ae04edebef577e82ff7c4e143debd0bbec99",
+      "license": "MIT"
+    }
+  ],
+  "verification": {
+    "archive_sha256_must_match": true,
+    "bundled_skill_files_must_match": true,
+    "bridge_entrypoint_must_exist": true,
+    "fail_build_on_mismatch": true
+  }
+}
