@@ -21,6 +21,40 @@ const STATUS_LABELS: Record<AgentRun["status"], string> = {
   cancelled: "已取消",
 };
 
+const EVENT_LABELS: Record<string, string> = {
+  plan_replaced: "计划已保存",
+  planning_completed: "规划已完成",
+  planning_fallback: "规划已使用安全兜底",
+  step_claimed: "步骤已领取",
+  step_completed: "步骤已完成",
+  step_failed: "步骤失败",
+  step_retry_scheduled: "步骤等待重试",
+  tool_call_recorded: "工具调用已记录",
+  tool_call_completed: "工具调用已完成",
+  tool_call_failed: "工具调用失败",
+  tool_call_reused: "已复用持久化工具结果",
+  approval_requested: "等待审批",
+  paused: "任务已暂停",
+  resumed: "任务已恢复",
+  cancelled: "任务已取消",
+  replan_required: "需要重新规划",
+  run_completed: "任务已完成",
+};
+
+const RISK_LABELS: Record<string, string> = {
+  low: "低风险",
+  medium: "中风险",
+  high: "高风险",
+  critical: "严重风险",
+};
+
+const APPROVAL_STATUS_LABELS: Record<string, string> = {
+  pending: "等待审批",
+  approved: "已批准",
+  rejected: "已拒绝",
+  expired: "已过期",
+};
+
 function evidenceText(evidence: Record<string, unknown>): string {
   if (!Object.keys(evidence).length) return "";
   return JSON.stringify(evidence);
@@ -60,7 +94,7 @@ export function AgentRunCard({
   const runStatus = detail?.run.status ?? run.status;
 
   useEffect(() => {
-    if (!detail || ["completed", "failed", "cancelled"].includes(runStatus)) {
+    if (!detail || !["queued", "running"].includes(runStatus)) {
       return undefined;
     }
     return api.subscribe(run.id, () => {
@@ -162,14 +196,18 @@ export function AgentRunCard({
             <div className="agent-run-audit">
               <strong>审批与风险</strong>
               {approvals.map((approval) => (
-                <span key={approval.id}>{approval.capability} · {approval.risk_level} · {approval.status}</span>
+                <span key={approval.id}>
+                  {approval.capability} · {RISK_LABELS[approval.risk_level] ?? approval.risk_level} · {APPROVAL_STATUS_LABELS[approval.status] ?? approval.status}
+                </span>
               ))}
             </div>
           )}
           {recentEvents.length > 0 && (
             <div className="agent-run-audit">
               <strong>最近事件</strong>
-              {recentEvents.map((event) => <span key={event.id}>{event.event_type}</span>)}
+              {recentEvents.map((event) => (
+                <span key={event.id}>{EVENT_LABELS[event.event_type] ?? event.event_type}</span>
+              ))}
             </div>
           )}
           {currentRun.error_code && <p className="agent-run-error">{currentRun.error_code}</p>}

@@ -88,7 +88,22 @@ const pausedDetail: AgentRunDetail = {
     },
   ],
   tool_calls: [],
-  approvals: [],
+  approvals: [
+    {
+      id: "approval-1",
+      run_id: "run-1",
+      step_id: "step-2",
+      tool_call_id: null,
+      capability: "write_report",
+      risk_level: "medium",
+      status: "pending",
+      request_payload: {},
+      decision: {},
+    },
+  ],
+  events: [
+    { id: 1, event_type: "paused", payload: {} },
+  ],
 };
 
 function createApi(): AgentRunApi {
@@ -115,6 +130,8 @@ describe("AgentRunCard", () => {
     expect(screen.getByText("生成报告")).toBeTruthy();
     expect(screen.getByText("documents.read")).toBeTruthy();
     expect(screen.getByText(/a.md/)).toBeTruthy();
+    expect(screen.getByText("write_report · 中风险 · 等待审批")).toBeTruthy();
+    expect(screen.getByText("任务已暂停")).toBeTruthy();
   });
 
   it("invokes resume and refreshes persisted detail", async () => {
