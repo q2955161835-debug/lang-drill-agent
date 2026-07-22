@@ -22,6 +22,7 @@ from .db import init_db, transaction
 from .logging_config import configure_logging
 from .learning_stats import LearningStatsService
 from .knowledge.context import build_knowledge_context
+from .memory.hooks import MemoryHooks
 from .models import (
     AddCustomProviderRequest,
     AgentSettingsPermissionRequest,
@@ -706,6 +707,10 @@ def _assemble_runtime_pack(
             token_budget=1500,
             trace_id=session_id or "",
         ),
+        "memory": MemoryHooks(conn).recall(
+            user_content,
+            scope=f"exam:{profile.exam_id}",
+        ).model_dump(mode="json"),
         **(extra_context or {}),
     }
     pack = PromptAssembler(PromptRegistry(conn)).assemble(
@@ -2212,6 +2217,12 @@ def chat(request: ChatRequest) -> ChatResponse:
             "assistant",
             assistant_content,
             assistant_payload,
+        )
+        MemoryHooks(conn).on_turn_end(
+            user=visible_content or request.content or "图片输入",
+            assistant=assistant_content,
+            scope=f"exam:{ProfileService(conn).get().exam_id}",
+            evidence_ref=f"message:{msg_id}",
         )
         return ChatResponse(
             session_id=session_id,

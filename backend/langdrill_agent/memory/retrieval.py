@@ -93,9 +93,10 @@ class MemoryRetrievalService:
         scope: str = "global",
         token_budget: int = 400,
         as_of: str = "",
+        categories: list[str] | None = None,
     ) -> MemoryRetrievalResult:
         filters, params = _validity_filters(
-            categories=["core", "profile", "preference"],
+            categories=categories or ["core", "profile", "preference"],
             scope=scope,
             as_of=as_of,
         )

@@ -40,10 +40,20 @@ class MemoryContextAssembler:
             embedding_config=embedding_config,
         )
         core_budget = min(max(query.token_budget // 3, 1), query.token_budget)
-        core = service.build_core(
-            scope=query.scope,
-            token_budget=core_budget,
-            as_of=query.as_of,
+        core_categories = ["core", "profile", "preference"]
+        if query.categories:
+            core_categories = [
+                category for category in core_categories if category in query.categories
+            ]
+        core = (
+            service.build_core(
+                scope=query.scope,
+                token_budget=core_budget,
+                as_of=query.as_of,
+                categories=core_categories,
+            )
+            if core_categories
+            else MemoryRetrievalResult(mode="core")
         )
         recall = service.retrieve(
             query.model_copy(update={"token_budget": max(1, query.token_budget - core.token_count)})

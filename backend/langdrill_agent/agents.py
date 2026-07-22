@@ -8,6 +8,7 @@ from typing import Any
 from .algorithm import MasteryInputs, mastery_score, next_review_at
 from .context import ContextService
 from .knowledge.context import build_knowledge_context
+from .memory.hooks import MemoryHooks
 from .models import AuthoredQuestionSet, EvaluationResult, Question, TaskType
 from .past_papers.retrieval import PastPaperQuery, PastPaperRetrievalService
 from .past_papers.scheduler import (
@@ -73,6 +74,11 @@ class OrchestratorAgent:
             (dumps(plan), (content.strip() or "日常学习")[:18], session_id),
         )
 
+        memory_context = MemoryHooks(self.conn).recall(
+            content or "daily learning plan",
+            scope=f"exam:{profile.exam_id}",
+            token_budget=800,
+        )
         pack = self.assembler.assemble(
             task_type="daily_drill",
             exam_id=profile.exam_id,
@@ -81,6 +87,7 @@ class OrchestratorAgent:
                 "task_type": TaskType.daily_drill.value,
                 "profile": profile.model_dump(exclude={"global_user_prompt"}),
                 "daily_plan": plan,
+                "memory": memory_context.model_dump(mode="json"),
             },
             user_content=content,
             allow_global_user_prompt=False,
@@ -252,6 +259,12 @@ class QuestionAuthorAgent:
         )
         exam_style_evidence = [item.model_dump() for item in paper_evidence.items]
         distilled_exam_patterns = self._distilled_exam_patterns(profile.exam_id)
+        memory_context = MemoryHooks(self.conn).recall(
+            knowledge_query or requested_content or profile.exam_name,
+            scope=f"exam:{profile.exam_id}",
+            categories=["learning_weakness", "profile", "preference", "temporal"],
+            token_budget=800,
+        )
         schedule_decision = self._schedule_targets(
             session_id=session_id,
             exam_id=profile.exam_id,
@@ -291,6 +304,7 @@ class QuestionAuthorAgent:
                 "exam_style_evidence": exam_style_evidence,
                 "distilled_exam_patterns": distilled_exam_patterns,
                 "knowledge_retrieval": knowledge_context,
+                "memory": memory_context.model_dump(mode="json"),
                 "question_flow": "先生成完整题组并持久化，再逐题取出展示。",
                 "quality_rules": [
                     "优先覆盖用户输入、截图导入、到期复习和低掌握度知识点。",
@@ -1234,6 +1248,13 @@ class EvaluatorTutorAgent:
             ),
         )
         self._update_knowledge_mastery(question_payload, score)
+        MemoryHooks(self.conn).on_attempt(
+            session_id=session_id,
+            is_correct=is_correct,
+            knowledge_tags=[str(tag) for tag in question_payload.get("knowledge_tags", [])],
+            question_id=str(question_payload.get("id") or attempt_id),
+            scope=f"exam:{ProfileService(self.conn).get().exam_id}",
+        )
         return EvaluationResult(
             is_correct=is_correct,
             feedback=feedback,
@@ -1278,6 +1299,7 @@ class EvaluatorTutorAgent:
     ) -> str:
         profile = ProfileService(self.conn).get()
         context = ContextService(self.conn).prompt_context(session_id)
+        memory_context = context.pop("memory")
         knowledge_query = " ".join(
             [
                 str(tag) for tag in question_payload.get("knowledge_tags", [])
@@ -1301,6 +1323,7 @@ class EvaluatorTutorAgent:
                 "profile": profile.model_dump(),
                 "conversation_context": context,
                 "knowledge_retrieval": knowledge_context,
+                "memory": memory_context,
                 "question": {
                     "id": question_payload.get("id"),
                     "sequence": question_payload.get("sequence"),

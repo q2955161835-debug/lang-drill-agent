@@ -74,7 +74,16 @@ class AgentRunRepository:
         )
         if cursor.rowcount == 0:
             raise KeyError(run_id)
-        return self.get(run_id)
+        run = self.get(run_id)
+        if normalized_status is RunStatus.completed:
+            from ..memory.hooks import MemoryHooks
+
+            MemoryHooks(self.conn).on_agent_run_complete(
+                run_id=run.id,
+                goal=run.goal or run.task_type,
+                outcome="completed",
+            )
+        return run
 
     def append_event(
         self,

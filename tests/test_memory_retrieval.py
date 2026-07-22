@@ -113,6 +113,33 @@ def test_core_budget_prefers_pinned_high_confidence(tmp_path: Path) -> None:
         assert any(item.pinned for item in context.items)
 
 
+def test_context_category_allowlist_also_filters_core_memory(tmp_path: Path) -> None:
+    db_path = tmp_path / "memory.db"
+    init_db(db_path)
+
+    with connect(db_path) as conn:
+        repo = MemoryRepository(conn)
+        profile = _add(
+            repo,
+            content="User profile says concise explanations are preferred",
+            category="profile",
+        )
+        weakness = _add(
+            repo,
+            content="User repeatedly struggles with concise conditional clauses",
+            category="learning_weakness",
+        )
+        context = MemoryContextAssembler(conn).build(
+            MemoryRetrievalQuery(
+                text="concise conditional clauses",
+                categories=["learning_weakness"],
+            )
+        )
+
+        assert {item.id for item in context.items} == {weakness.id}
+        assert profile.id not in {item.id for item in context.items}
+
+
 def test_recall_context_is_structured_derived_memory(tmp_path: Path) -> None:
     db_path = tmp_path / "memory.db"
     init_db(db_path)
