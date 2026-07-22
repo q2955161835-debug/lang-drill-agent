@@ -54,6 +54,12 @@
     "resources": {
       "../backend/langdrill_agent/*.py": "app/backend/langdrill_agent/",
       "../backend/langdrill_agent/migrations/": "app/backend/langdrill_agent/migrations/",
+      "../backend/langdrill_agent/past_papers/": "app/backend/langdrill_agent/past_papers/",
+      "../backend/langdrill_agent/creative/": "app/backend/langdrill_agent/creative/",
+      "../backend/langdrill_agent/knowledge/": "app/backend/langdrill_agent/knowledge/",
+      "../backend/langdrill_agent/memory/": "app/backend/langdrill_agent/memory/",
+      "../backend/langdrill_agent/routers/": "app/backend/langdrill_agent/routers/",
+      "../backend/langdrill_agent/runtime/": "app/backend/langdrill_agent/runtime/",
       "../pyproject.toml": "app/pyproject.toml",
       "../scripts/desktop/start-backend.ps1": "desktop-runtime/start-backend.ps1",
       "../scripts/desktop/prepare-pi-runtime.ps1": "desktop-runtime/prepare-pi-runtime.ps1",
