@@ -23,6 +23,7 @@ class TaskType(str, Enum):
     branch_chat = "branch_chat"
     settings = "settings"
     summary = "summary"
+    agentic_task = "agentic_task"
 
 
 class UserProfile(BaseModel):
