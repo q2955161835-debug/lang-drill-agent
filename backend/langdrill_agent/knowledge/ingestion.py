@@ -12,6 +12,7 @@ from ..paper_assets import extract_text_from_file
 from ..runtime.models import AgentRunRecord, RunStatus
 from ..runtime.repository import AgentRunRepository
 from .chunking import ChunkingConfig, chunk_markdown
+from .embeddings import EmbeddingIndexService, embedding_runtime_from_env
 from .models import DocumentStatus
 from .repository import KnowledgeRepository
 
@@ -92,11 +93,29 @@ class KnowledgeIngestionService:
             run_repo.append_event(run.id, "progress", {"percent": 60})
 
             chunks = chunk_markdown(normalized, self.chunking_config)
-            knowledge_repo.upsert_chunks(document.id, chunks)
+            indexed_chunks = knowledge_repo.upsert_chunks(document.id, chunks)
+            embedding_mode = "fts"
+            embedding_count = 0
+            try:
+                embedding_config, embedding_provider = embedding_runtime_from_env()
+                if embedding_config.enabled and embedding_provider is not None:
+                    embedding_count = EmbeddingIndexService(self.conn).index_chunks(
+                        embedding_provider,
+                        indexed_chunks,
+                        embedding_config,
+                    )
+                    embedding_mode = "hybrid"
+            except Exception:
+                embedding_mode = "fts_fallback"
             run_repo.append_event(
                 run.id,
                 "progress",
-                {"percent": 90, "chunk_count": len(chunks)},
+                {
+                    "percent": 90,
+                    "chunk_count": len(chunks),
+                    "embedding_count": embedding_count,
+                    "search_mode": embedding_mode,
+                },
             )
 
             raw_staging.replace(raw_path)

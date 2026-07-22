@@ -7,7 +7,14 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from ..utils import dumps, new_id
+from ..utils import dumps, loads, new_id
+from .embeddings import (
+    EmbeddingConfig,
+    EmbeddingProvider,
+    cosine_similarity,
+    maximal_marginal_relevance,
+    reciprocal_rank_fusion,
+)
 
 _QUERY_TOKEN = re.compile(r"[\w\u3400-\u9fff]+", re.UNICODE)
 
@@ -46,8 +53,16 @@ class RetrievalResult(BaseModel):
 
 
 class KnowledgeRetrievalService:
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        embedding_provider: EmbeddingProvider | None = None,
+        embedding_config: EmbeddingConfig | None = None,
+    ) -> None:
         self.conn = conn
+        self.embedding_provider = embedding_provider
+        self.embedding_config = embedding_config or EmbeddingConfig()
 
     def search(self, query: RetrievalQuery) -> list[RetrievedChunk]:
         match_expression = _fts_match_expression(query.text)
@@ -98,11 +113,93 @@ class KnowledgeRetrievalService:
         return injected
 
     def search_result(self, query: RetrievalQuery) -> RetrievalResult:
-        return RetrievalResult(mode="fts", items=self.search(query))
+        fts_items = self.search(query)
+        if not self.embedding_config.enabled or self.embedding_provider is None:
+            return RetrievalResult(mode="fts", items=fts_items)
+        try:
+            query_vectors = self.embedding_provider.embed([query.text])
+        except Exception:
+            return RetrievalResult(mode="fts", items=fts_items)
+        if len(query_vectors) != 1:
+            return RetrievalResult(mode="fts", items=fts_items)
+        semantic_items = self._semantic_candidates(query, query_vectors[0])
+        if not semantic_items:
+            return RetrievalResult(mode="fts", items=fts_items)
+        fused = reciprocal_rank_fusion(
+            [
+                [item.id for item in fts_items],
+                [item.id for item in semantic_items],
+            ]
+        )
+        by_id = {item.id: item for item in [*fts_items, *semantic_items]}
+        ranked = [
+            by_id[item_id].model_copy(update={"score": score})
+            for item_id, score in fused
+            if item_id in by_id
+        ]
+        injected = self._apply_token_budget(ranked, query.token_budget)
+        self._record_event(query, ranked, injected)
+        return RetrievalResult(mode="hybrid", items=injected)
 
-    def _row_to_result(self, row: sqlite3.Row) -> RetrievedChunk:
-        rank = float(row["rank"] or 0.0)
-        score = 1.0 / (1.0 + math.fabs(rank))
+    def _semantic_candidates(
+        self,
+        query: RetrievalQuery,
+        query_vector: list[float],
+    ) -> list[RetrievedChunk]:
+        filters = ["e.provider = ?", "d.status = 'ready'", "e.content_hash = c.content_hash"]
+        params: list[object] = [self.embedding_provider.identity]
+        if query.document_ids:
+            placeholders = ",".join("?" for _ in query.document_ids)
+            filters.append(f"c.document_id IN ({placeholders})")
+            params.extend(query.document_ids)
+        rows = self.conn.execute(
+            f"""
+            SELECT
+              c.id, c.document_id, c.heading, c.page_start, c.page_end,
+              c.content, c.content_hash, c.token_count,
+              d.title AS document_title, d.source_name,
+              e.vector_json
+            FROM knowledge_embeddings e
+            JOIN knowledge_chunks c ON c.id = e.chunk_id
+            JOIN knowledge_documents d ON d.id = c.document_id
+            WHERE {' AND '.join(filters)}
+            """,
+            params,
+        ).fetchall()
+        candidates: dict[str, RetrievedChunk] = {}
+        vectors: dict[str, list[float]] = {}
+        for row in rows:
+            vector = loads(row["vector_json"], [])
+            score = cosine_similarity(query_vector, vector)
+            if score <= 0:
+                continue
+            candidates[row["id"]] = self._row_to_result(row, score=score)
+            vectors[row["id"]] = vector
+        selected_ids = maximal_marginal_relevance(
+            query_vector=query_vector,
+            candidates=vectors,
+            limit=query.top_k,
+        )
+        return [candidates[item_id] for item_id in selected_ids]
+
+    @staticmethod
+    def _apply_token_budget(
+        ranked: list[RetrievedChunk],
+        token_budget: int,
+    ) -> list[RetrievedChunk]:
+        injected: list[RetrievedChunk] = []
+        consumed_tokens = 0
+        for item in ranked:
+            if injected and consumed_tokens + item.token_count > token_budget:
+                continue
+            injected.append(item)
+            consumed_tokens += item.token_count
+        return injected
+
+    def _row_to_result(self, row: sqlite3.Row, *, score: float | None = None) -> RetrievedChunk:
+        if score is None:
+            rank = float(row["rank"] or 0.0)
+            score = 1.0 / (1.0 + math.fabs(rank))
         return RetrievedChunk(
             id=row["id"],
             document_id=row["document_id"],
