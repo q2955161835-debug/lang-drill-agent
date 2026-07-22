@@ -1,6 +1,6 @@
 {
   "name": "langdrill-agent-web",
-  "version": "1.0.0-experimental.1",
+  "version": "1.0.0-alpha.1",
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",

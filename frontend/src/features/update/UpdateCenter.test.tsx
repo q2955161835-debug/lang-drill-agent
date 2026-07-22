@@ -15,7 +15,7 @@ import {
 
 function makeInfo(overrides: Partial<UpdateInfo> = {}): UpdateInfo {
   return {
-    version: "1.0.0-experimental.1",
+    version: "1.0.0-alpha.1",
     currentVersion: "0.1.2",
     releaseNotes: "",
     downloadSize: 0,

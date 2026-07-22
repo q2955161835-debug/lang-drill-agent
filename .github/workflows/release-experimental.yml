@@ -1,14 +1,14 @@
 name: Release Experimental
 
-# 触发条件：push v*-experimental.* 标签 或 手动 dispatch
+# 触发条件：push v*-alpha.* 标签 或 手动 dispatch
 on:
   push:
     tags:
-      - "v*-experimental.*"
+      - "v*-alpha.*"
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to release (e.g. v1.0.0-experimental.1); defaults to GITHUB_REF"
+        description: "Tag to release (e.g. v1.0.0-alpha.1); defaults to GITHUB_REF"
         required: false
         default: ""
 

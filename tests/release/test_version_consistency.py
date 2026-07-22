@@ -8,7 +8,7 @@
 - src-tauri/tauri.conf.json
 - 演示web2/src/demoVersion.ts（实验版元数据）
 
-发布说明 release-notes/v1.0.0-experimental.1.md 的 H1 标题必须同时包含
+发布说明 release-notes/v1.0.0-alpha.1.md 的 H1 标题必须同时包含
 `实验版`、`Experimental` 和 `実験版`，以体现三语实验版定位。
 """
 
@@ -31,10 +31,10 @@ TAURI_CONF = REPO_ROOT / "src-tauri" / "tauri.conf.json"
 DEMO_VERSION_TS = REPO_ROOT / "演示web2" / "src" / "demoVersion.ts"
 RELEASE_NOTES_DIR = REPO_ROOT / "release-notes"
 
-EXPECTED_VERSION = "1.0.0-experimental.1"
+EXPECTED_VERSION = "1.0.0-alpha.1"
 
 # SemVer 校验：MAJOR.MINOR.PATCH-prerelease.identifier
-# 接受 1.0.0-experimental.1 这类带预发布标签的实验版本号。
+# 接受 1.0.0-alpha.1 这类带预发布标签的实验版本号。
 SEMVER_RE = re.compile(
     r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
     r"(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?"
