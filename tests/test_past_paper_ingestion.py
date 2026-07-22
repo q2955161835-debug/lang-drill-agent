@@ -2,7 +2,9 @@ from pathlib import Path
 
 from langdrill_agent.db import connect, init_db
 from langdrill_agent.past_papers.ingestion import PastPaperIngestionService
+from langdrill_agent.past_papers.markdown import parse_paper_markdown
 from langdrill_agent.past_papers.models import PaperSourceInput
+from langdrill_agent.past_papers.repository import PastPaperRepository
 from langdrill_agent.past_papers.sources import DownloadReceipt
 from langdrill_agent.runtime.repository import AgentRunRepository
 
@@ -23,6 +25,13 @@ class StubDownloader:
             bytes_downloaded=len(self.content),
             mime_type="application/pdf",
         )
+
+
+def _extractor(_path: Path, **_kwargs) -> tuple[str, str]:
+    return (
+        "# Reading\n1. What is the main idea?\nA. First\nB. Second\nAnswer: B\n",
+        "test-parser",
+    )
 
 
 def _source() -> PaperSourceInput:
@@ -47,6 +56,7 @@ def test_sync_does_not_redownload_same_hash(tmp_path: Path) -> None:
             conn,
             papers_root=tmp_path / "library",
             downloader=downloader,
+            extractor=_extractor,
         )
         first = service.sync_one(_source())
         second = service.sync_one(_source())
@@ -66,6 +76,7 @@ def test_sync_records_resumable_job_stages(tmp_path: Path) -> None:
             conn,
             papers_root=tmp_path / "library",
             downloader=StubDownloader(),
+            extractor=_extractor,
         )
         result = service.sync_one(_source())
         events = AgentRunRepository(conn).events_after(result.run.id, 0)
@@ -78,3 +89,27 @@ def test_sync_records_resumable_job_stages(tmp_path: Path) -> None:
             (_source().id,),
         ).fetchone()
         assert tuple(job) == ("completed", "document_ready")
+
+
+def test_sync_writes_reviewable_markdown_and_structured_questions(tmp_path: Path) -> None:
+    db_path = tmp_path / "papers.db"
+    init_db(db_path)
+
+    with connect(db_path) as conn:
+        result = PastPaperIngestionService(
+            conn,
+            papers_root=tmp_path / "library",
+            downloader=StubDownloader(),
+            extractor=_extractor,
+        ).sync_one(_source())
+        repo = PastPaperRepository(conn)
+        document = repo.get_document(result.document_id)
+        questions = repo.list_questions(document.id)
+
+        assert document.status == "ready"
+        assert document.parser == "test-parser"
+        assert Path(document.markdown_path).is_file()
+        assert Path(document.structured_path).is_file()
+        assert parse_paper_markdown(Path(document.markdown_path).read_text(encoding="utf-8")).questions
+        assert questions[0].answer == {"letter": "B"}
+        assert questions[0].verification_status == "unverified"

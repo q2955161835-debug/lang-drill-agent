@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 from urllib.parse import urlparse
 
+from ..paper_assets import extract_text_from_file, write_paper_v2_assets
 from ..runtime.models import AgentRunRecord, RunStatus
 from ..runtime.repository import AgentRunRepository
 from ..utils import new_id
-from .models import PaperDocumentInput, PaperSourceInput
+from .models import PaperDocumentInput, PaperQuestionInput, PaperSourceInput
 from .repository import PastPaperRepository
 from .sources import DownloadReceipt, PastPaperSourceAdapter
 
@@ -34,11 +36,13 @@ class PastPaperIngestionService:
         papers_root: Path,
         downloader: Downloader,
         source_adapter: PastPaperSourceAdapter | None = None,
+        extractor: Callable[..., tuple[str, str]] | None = None,
     ) -> None:
         self.conn = conn
         self.papers_root = papers_root
         self.downloader = downloader
         self.source_adapter = source_adapter
+        self.extractor = extractor or extract_text_from_file
 
     def sync(self, exam_id: str, max_documents: int = 3) -> AgentRunRecord:
         if self.source_adapter is None:
@@ -163,6 +167,48 @@ class PastPaperIngestionService:
                 )
             elif Path(document.raw_path) != receipt.path:
                 receipt.path.unlink(missing_ok=True)
+            markdown_path = self.papers_root / source.exam_id / "parsed" / f"{document.id}.md"
+            structured_path = (
+                self.papers_root / source.exam_id / "structured" / f"{document.id}.json"
+            )
+            extracted_text, parser = self.extractor(Path(document.raw_path), language="ch")
+            parsed = write_paper_v2_assets(
+                extracted_text,
+                exam_id=source.exam_id,
+                title=source.title,
+                year=source.year,
+                source_url=receipt.source_url,
+                markdown_path=markdown_path,
+                structured_path=structured_path,
+            )
+            paper_repo.replace_questions(
+                document.id,
+                [
+                    PaperQuestionInput(
+                        question_number=question.question_number,
+                        question_type=question.question_type,
+                        prompt=question.prompt,
+                        options=question.options,
+                        answer=question.answer,
+                        explanation=question.explanation,
+                        knowledge_tags=question.knowledge_tags,
+                        difficulty=question.difficulty,
+                        source_page=question.source_page,
+                        answer_confidence=question.answer_confidence,
+                        verification_status=question.verification_status,
+                    )
+                    for question in parsed.questions
+                ],
+            )
+            document = paper_repo.update_document_state(
+                document.id,
+                status="ready",
+                markdown_path=str(markdown_path),
+                structured_path=str(structured_path),
+                parser=parser,
+                parser_version="2",
+                error_code="",
+            )
             self._update_job(job_id, status="completed", stage="document_ready")
             run_repo.append_event(
                 run.id,
@@ -199,7 +245,7 @@ class PastPaperIngestionService:
         return self.conn.execute(
             """
             SELECT id, raw_path FROM past_paper_documents
-            WHERE source_id=? AND status IN ('downloaded', 'ready')
+            WHERE source_id=? AND status='ready'
             ORDER BY created_at DESC LIMIT 1
             """,
             (source_id,),

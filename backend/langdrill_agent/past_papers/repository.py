@@ -94,6 +94,43 @@ class PastPaperRepository:
         )
         return self.get_document(document_id)
 
+    def update_document_state(
+        self,
+        document_id: str,
+        *,
+        status: str,
+        markdown_path: str | None = None,
+        structured_path: str | None = None,
+        parser: str | None = None,
+        parser_version: str | None = None,
+        error_code: str | None = None,
+    ) -> PaperDocument:
+        cursor = self.conn.execute(
+            """
+            UPDATE past_paper_documents
+            SET status=?,
+                markdown_path=COALESCE(?, markdown_path),
+                structured_path=COALESCE(?, structured_path),
+                parser=COALESCE(?, parser),
+                parser_version=COALESCE(?, parser_version),
+                error_code=COALESCE(?, error_code),
+                updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            """,
+            (
+                status,
+                markdown_path,
+                structured_path,
+                parser,
+                parser_version,
+                error_code,
+                document_id,
+            ),
+        )
+        if cursor.rowcount == 0:
+            raise KeyError(document_id)
+        return self.get_document(document_id)
+
     def get_document(self, document_id: str) -> PaperDocument:
         row = self.conn.execute(
             "SELECT * FROM past_paper_documents WHERE id=?",

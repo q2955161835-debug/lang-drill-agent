@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any
 
 from .config import PROJECT_ROOT
+from .past_papers.markdown import render_paper_markdown
+from .past_papers.parser import PaperParseResult, parse_extracted_paper_text
 from .utils import dumps
 
 
@@ -42,9 +44,16 @@ def ensure_exam_paper_dirs(exam_id: str) -> dict[str, Path]:
     root = paper_root() / safe_path_part(exam_id)
     raw_dir = root / "raw"
     parsed_dir = root / "parsed"
+    structured_dir = root / "structured"
     raw_dir.mkdir(parents=True, exist_ok=True)
     parsed_dir.mkdir(parents=True, exist_ok=True)
-    return {"root": root, "raw": raw_dir, "parsed": parsed_dir}
+    structured_dir.mkdir(parents=True, exist_ok=True)
+    return {
+        "root": root,
+        "raw": raw_dir,
+        "parsed": parsed_dir,
+        "structured": structured_dir,
+    }
 
 
 def ensure_builtin_paper_dirs() -> None:
@@ -374,3 +383,39 @@ def looks_useful_excerpt(line: str) -> bool:
 
 def write_parsed_json(parsed_path: Path, payload: dict[str, Any]) -> None:
     parsed_path.write_text(dumps(payload), encoding="utf-8")
+
+
+def write_paper_v2_assets(
+    text: str,
+    *,
+    exam_id: str,
+    title: str,
+    year: int | None,
+    source_url: str,
+    markdown_path: Path,
+    structured_path: Path,
+) -> PaperParseResult:
+    result = parse_extracted_paper_text(
+        text,
+        exam_id=exam_id,
+        title=title,
+        year=year,
+        source_url=source_url,
+    )
+    markdown_path.parent.mkdir(parents=True, exist_ok=True)
+    structured_path.parent.mkdir(parents=True, exist_ok=True)
+    markdown_staging = markdown_path.with_name(markdown_path.name + ".staging")
+    structured_staging = structured_path.with_name(structured_path.name + ".staging")
+    try:
+        markdown_staging.write_text(render_paper_markdown(result), encoding="utf-8")
+        structured_staging.write_text(
+            dumps(result.model_dump(mode="json")),
+            encoding="utf-8",
+        )
+        markdown_staging.replace(markdown_path)
+        structured_staging.replace(structured_path)
+    except Exception:
+        markdown_staging.unlink(missing_ok=True)
+        structured_staging.unlink(missing_ok=True)
+        raise
+    return result
