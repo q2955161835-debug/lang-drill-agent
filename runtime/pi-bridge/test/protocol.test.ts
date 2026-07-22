@@ -49,6 +49,44 @@ describe("strict JSONL framing", () => {
   });
 });
 
+describe("policy tool bridge", () => {
+  it("waits for the exact Python policy result before completing the run", async () => {
+    const lines: string[] = [];
+    let toolResponse: unknown;
+    const server = new PiBridgeServer({
+      writeLine: (line) => lines.push(line),
+      createSession: async (_command, requestTool) => {
+        const session = fakeSession();
+        session.prompt = async () => {
+          toolResponse = await requestTool({
+            toolName: "read",
+            toolCallId: "tool-1",
+            arguments: { path: "README.md" },
+          });
+        };
+        return session;
+      },
+    });
+
+    server.push('{"type":"run","requestId":"run-1","prompt":"inspect"}\n');
+    await server.waitForEvent("tool.requested");
+    server.push(
+      '{"type":"tool.result","requestId":"result-1","targetRequestId":"run-1",' +
+      '"toolCallId":"tool-1","output":"approved content","isError":false}\n',
+    );
+    await server.waitForIdle();
+
+    expect(toolResponse).toEqual({ output: "approved content", isError: false });
+    expect(parseLines(lines)).toContainEqual(
+      expect.objectContaining({
+        type: "tool.requested",
+        requestId: "run-1",
+        toolCallId: "tool-1",
+      }),
+    );
+  });
+});
+
 describe("request-scoped sessions", () => {
   it("creates a fresh in-memory session for every run", async () => {
     const lines: string[] = [];

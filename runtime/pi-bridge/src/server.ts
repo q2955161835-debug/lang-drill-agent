@@ -11,9 +11,27 @@ export interface BridgeSession {
   dispose(): void;
 }
 
+export type BridgeToolRequest = {
+  toolName: string;
+  toolCallId: string;
+  arguments: Record<string, unknown>;
+};
+
+export type BridgeToolResponse = {
+  output: string;
+  isError?: boolean;
+};
+
+export type ToolRequestHandler = (
+  request: BridgeToolRequest,
+) => Promise<BridgeToolResponse>;
+
 export type BridgeServerOptions = {
   writeLine: (line: string) => void;
-  createSession: (command: BridgeCommand) => Promise<BridgeSession>;
+  createSession: (
+    command: BridgeCommand,
+    requestTool: ToolRequestHandler,
+  ) => Promise<BridgeSession>;
 };
 
 type ActiveRun = {
@@ -28,6 +46,10 @@ export class PiBridgeServer {
   private readonly activeRuns = new Map<string, ActiveRun>();
   private readonly pendingTasks = new Set<Promise<void>>();
   private readonly eventWaiters = new Map<string, Array<() => void>>();
+  private readonly pendingToolRequests = new Map<
+    string,
+    (response: BridgeToolResponse) => void
+  >();
 
   constructor(private readonly options: BridgeServerOptions) {
     this.reader = new JsonlCommandReader(
@@ -103,6 +125,9 @@ export class PiBridgeServer {
       case "cancel":
         await this.cancel(command);
         return;
+      case "tool.result":
+        this.resolveToolRequest(command);
+        return;
       case "approve":
         this.emit({
           type: "approval.received",
@@ -147,7 +172,10 @@ export class PiBridgeServer {
       return;
     }
 
-    const session = await this.options.createSession(command);
+    const session = await this.options.createSession(
+      command,
+      (request) => this.requestTool(requestId, request),
+    );
     const active: ActiveRun = {
       requestId,
       session,
@@ -203,8 +231,52 @@ export class PiBridgeServer {
       return;
     }
     active.cancelled = true;
+    this.cancelPendingTools(targetRequestId);
     await active.session.abort();
     this.emit({ type: "run.cancelled", requestId: targetRequestId });
+  }
+
+  private requestTool(
+    requestId: string,
+    request: BridgeToolRequest,
+  ): Promise<BridgeToolResponse> {
+    const key = `${requestId}:${request.toolCallId}`;
+    if (this.pendingToolRequests.has(key)) {
+      return Promise.resolve({
+        output: "Duplicate tool request was rejected.",
+        isError: true,
+      });
+    }
+    this.emit({ type: "tool.requested", requestId, ...request });
+    return new Promise((resolve) => {
+      this.pendingToolRequests.set(key, resolve);
+    });
+  }
+
+  private resolveToolRequest(command: BridgeCommand): void {
+    const requestId = command.targetRequestId;
+    const toolCallId = command.toolCallId;
+    if (typeof requestId !== "string" || typeof toolCallId !== "string") {
+      throw new Error("tool result targetRequestId and toolCallId are required");
+    }
+    const key = `${requestId}:${toolCallId}`;
+    const resolve = this.pendingToolRequests.get(key);
+    if (!resolve) throw new Error("tool request is not pending");
+    this.pendingToolRequests.delete(key);
+    resolve({
+      output: typeof command.output === "string" ? command.output : "",
+      isError: command.isError === true,
+    });
+    this.emit({ type: "tool.completed", requestId, toolCallId });
+  }
+
+  private cancelPendingTools(requestId: string): void {
+    const prefix = `${requestId}:`;
+    for (const [key, resolve] of this.pendingToolRequests) {
+      if (!key.startsWith(prefix)) continue;
+      this.pendingToolRequests.delete(key);
+      resolve({ output: "Tool request cancelled.", isError: true });
+    }
   }
 
   private requireRequestId(command: BridgeCommand): string {
