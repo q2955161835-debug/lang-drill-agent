@@ -1676,7 +1676,7 @@ dependencies = [
 
 [[package]]
 name = "lang-drill-agent-desktop"
-version = "0.1.2"
+version = "1.0.0-experimental.1"
 dependencies = [
  "serde",
  "serde_json",
