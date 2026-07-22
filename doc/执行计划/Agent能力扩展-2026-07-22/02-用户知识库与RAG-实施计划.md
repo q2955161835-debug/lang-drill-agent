@@ -1,8 +1,8 @@
 # 用户知识库与 RAG Implementation Plan
 
-状态：活动计划；实施暂停。
+状态：已完成；2026-07-22 验收通过，可进入下游计划。
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 让用户明确加入的学习文档形成可管理、可引用、可重建的本地知识库，并为聊天、出题、讲解、总结和计划提供混合检索证据。
 
@@ -33,7 +33,7 @@
 - Produces: `KnowledgeDocument`, `KnowledgeChunk`, `DocumentStatus`
 - Produces: `KnowledgeRepository.create_document/upsert_chunks/get_document/delete_document`.
 
-- [ ] **Step 1: Write failing repository test**
+- [x] **Step 1: Write failing repository test**
 
 ```python
 def test_document_and_chunks_round_trip(db_conn):
@@ -52,12 +52,12 @@ def test_document_and_chunks_round_trip(db_conn):
     assert repo.list_chunks(doc.id)[0].page_start == 2
 ```
 
-- [ ] **Step 2: Verify failure**
+- [x] **Step 2: Verify failure**
 
 Run: `py -m pytest tests/test_knowledge_repository.py -v`
 Expected: FAIL because knowledge package does not exist.
 
-- [ ] **Step 3: Add schema**
+- [x] **Step 3: Add schema**
 
 ```sql
 CREATE TABLE knowledge_documents (
@@ -118,11 +118,11 @@ CREATE TABLE retrieval_events (
 );
 ```
 
-- [ ] **Step 4: Implement typed repository**
+- [x] **Step 4: Implement typed repository**
 
 Use explicit column lists and parameter binding. `delete_document` must rely on foreign-key cascade and separately delete corresponding FTS rows in one transaction.
 
-- [ ] **Step 5: Run and commit**
+- [x] **Step 5: Run and commit**
 
 Run: `py -m pytest tests/test_knowledge_repository.py -v`
 Expected: PASS.
@@ -145,7 +145,7 @@ git commit -m "feat: add knowledge base storage"
 - Produces: `chunk_markdown(text, config) -> list[KnowledgeChunkInput]`
 - Produces: `KnowledgeIngestionService.import_file(path, title, language) -> AgentRunRecord`.
 
-- [ ] **Step 1: Write chunking tests**
+- [x] **Step 1: Write chunking tests**
 
 ```python
 def test_chunking_preserves_heading_and_page_marker():
@@ -162,12 +162,12 @@ def test_chunking_is_deterministic():
     assert chunk_markdown(text, ChunkingConfig()) == chunk_markdown(text, ChunkingConfig())
 ```
 
-- [ ] **Step 2: Verify failure**
+- [x] **Step 2: Verify failure**
 
 Run: `py -m pytest tests/test_knowledge_chunking.py -v`
 Expected: FAIL because chunking module does not exist.
 
-- [ ] **Step 3: Implement deterministic chunking**
+- [x] **Step 3: Implement deterministic chunking**
 
 ```python
 @dataclass(frozen=True)
@@ -182,15 +182,15 @@ def stable_hash(text: str) -> str:
 
 Split on Markdown headings and blank paragraphs first; split oversized paragraphs by sentence; apply overlap only within the same heading. Use the existing token estimator instead of adding a tokenizer dependency.
 
-- [ ] **Step 4: Implement ingestion with existing extractors**
+- [x] **Step 4: Implement ingestion with existing extractors**
 
 `import_file` must copy the source into `<user_data>/knowledge/raw`, call `extract_text_from_file`, write normalized Markdown under `knowledge/parsed`, call `chunk_markdown`, update FTS, and append run events at 10/35/60/90/100 percent. Write into a staging filename and rename only after success.
 
-- [ ] **Step 5: Test path and ingestion failure behavior**
+- [x] **Step 5: Test path and ingestion failure behavior**
 
 Add a test where extractor raises `RuntimeError`; expected document status is `failed`, original staging file is removed, and run error code is `KNOWLEDGE_EXTRACTION_FAILED`.
 
-- [ ] **Step 6: Run and commit**
+- [x] **Step 6: Run and commit**
 
 Run: `py -m pytest tests/test_knowledge_chunking.py -v`
 Expected: PASS.
@@ -211,7 +211,7 @@ git commit -m "feat: ingest and chunk knowledge documents"
 - Produces: `RetrievedChunk` with `score`, `citation`, and `content_hash`
 - Produces: `KnowledgeRetrievalService.search(query) -> list[RetrievedChunk]`.
 
-- [ ] **Step 1: Write exact-term and citation tests**
+- [x] **Step 1: Write exact-term and citation tests**
 
 ```python
 def test_fts_finds_exact_term_and_returns_page(db_conn, indexed_document):
@@ -229,20 +229,20 @@ def test_document_filter_prevents_cross_document_results(db_conn, two_documents)
     assert {item.document_id for item in result} == {two_documents[0]}
 ```
 
-- [ ] **Step 2: Verify failure**
+- [x] **Step 2: Verify failure**
 
 Run: `py -m pytest tests/test_knowledge_retrieval.py -v`
 Expected: FAIL because retrieval module does not exist.
 
-- [ ] **Step 3: Implement escaped FTS and token budget**
+- [x] **Step 3: Implement escaped FTS and token budget**
 
 Build MATCH terms by quoting user tokens; never interpolate raw query into SQL. Convert BM25 to normalized positive score. Stop adding results before the next chunk would exceed `token_budget`, except always allow the first result.
 
-- [ ] **Step 4: Record retrieval event**
+- [x] **Step 4: Record retrieval event**
 
 Store query, filters, ranked result IDs/scores and final injected IDs; do not store secrets or unrelated context.
 
-- [ ] **Step 5: Run and commit**
+- [x] **Step 5: Run and commit**
 
 Run: `py -m pytest tests/test_knowledge_retrieval.py -v`
 Expected: PASS.
@@ -265,7 +265,7 @@ git commit -m "feat: add cited FTS knowledge retrieval"
 - Produces: `EmbeddingConfig(provider, model, dimensions, enabled)`
 - Adds `search_mode: Literal["fts", "hybrid"]` to retrieval response.
 
-- [ ] **Step 1: Write fusion and fallback tests**
+- [x] **Step 1: Write fusion and fallback tests**
 
 ```python
 def test_reciprocal_rank_fusion_keeps_exact_and_semantic_hits():
@@ -280,12 +280,12 @@ def test_missing_embedding_provider_returns_fts_results(service):
     assert result.items
 ```
 
-- [ ] **Step 2: Verify failure**
+- [x] **Step 2: Verify failure**
 
 Run: `py -m pytest tests/test_hybrid_retrieval.py -v`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement provider adapter and index identity**
+- [x] **Step 3: Implement provider adapter and index identity**
 
 ```python
 class EmbeddingProvider(Protocol):
@@ -296,15 +296,15 @@ class EmbeddingProvider(Protocol):
 
 Use existing configured provider only when it supports `/embeddings`; local adapter remains optional. Persist provider/model/dimensions/content hash. If identity changes, mark vector status `reindex_required` and continue FTS.
 
-- [ ] **Step 4: Implement RRF and MMR diversity**
+- [x] **Step 4: Implement RRF and MMR diversity**
 
 Use Reciprocal Rank Fusion for lexical/vector lists and optional MMR after fusion. Default weights live in knowledge settings, not constants scattered through agents.
 
-- [ ] **Step 5: Update `.env.example` without secrets**
+- [x] **Step 5: Update `.env.example` without secrets**
 
 Add only placeholder variable names required by a dedicated compatible embedding endpoint; reuse provider settings when possible.
 
-- [ ] **Step 6: Run and commit**
+- [x] **Step 6: Run and commit**
 
 Run: `py -m pytest tests/test_hybrid_retrieval.py -v`
 Expected: PASS.
@@ -329,7 +329,7 @@ git commit -m "feat: add optional hybrid knowledge retrieval"
 - `POST /api/knowledge/reindex`
 - `DELETE /api/knowledge/documents/{id}`.
 
-- [ ] **Step 1: Write API contract tests**
+- [x] **Step 1: Write API contract tests**
 
 ```python
 def test_import_returns_run_id(client, tmp_path):
@@ -347,16 +347,16 @@ def test_search_returns_citations(client, ready_knowledge_doc):
     assert response.json()["items"][0]["citation"]["document_id"] == ready_knowledge_doc
 ```
 
-- [ ] **Step 2: Verify failure**
+- [x] **Step 2: Verify failure**
 
 Run: `py -m pytest tests/test_knowledge_api.py -v`
 Expected: routes missing.
 
-- [ ] **Step 3: Implement request models and router**
+- [x] **Step 3: Implement request models and router**
 
 Use Pydantic bounds: query 1–2000 chars, top_k 1–50, token_budget 100–20,000. Import accepts a local path only from explicit desktop file selection/upload staging, never arbitrary model-supplied paths.
 
-- [ ] **Step 4: Run and commit**
+- [x] **Step 4: Run and commit**
 
 Run: `py -m pytest tests/test_knowledge_api.py -v`
 Expected: PASS.
@@ -379,7 +379,7 @@ git commit -m "feat: expose knowledge base API"
 - Produces: `build_knowledge_context(query, task_type, token_budget) -> dict`
 - Context key: `context_pack.knowledge_retrieval`.
 
-- [ ] **Step 1: Write prompt-boundary tests**
+- [x] **Step 1: Write prompt-boundary tests**
 
 ```python
 def test_retrieved_document_is_fenced_as_untrusted(pack):
@@ -392,16 +392,16 @@ def test_document_instruction_cannot_enter_system_modules(pack):
     assert all("ignore previous" not in item["content"].lower() for item in pack.system_modules)
 ```
 
-- [ ] **Step 2: Verify failure**
+- [x] **Step 2: Verify failure**
 
 Run: `py -m pytest tests/test_knowledge_context_integration.py -v`
 Expected: missing context key.
 
-- [ ] **Step 3: Implement task-specific retrieval**
+- [x] **Step 3: Implement task-specific retrieval**
 
 General chat uses the user query; Question Author uses `primary_learning_targets`; Evaluator uses question tags plus user error; summary uses explicit user request only. Store citations in model-call metadata and generated `source_refs` without copying long document passages.
 
-- [ ] **Step 4: Run focused agent tests and commit**
+- [x] **Step 4: Run focused agent tests and commit**
 
 Run: `py -m pytest tests/test_knowledge_context_integration.py -v`
 Expected: PASS.
@@ -425,7 +425,7 @@ git commit -m "feat: ground learning agents with knowledge retrieval"
 - Produces settings tab with import, status, search test, reindex and delete.
 - Consumes Agent Run SSE from plan 01.
 
-- [ ] **Step 1: Write UI test**
+- [x] **Step 1: Write UI test**
 
 ```tsx
 it("requires explicit confirmation before adding an attachment", async () => {
@@ -436,20 +436,20 @@ it("requires explicit confirmation before adding an attachment", async () => {
 });
 ```
 
-- [ ] **Step 2: Verify failure**
+- [x] **Step 2: Verify failure**
 
 Run: `npm --prefix frontend test -- src/features/knowledge/KnowledgeSettings.test.tsx`
 Expected: component missing.
 
-- [ ] **Step 3: Implement focused component**
+- [x] **Step 3: Implement focused component**
 
 Render document title, state, parser, chunks, vector state and last error. Search test results show title/page/heading and short excerpt. Destructive delete requires confirmation and explains source file deletion.
 
-- [ ] **Step 4: Wire settings tab without moving unrelated UI**
+- [x] **Step 4: Wire settings tab without moving unrelated UI**
 
 Add tab ID `knowledge`; keep component mounted while switching settings tabs if it owns an active import run.
 
-- [ ] **Step 5: Run frontend and backend gates**
+- [x] **Step 5: Run frontend and backend gates**
 
 Run: `npm --prefix frontend test`
 Run: `npm --prefix frontend run build`
@@ -457,7 +457,7 @@ Expected: PASS.
 Run: `py -m pytest -v`
 Expected: PASS.
 
-- [ ] **Step 6: Commit and record L3 acceptance**
+- [x] **Step 6: Commit and record L3 acceptance**
 
 ```powershell
 git add frontend/src/features/knowledge frontend/src/App.tsx frontend/src/styles.css
