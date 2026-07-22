@@ -71,6 +71,11 @@ class DataPathService:
                 target_root,
                 overwrite=overwrite,
             )
+            self._rewrite_knowledge_asset_paths(
+                target_db,
+                settings.user_data_dir,
+                target_root,
+            )
 
         self._write_env(
             {
@@ -197,6 +202,36 @@ class DataPathService:
                 raise ValueError(f"目标知识库文件已存在：{target_path}")
             target_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source_path, target_path)
+
+    def _rewrite_knowledge_asset_paths(
+        self,
+        db_path: Path,
+        source_root: Path,
+        target_root: Path,
+    ) -> None:
+        source_root = source_root.resolve()
+        target_root = target_root.resolve()
+        with transaction(db_path) as conn:
+            rows = conn.execute(
+                "SELECT id, raw_path, parsed_path FROM knowledge_documents"
+            ).fetchall()
+            for row in rows:
+                updates: dict[str, str] = {}
+                for column in ("raw_path", "parsed_path"):
+                    raw_path = str(row[column] or "").strip()
+                    if not raw_path:
+                        continue
+                    try:
+                        relative = Path(raw_path).resolve().relative_to(source_root)
+                    except (OSError, ValueError):
+                        continue
+                    updates[column] = str(target_root / relative)
+                if updates:
+                    assignments = ", ".join(f"{key}=?" for key in updates)
+                    conn.execute(
+                        f"UPDATE knowledge_documents SET {assignments}, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                        [*updates.values(), row["id"]],
+                    )
 
     def _backup_sqlite_database(self, source_db: Path, target_db: Path, *, overwrite: bool) -> None:
         if target_db.exists() and not overwrite:
