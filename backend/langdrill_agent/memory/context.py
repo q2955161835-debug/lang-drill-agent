@@ -32,14 +32,29 @@ class MemoryContextAssembler:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self.conn = conn
 
-    def build(self, query: MemoryRetrievalQuery) -> MemoryContext:
+    def build(
+        self,
+        query: MemoryRetrievalQuery,
+        *,
+        core_token_budget: int | None = None,
+        embeddings_enabled: bool | None = None,
+    ) -> MemoryContext:
         embedding_config, embedding_provider = embedding_runtime_from_env()
+        if embeddings_enabled is False:
+            embedding_config = embedding_config.__class__(
+                provider=embedding_config.provider,
+                model=embedding_config.model,
+                dimensions=embedding_config.dimensions,
+                enabled=False,
+            )
+            embedding_provider = None
         service = MemoryRetrievalService(
             self.conn,
             embedding_provider=embedding_provider,
             embedding_config=embedding_config,
         )
-        core_budget = min(max(query.token_budget // 3, 1), query.token_budget)
+        requested_core_budget = core_token_budget or query.token_budget // 3
+        core_budget = min(max(requested_core_budget, 1), query.token_budget)
         core_categories = ["core", "profile", "preference"]
         if query.categories:
             core_categories = [

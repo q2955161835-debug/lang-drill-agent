@@ -11,32 +11,83 @@ class MemoryRepository:
         self.conn = conn
 
     def stage(self, candidate: MemoryCandidate) -> MemoryCandidate:
-        candidate_id = candidate.id or new_id("memcand")
-        self.conn.execute(
-            """
-            INSERT INTO memory_candidates
-            (id, category, scope, content, normalized_key, confidence, importance,
-             status, reason, valid_from, valid_to, expires_at, pinned, metadata_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                candidate_id,
-                candidate.category,
-                candidate.scope,
-                candidate.content,
-                candidate.normalized_key,
-                candidate.confidence,
-                candidate.importance,
-                candidate.status,
-                candidate.reason,
-                candidate.valid_from,
-                candidate.valid_to,
-                candidate.expires_at,
-                int(candidate.pinned),
-                dumps(candidate.metadata),
-            ),
-        )
+        candidate_id = candidate.id
+        if not candidate_id and candidate.normalized_key:
+            existing = self.conn.execute(
+                """
+                SELECT id FROM memory_candidates
+                WHERE category=? AND scope=? AND normalized_key=? AND status='staged'
+                ORDER BY created_at, id LIMIT 1
+                """,
+                (candidate.category, candidate.scope, candidate.normalized_key),
+            ).fetchone()
+            candidate_id = str(existing["id"]) if existing else ""
+        candidate_id = candidate_id or new_id("memcand")
+        row = self.conn.execute(
+            "SELECT metadata_json FROM memory_candidates WHERE id=?",
+            (candidate_id,),
+        ).fetchone()
+        if row:
+            metadata = {**loads(row["metadata_json"], {}), **candidate.metadata}
+            self.conn.execute(
+                """
+                UPDATE memory_candidates
+                SET category=?, scope=?, content=?, normalized_key=?, confidence=?,
+                    importance=?, status='staged', reason=?, valid_from=?, valid_to=?,
+                    expires_at=?, pinned=?, metadata_json=?, updated_at=CURRENT_TIMESTAMP
+                WHERE id=?
+                """,
+                (
+                    candidate.category,
+                    candidate.scope,
+                    candidate.content,
+                    candidate.normalized_key,
+                    candidate.confidence,
+                    candidate.importance,
+                    candidate.reason,
+                    candidate.valid_from,
+                    candidate.valid_to,
+                    candidate.expires_at,
+                    int(candidate.pinned),
+                    dumps(metadata),
+                    candidate_id,
+                ),
+            )
+        else:
+            self.conn.execute(
+                """
+                INSERT INTO memory_candidates
+                (id, category, scope, content, normalized_key, confidence, importance,
+                 status, reason, valid_from, valid_to, expires_at, pinned, metadata_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    candidate_id,
+                    candidate.category,
+                    candidate.scope,
+                    candidate.content,
+                    candidate.normalized_key,
+                    candidate.confidence,
+                    candidate.importance,
+                    candidate.status,
+                    candidate.reason,
+                    candidate.valid_from,
+                    candidate.valid_to,
+                    candidate.expires_at,
+                    int(candidate.pinned),
+                    dumps(candidate.metadata),
+                ),
+            )
+        existing_evidence = {
+            str(item[0])
+            for item in self.conn.execute(
+                "SELECT evidence_ref FROM memory_evidence WHERE candidate_id=?",
+                (candidate_id,),
+            )
+        }
         for evidence_ref in candidate.evidence_ids:
+            if evidence_ref in existing_evidence:
+                continue
             self.conn.execute(
                 """
                 INSERT INTO memory_evidence
@@ -164,7 +215,10 @@ class MemoryRepository:
             superseded = self.get(memory_id)
             self._revision(superseded, "SUPERSEDE")
             self._refresh_fts(superseded)
-            staged = self.stage(replacement.model_copy(update={"normalized_key": replacement.normalized_key or old.normalized_key}))
+            prepared = replacement.model_copy(
+                update={"normalized_key": replacement.normalized_key or old.normalized_key}
+            )
+            staged = prepared if prepared.id else self.stage(prepared)
             new_item = self.commit(staged)
             self.conn.execute(
                 "UPDATE memory_items SET supersedes_id=? WHERE id=?",
@@ -184,6 +238,9 @@ class MemoryRepository:
 
     def archive(self, memory_id: str) -> MemoryItem:
         return self._set_status(memory_id, "archived", "ARCHIVE")
+
+    def mark_superseded_from_import(self, memory_id: str) -> MemoryItem:
+        return self._set_status(memory_id, "superseded", "SUPERSEDE")
 
     def delete(self, memory_id: str) -> MemoryItem:
         return self._set_status(memory_id, "deleted", "DELETE")
@@ -267,6 +324,82 @@ class MemoryRepository:
             params,
         ).fetchall()
         return [self._item_from_row(row) for row in rows]
+
+    def mark_candidate_committed_existing(
+        self,
+        candidate_id: str,
+        *,
+        memory_id: str,
+    ) -> MemoryCandidate:
+        self.get(memory_id)
+        self.get_candidate(candidate_id)
+        self.conn.execute(
+            "UPDATE memory_evidence SET memory_id=? WHERE candidate_id=?",
+            (memory_id, candidate_id),
+        )
+        self.conn.execute(
+            """
+            UPDATE memory_candidates
+            SET status='committed', reason='duplicate_memory', updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            """,
+            (candidate_id,),
+        )
+        self._event(
+            "memory_candidate_linked",
+            memory_id=memory_id,
+            candidate_id=candidate_id,
+        )
+        return self.get_candidate(candidate_id)
+
+    def mark_candidate_committed_external(
+        self,
+        candidate_id: str,
+        *,
+        provider_id: str,
+        external_memory_id: str,
+    ) -> MemoryCandidate:
+        candidate = self.get_candidate(candidate_id)
+        metadata = {
+            **candidate.metadata,
+            "provider_id": provider_id,
+            "external_memory_id": external_memory_id,
+        }
+        self.conn.execute(
+            """
+            UPDATE memory_candidates
+            SET status='committed', metadata_json=?, updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            """,
+            (dumps(metadata), candidate_id),
+        )
+        self._event(
+            "memory_committed_external",
+            candidate_id=candidate_id,
+            payload={
+                "provider_id": provider_id,
+                "external_memory_id": external_memory_id,
+            },
+        )
+        return self.get_candidate(candidate_id)
+
+    def discard_candidate(
+        self,
+        candidate_id: str,
+        *,
+        reason: str = "discarded",
+    ) -> MemoryCandidate:
+        self.get_candidate(candidate_id)
+        self.conn.execute(
+            """
+            UPDATE memory_candidates
+            SET status='discarded', reason=?, updated_at=CURRENT_TIMESTAMP
+            WHERE id=?
+            """,
+            (reason, candidate_id),
+        )
+        self._event("candidate_discarded", candidate_id=candidate_id, payload={"reason": reason})
+        return self.get_candidate(candidate_id)
 
     def list_candidates(self, *, status: str | None = None) -> list[MemoryCandidate]:
         if status:

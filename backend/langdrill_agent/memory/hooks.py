@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+from datetime import datetime, timedelta
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -18,6 +19,7 @@ from .policy import (
 from .repository import MemoryRepository
 from .retrieval import MemoryRetrievalQuery
 from .secrets import scan_memory_secrets
+from .service import MemoryService
 
 
 class MemorySettings(BaseModel):
@@ -81,6 +83,7 @@ class MemoryHooks:
         self.conn = conn
         self.repository = MemoryRepository(conn)
         self.settings_service = MemorySettingsService(conn)
+        self.memory_service = MemoryService(conn)
 
     def on_turn_end(
         self,
@@ -229,14 +232,24 @@ class MemoryHooks:
             ]
             if categories and not enabled_categories:
                 return MemoryContext(items=[], token_count=0)
-            return MemoryContextAssembler(self.conn).build(
-                MemoryRetrievalQuery(
-                    text=text.strip(),
-                    categories=enabled_categories,
-                    scope=scope,
-                    top_k=settings.recall_top_k,
-                    token_budget=token_budget or settings.recall_token_budget,
+            query = MemoryRetrievalQuery(
+                text=text.strip(),
+                categories=enabled_categories,
+                scope=scope,
+                top_k=settings.recall_top_k,
+                token_budget=token_budget or settings.recall_token_budget,
+            )
+            if self.memory_service.current_primary_id == "builtin":
+                return MemoryContextAssembler(self.conn).build(
+                    query,
+                    core_token_budget=settings.core_token_budget,
+                    embeddings_enabled=settings.embeddings_enabled,
                 )
+            result = self.memory_service.retrieve(query)
+            return MemoryContext(
+                mode=result.mode,
+                items=result.items,
+                token_count=result.token_count,
             )
         except Exception as exc:
             self._record_failure("recall", exc)
@@ -250,10 +263,19 @@ class MemoryHooks:
         settings = self.settings_service.get()
         if not settings.category_enabled.get(candidate.category, True):
             return None
-        existing = self.repository.list_items(
-            statuses=("active",),
-            scope=candidate.scope,
-        )
+        if (
+            not candidate.expires_at
+            and not candidate.pinned
+            and candidate.category not in {"core", "profile", "preference"}
+        ):
+            candidate = candidate.model_copy(
+                update={
+                    "expires_at": (
+                        datetime.now() + timedelta(days=settings.default_ttl_days)
+                    ).isoformat(timespec="seconds")
+                }
+            )
+        existing = self.memory_service.active_items(scope=candidate.scope)
         policy = MemoryPolicy(
             MemoryPolicyConfig(
                 learning_evidence_min=settings.learning_evidence_min,
@@ -279,15 +301,30 @@ class MemoryHooks:
             return self.repository.stage(candidate.model_copy(update={"reason": decision.reason}))
         if decision.operation == "ADD":
             staged = self.repository.stage(candidate)
-            item = self.repository.commit(staged)
+            item = self.memory_service.commit_staged_candidate(staged)
+            if self.memory_service.current_primary_id != "builtin":
+                self.repository.mark_candidate_committed_external(
+                    staged.id,
+                    provider_id=self.memory_service.current_primary_id,
+                    external_memory_id=item.id,
+                )
             self._discard_prior_staged(candidate.normalized_key, keep_candidate_id=staged.id)
             return item
         if decision.operation == "SUPERSEDE":
-            return self.repository.supersede(decision.target_memory_id, candidate)
+            if self.memory_service.current_primary_id == "builtin":
+                return self.repository.supersede(decision.target_memory_id, candidate)
+            staged = self.repository.stage(candidate)
+            item = self.memory_service.update(decision.target_memory_id, candidate.content)
+            self.repository.mark_candidate_committed_external(
+                staged.id,
+                provider_id=self.memory_service.current_primary_id,
+                external_memory_id=item.id,
+            )
+            return item
         if decision.operation == "UPDATE":
-            return self.repository.update(decision.target_memory_id, candidate.content)
+            return self.memory_service.update(decision.target_memory_id, candidate.content)
         if decision.operation == "DELETE":
-            return self.repository.delete(decision.target_memory_id)
+            return self.memory_service.delete(decision.target_memory_id)
         return None
 
     def _attempt_evidence(self, normalized_key: str) -> list[MemoryPolicyEvidence]:

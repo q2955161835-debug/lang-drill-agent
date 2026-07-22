@@ -90,6 +90,29 @@ def test_three_independent_attempts_commit_learning_weakness(tmp_path: Path) -> 
         assert len(MemoryRepository(conn).evidence(items[0].id)) == 3
 
 
+def test_approval_mode_merges_learning_evidence_into_one_candidate(tmp_path: Path) -> None:
+    db_path = tmp_path / "memory.db"
+    init_db(db_path)
+
+    with connect(db_path) as conn:
+        settings = MemorySettingsService(conn)
+        settings.save(settings.get().model_copy(update={"write_mode": "approval"}))
+        hooks = MemoryHooks(conn)
+        for index in range(3):
+            hooks.on_attempt(
+                session_id=f"approval-session-{index}",
+                is_correct=False,
+                knowledge_tags=["conditionals"],
+                question_id=f"approval-q-{index}",
+            )
+
+        candidates = MemoryRepository(conn).list_candidates(status="staged")
+        items = MemoryRepository(conn).list_items(categories=["learning_weakness"])
+        assert len(candidates) == 1
+        assert len(candidates[0].evidence_ids) == 3
+        assert items == []
+
+
 def test_hook_failure_does_not_raise_to_foreground(tmp_path: Path, monkeypatch) -> None:
     db_path = tmp_path / "memory.db"
     init_db(db_path)
@@ -121,7 +144,7 @@ def test_recall_failure_returns_empty_context(tmp_path: Path, monkeypatch) -> No
     with connect(db_path) as conn:
         hooks = MemoryHooks(conn)
 
-        def fail_build(_assembler, _query):
+        def fail_build(_assembler, _query, **_options):
             raise RuntimeError("memory recall unavailable")
 
         monkeypatch.setattr(

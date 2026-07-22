@@ -5,8 +5,9 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Iterable, Protocol
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from ..utils import dumps, new_id
 from .models import MemoryCandidate, MemoryItem
 from .repository import MemoryRepository
 from .retrieval import MemoryRetrievalQuery, MemoryRetrievalResult, MemoryRetrievalService
@@ -35,8 +36,8 @@ class MemoryExportRecord(BaseModel):
     expires_at: str | None = None
     supersedes_id: str | None = None
     pinned: bool = False
-    evidence_ids: list[str] = []
-    metadata: dict = {}
+    evidence_ids: list[str] = Field(default_factory=list)
+    metadata: dict = Field(default_factory=dict)
     content_hash: str
 
 
@@ -45,7 +46,7 @@ class MemoryProviderAdapter(Protocol):
 
     def health(self) -> ProviderHealth: ...
 
-    def retrieve(self, query: MemoryRetrievalQuery) -> MemoryRetrievalResult | list: ...
+    def retrieve(self, query: MemoryRetrievalQuery) -> MemoryRetrievalResult: ...
 
     def stage_candidate(self, candidate: MemoryCandidate) -> str: ...
 
@@ -150,31 +151,91 @@ class BuiltinMemoryProvider:
         }
 
     def import_records(self, records: Iterable[MemoryExportRecord]) -> int:
-        imported = 0
-        for record in records:
-            existing = self.conn.execute(
-                "SELECT id FROM memory_items WHERE id=?",
+        normalized = list(records)
+        new_ids = {
+            record.id
+            for record in normalized
+            if self.conn.execute(
+                "SELECT 1 FROM memory_items WHERE id=?",
                 (record.id,),
-            ).fetchone()
-            if existing:
-                continue
-            candidate = MemoryCandidate(
-                category=record.category,
-                scope=record.scope,
-                content=record.content,
-                normalized_key=record.normalized_key,
-                confidence=record.confidence,
-                importance=record.importance,
-                valid_from=record.valid_from,
-                valid_to=record.valid_to,
-                expires_at=record.expires_at,
-                pinned=record.pinned,
-                evidence_ids=record.evidence_ids,
-                metadata={**record.metadata, "imported_from_id": record.id},
+            ).fetchone() is None
+        }
+        for record in normalized:
+            self.conn.execute(
+                """
+                INSERT INTO memory_items
+                (id, category, scope, content, normalized_key, confidence, importance,
+                 status, valid_from, valid_to, expires_at, supersedes_id, pinned, metadata_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                  category=excluded.category,
+                  scope=excluded.scope,
+                  content=excluded.content,
+                  normalized_key=excluded.normalized_key,
+                  confidence=excluded.confidence,
+                  importance=excluded.importance,
+                  status=excluded.status,
+                  valid_from=excluded.valid_from,
+                  valid_to=excluded.valid_to,
+                  expires_at=excluded.expires_at,
+                  supersedes_id=NULL,
+                  pinned=excluded.pinned,
+                  metadata_json=excluded.metadata_json,
+                  updated_at=CURRENT_TIMESTAMP
+                """,
+                (
+                    record.id,
+                    record.category,
+                    record.scope,
+                    record.content,
+                    record.normalized_key,
+                    record.confidence,
+                    record.importance,
+                    record.status,
+                    record.valid_from,
+                    record.valid_to,
+                    record.expires_at,
+                    int(record.pinned),
+                    dumps(record.metadata),
+                ),
             )
-            self.commit_candidate(candidate)
-            imported += 1
-        return imported
+            self.conn.execute(
+                "DELETE FROM memory_evidence WHERE memory_id=?",
+                (record.id,),
+            )
+            for evidence_ref in record.evidence_ids:
+                self.conn.execute(
+                    """
+                    INSERT INTO memory_evidence
+                    (id, memory_id, evidence_type, evidence_ref)
+                    VALUES (?, ?, 'reference', ?)
+                    """,
+                    (new_id("memev"), record.id, evidence_ref),
+                )
+
+        imported_ids = {record.id for record in normalized}
+        for record in normalized:
+            supersedes_id = (
+                record.supersedes_id
+                if record.supersedes_id
+                and (
+                    record.supersedes_id in imported_ids
+                    or self.conn.execute(
+                        "SELECT 1 FROM memory_items WHERE id=?",
+                        (record.supersedes_id,),
+                    ).fetchone()
+                )
+                else None
+            )
+            self.conn.execute(
+                "UPDATE memory_items SET supersedes_id=? WHERE id=?",
+                (supersedes_id, record.id),
+            )
+            item = self.repository.get(record.id)
+            if record.id in new_ids:
+                self.repository._revision(item, "ADD")
+            self.repository._refresh_fts(item)
+        return len(normalized)
 
     def reindex(self) -> int:
         items = self.repository.list_items(

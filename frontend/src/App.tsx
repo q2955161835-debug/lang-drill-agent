@@ -36,6 +36,7 @@ import { appendImportedText, extractTextFromFiles, fileTitle, fileToDataUrl, isI
 import { MarkdownText } from "./components/MarkdownText";
 import { RightWorkbench, type WorkbenchTab } from "./components/RightWorkbench";
 import { KnowledgeSettings } from "./features/knowledge/KnowledgeSettings";
+import { MemorySettings } from "./features/memory/MemorySettings";
 import { PastPaperLibrary } from "./features/pastPapers/PastPaperLibrary";
 import type {
   AnsweredQuestion,
@@ -3348,6 +3349,7 @@ function SettingsDialog({
     { id: "tokens", label: "令牌", icon: Brain },
     { id: "data", label: "数据", icon: Database },
     { id: "knowledge", label: "知识库", icon: Database },
+    { id: "memory", label: "记忆", icon: Brain },
     { id: "past-papers", label: "真题库", icon: ListBullets },
     { id: "permissions", label: "权限", icon: ShieldCheck },
     { id: "skills", label: "拓展 Skills", icon: Sparkle },
@@ -3381,6 +3383,11 @@ function SettingsDialog({
             <div className="settings-tab-panel" hidden={activeSettingsTab !== "knowledge"}>
               <SettingSection title="用户知识库">
                 <KnowledgeSettings />
+              </SettingSection>
+            </div>
+            <div className="settings-tab-panel" hidden={activeSettingsTab !== "memory"}>
+              <SettingSection title="分层记忆">
+                <MemorySettings />
               </SettingSection>
             </div>
             <div className="settings-tab-panel" hidden={activeSettingsTab !== "past-papers"}>
@@ -4308,7 +4315,9 @@ function SettingsDialog({
         <div className="modal-actions">
           <button onClick={() => void resetDefaults()}>恢复默认设置</button>
           <button onClick={onClose}>取消</button>
-          <button className="primary" onClick={() => void saveSettings()}>{activeSettingsTab === "permissions" ? "保存权限" : "保存"}</button>
+          {activeSettingsTab !== "memory" && (
+            <button className="primary" onClick={() => void saveSettings()}>{activeSettingsTab === "permissions" ? "保存权限" : "保存"}</button>
+          )}
         </div>
       </div>
     </div>
