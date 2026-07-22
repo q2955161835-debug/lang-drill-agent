@@ -240,6 +240,7 @@ export type MessagePayload = {
   active_question?: Question | null;
   answered_question?: AnsweredQuestion;
   settings_action?: SettingsAction;
+  agent_run?: import("./features/agentRuns/types").AgentRun;
   source?: string;
   [key: string]: unknown;
 };

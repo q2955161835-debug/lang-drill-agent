@@ -1535,6 +1535,44 @@ body.panel-resize-active * {
   font-weight: 700;
 }
 
+.agent-run-card {
+  display: grid;
+  gap: 0;
+  width: min(620px, 100%);
+  min-width: 0;
+  border: var(--border-thin);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface);
+}
+.agent-run-head { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 10px; align-items: center; min-height: 58px; padding: 10px 12px; }
+.agent-run-toggle { display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: var(--radius-xs); background: transparent; color: var(--muted-strong); }
+.agent-run-title { display: grid; gap: 3px; min-width: 0; }
+.agent-run-title strong { color: var(--text); overflow-wrap: anywhere; }
+.agent-run-title span { color: var(--muted); font-size: .8rem; }
+.agent-run-actions { display: flex; gap: 6px; align-items: center; }
+.agent-run-actions .inline-action { min-height: 34px; padding: 6px 10px; }
+.agent-run-actions .danger-action { color: var(--danger); }
+.agent-run-body { display: grid; gap: 12px; padding: 12px; border-top: var(--border-thin); }
+.agent-run-criteria { display: grid; gap: 5px; }
+.agent-run-criteria strong, .agent-run-evidence strong { font-size: .82rem; color: var(--text); }
+.agent-run-criteria span { color: var(--muted-strong); font-size: .82rem; }
+.agent-run-criteria span::before { content: "· "; color: var(--accent); }
+.agent-run-steps { display: grid; }
+.agent-run-step { display: grid; grid-template-columns: 24px minmax(0, 1fr) 42px; gap: 9px; align-items: start; min-height: 58px; padding: 9px 0; border-top: var(--border-thin); }
+.agent-run-step:first-child { border-top: 0; }
+.agent-run-step-icon { display: grid; place-items: center; width: 24px; height: 24px; border: var(--border-thin); border-radius: 50%; color: var(--muted); font-size: .75rem; font-weight: 800; }
+.agent-run-step.completed .agent-run-step-icon { color: var(--success); }
+.agent-run-step.failed .agent-run-step-icon { color: var(--danger); }
+.agent-run-step > div { display: grid; gap: 3px; min-width: 0; }
+.agent-run-step > div strong { color: var(--text); font-size: .88rem; }
+.agent-run-step > div span, .agent-run-step > div small, .agent-run-step > span:last-child { color: var(--muted); font-size: .76rem; overflow-wrap: anywhere; }
+.agent-run-step > span:last-child { text-align: right; }
+.agent-run-tools { margin: 0; color: var(--muted-strong); font-size: .78rem; overflow-wrap: anywhere; }
+.agent-run-evidence { display: grid; gap: 5px; }
+.agent-run-evidence code { display: block; padding: 7px 8px; border-radius: var(--radius-xs); background: var(--surface-strong); color: var(--muted-strong); white-space: pre-wrap; overflow-wrap: anywhere; }
+.agent-run-error { margin: 0; color: var(--danger); font-size: .8rem; }
+
 .modal-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: rgba(8, 11, 16, 0.54); backdrop-filter: blur(8px); padding: 24px; }
 .settings-modal, .onboarding-modal {
   width: min(980px, 100%);

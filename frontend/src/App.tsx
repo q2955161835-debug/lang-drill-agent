@@ -35,6 +35,7 @@ import { ContextMenu, type ContextMenuItem } from "./components/ContextMenu";
 import { appendImportedText, extractTextFromFiles, fileTitle, fileToDataUrl, isImageFile, uploadPastPaperDraftFile, uploadPastPaperFile } from "./fileImport";
 import { MarkdownText } from "./components/MarkdownText";
 import { RightWorkbench, type WorkbenchTab } from "./components/RightWorkbench";
+import { AgentRunCard } from "./features/agentRuns/AgentRunCard";
 import { KnowledgeSettings } from "./features/knowledge/KnowledgeSettings";
 import { MemorySettings } from "./features/memory/MemorySettings";
 import { PastPaperLibrary } from "./features/pastPapers/PastPaperLibrary";
@@ -82,6 +83,7 @@ function MessageItem({
   const container = useRef<HTMLElement>(null);
   const answeredQuestion = message.payload?.answered_question;
   const settingsAction = message.payload?.settings_action;
+  const agentRun = message.payload?.agent_run;
   
   useGSAP(() => {
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -104,6 +106,7 @@ function MessageItem({
       <div className="message-stack">
         {answeredQuestion && <QuestionReviewCard question={answeredQuestion} />}
         {settingsAction && <SettingsActionCard action={settingsAction} onConfirm={onConfirmSettingsAction} />}
+        {agentRun && <AgentRunCard run={agentRun} />}
         <div className="bubble"><MarkdownText content={message.content} /></div>
       </div>
     </article>
