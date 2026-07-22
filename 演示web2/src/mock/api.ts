@@ -24,6 +24,29 @@ import type {
   SyllabusStatus,
   TokenUsage
 } from "./types";
+import type { KnowledgeDocument, KnowledgeSearchResult } from "./features/knowledge/types";
+import type {
+  MemoryCandidate,
+  MemoryExport,
+  MemoryItem,
+  MemoryItemDetail,
+  MemorySettingsState,
+  MemoryStatusResponse,
+  ProviderSwitchResult,
+} from "./features/memory/types";
+import type { AgentRun, AgentRunDetail } from "./features/agentRuns/types";
+import type {
+  CreativeApprovalRequest,
+  CreativeAuditEvent,
+  CreativeModeSettingsState,
+  CreativeRuntimeRepairResult,
+  CreativeRuntimeStatus,
+  CreativeStatusResponse,
+} from "./features/creative/types";
+import type {
+  PastPaperCatalog,
+  RetrievedPastPaperQuestion,
+} from "./features/pastPapers/types";
 
 // ---------- 默认常量（与 App.tsx 中保持一致，便于 UI 复用同一渲染逻辑） ----------
 
@@ -329,6 +352,278 @@ const DEFAULT_SKILLS_STATUS: SkillsStatus = {
   }
 };
 
+// ---------- 实验能力演示数据（全部为模拟数据，明确标注） ----------
+
+// 知识库 / RAG 检索引用（演示）
+const DEMO_KNOWLEDGE_DOCUMENTS: KnowledgeDocument[] = [
+  {
+    id: "doc_demo_001",
+    title: "四级高频词汇笔记（演示）",
+    source_name: "用户导入",
+    mime_type: "text/markdown",
+    raw_path: "~/LangDrill/knowledge/cet4-notes.md",
+    parsed_path: "~/LangDrill/knowledge/cet4-notes.json",
+    content_hash: "demo_hash_001",
+    language: "zh-CN",
+    status: "ready",
+    parser: "mineru-lite",
+    parser_version: "demo",
+    error_code: "",
+    chunk_count: 12,
+  },
+  {
+    id: "doc_demo_002",
+    title: "近义辨析专项整理（演示）",
+    source_name: "用户导入",
+    mime_type: "text/markdown",
+    raw_path: "~/LangDrill/knowledge/synonyms.md",
+    parsed_path: "~/LangDrill/knowledge/synonyms.json",
+    content_hash: "demo_hash_002",
+    language: "zh-CN",
+    status: "ready",
+    parser: "mineru-lite",
+    parser_version: "demo",
+    error_code: "",
+    chunk_count: 8,
+  },
+];
+
+const DEMO_KNOWLEDGE_SEARCH_RESULT: KnowledgeSearchResult = {
+  mode: "hybrid",
+  items: [
+    {
+      id: "chunk_demo_001",
+      document_id: "doc_demo_001",
+      content: "【模拟检索片段】contrary to 表示“与……相反”，常用于描述新旧政策、观点对立的语境；opposite to 是最接近的同义表达。",
+      content_hash: "demo_hash_001",
+      token_count: 48,
+      score: 0.92,
+      citation: {
+        document_id: "doc_demo_001",
+        document_title: "四级高频词汇笔记（演示）",
+        source_name: "用户导入",
+        heading: "近义辨析：contrary / opposite",
+        page_start: null,
+        page_end: null,
+        content_hash: "demo_hash_001",
+      },
+    },
+    {
+      id: "chunk_demo_002",
+      document_id: "doc_demo_002",
+      content: "【模拟检索片段】collision 指“碰撞、冲突”，物理与抽象语境均可；collection 指“收藏品、集合”，二者词形相近但语义无关。",
+      content_hash: "demo_hash_002",
+      token_count: 42,
+      score: 0.85,
+      citation: {
+        document_id: "doc_demo_002",
+        document_title: "近义辨析专项整理（演示）",
+        source_name: "用户导入",
+        heading: "形近词：collision / collection",
+        page_start: null,
+        page_end: null,
+        content_hash: "demo_hash_002",
+      },
+    },
+  ],
+};
+
+// 分层记忆（演示）
+const DEMO_MEMORY_SETTINGS: MemorySettingsState = {
+  enabled: true,
+  capture_enabled: true,
+  recall_enabled: true,
+  category_enabled: {
+    core: true, semantic: true, episodic: true, procedural: true,
+    temporal: true, preference: true, profile: true, learning_weakness: true,
+  },
+  write_mode: "balanced",
+  learning_evidence_min: 2,
+  confidence_min: 0.6,
+  default_ttl_days: 90,
+  core_token_budget: 2000,
+  recall_top_k: 8,
+  recall_token_budget: 1500,
+  embeddings_enabled: true,
+  compaction_flush_enabled: true,
+};
+
+const DEMO_MEMORY_STATUS: MemoryStatusResponse = {
+  settings: DEMO_MEMORY_SETTINGS,
+  provider: {
+    current_primary_id: "mimo",
+    providers: { mimo: { healthy: true, detail: "演示：供应商连接正常（模拟）" } },
+    migration_required: false,
+  },
+  counts: { core: 12, semantic: 28, episodic: 8, procedural: 5, temporal: 14, preference: 3, profile: 7, learning_weakness: 9 },
+};
+
+const DEMO_MEMORY_ITEMS: MemoryItem[] = [
+  {
+    id: "mem_demo_001",
+    category: "learning_weakness",
+    scope: "cet4",
+    content: "【模拟记忆】用户在近义辨析题中容易混淆 contrary 与 collision，需要优先复现。",
+    normalized_key: "weakness:contrary_collision",
+    confidence: 0.88,
+    importance: 0.8,
+    status: "active",
+    valid_from: "2026-07-01",
+    valid_to: null,
+    expires_at: null,
+    supersedes_id: null,
+    pinned: false,
+    metadata: { source: "demo", evidence_count: 3 },
+    created_at: "2026-07-01T10:00:00Z",
+    updated_at: "2026-07-03T14:00:00Z",
+  },
+  {
+    id: "mem_demo_002",
+    category: "preference",
+    scope: "global",
+    content: "【模拟记忆】用户偏好先用英语语境句学词，再补中文释义。",
+    normalized_key: "preference:context_first",
+    confidence: 0.74,
+    importance: 0.6,
+    status: "active",
+    valid_from: "2026-06-28",
+    valid_to: null,
+    expires_at: null,
+    supersedes_id: null,
+    pinned: true,
+    metadata: { source: "demo", evidence_count: 4 },
+    created_at: "2026-06-28T09:00:00Z",
+    updated_at: "2026-07-02T16:00:00Z",
+  },
+];
+
+const DEMO_MEMORY_CANDIDATES: MemoryCandidate[] = [
+  {
+    id: "cand_demo_001",
+    category: "procedural",
+    scope: "cet4",
+    content: "【模拟候选记忆】用户习惯在补充提问里写出排除干扰项的理由。",
+    normalized_key: "procedural:explain_elimination",
+    confidence: 0.68,
+    importance: 0.5,
+    status: "pending",
+    reason: "近 3 次答题都附带了排除理由",
+    evidence_ids: ["ev_demo_001", "ev_demo_002", "ev_demo_003"],
+    evidence_count: 3,
+    metadata: { source: "demo" },
+    created_at: "2026-07-03T14:00:00Z",
+    updated_at: "2026-07-03T14:00:00Z",
+  },
+];
+
+const DEMO_MEMORY_DETAIL: MemoryItemDetail = {
+  item: DEMO_MEMORY_ITEMS[0],
+  evidence: [
+    { id: "ev_demo_001", candidate_id: null, memory_id: "mem_demo_001", evidence_type: "attempt", evidence_ref: "q_9cb8e4178e60", payload: { selected: "A", correct: true }, created_at: "2026-07-01T10:05:00Z" },
+    { id: "ev_demo_002", candidate_id: null, memory_id: "mem_demo_001", evidence_type: "attempt", evidence_ref: "q_8fe43d4d4358", payload: { selected: "B", correct: false }, created_at: "2026-07-02T11:00:00Z" },
+    { id: "ev_demo_003", candidate_id: null, memory_id: "mem_demo_001", evidence_type: "attempt", evidence_ref: "q_a72ab347c94b", payload: { selected: "A", correct: true }, created_at: "2026-07-03T14:00:00Z" },
+  ],
+  revisions: [
+    { id: 1, memory_id: "mem_demo_001", operation: "created", content: "【模拟记忆】用户在近义辨析题中容易混淆 contrary 与 collision。", snapshot: {}, created_at: "2026-07-01T10:00:00Z" },
+    { id: 2, memory_id: "mem_demo_001", operation: "confidence_updated", content: "confidence 0.72 → 0.88", snapshot: {}, created_at: "2026-07-03T14:00:00Z" },
+  ],
+};
+
+// Agent 运行 / 计划时间线（演示）
+const DEMO_AGENT_RUN: AgentRun = {
+  id: "run_demo_001",
+  session_id: "ses_demo_cet4_active",
+  task_type: "question_generation",
+  status: "running",
+  goal: "为截图词表生成 12 道四级题型练习并逐题讲解（演示）",
+  completion_criteria: ["生成 12 道题", "覆盖 5 种题型", "每题附带讲解"],
+  plan_version: 1,
+  error_code: "",
+  created_at: "2026-07-04T10:30:00Z",
+  updated_at: "2026-07-04T10:42:00Z",
+};
+
+const DEMO_AGENT_RUN_DETAIL: AgentRunDetail = {
+  run: DEMO_AGENT_RUN,
+  steps: [
+    { id: "step_demo_001", run_id: "run_demo_001", plan_version: 1, sequence: 1, title: "解析截图词表", description: "【模拟步骤】从截图抽取 5 个高频词并写入知识库。", tool_names: ["screenshot_parse"], completion_criteria: ["5 词入库"], status: "completed", attempts: 1, max_attempts: 3, lease_owner: "orchestrator", lease_expires_at: null, evidence: { words: 5 }, error_code: "", created_at: "2026-07-04T10:31:00Z", updated_at: "2026-07-04T10:31:42Z" },
+    { id: "step_demo_002", run_id: "run_demo_001", plan_version: 1, sequence: 2, title: "生成完整题组", description: "【模拟步骤】调用出题 Agent 生成 12 道题并写入数据库。", tool_names: ["question_author"], completion_criteria: ["12 道题入库"], status: "completed", attempts: 1, max_attempts: 3, lease_owner: "question_agent", lease_expires_at: null, evidence: { questions: 12 }, error_code: "", created_at: "2026-07-04T10:32:00Z", updated_at: "2026-07-04T10:35:00Z" },
+    { id: "step_demo_003", run_id: "run_demo_001", plan_version: 1, sequence: 3, title: "逐题展示与判分", description: "【模拟步骤】按顺序展示题目，用户作答后程序判分并更新掌握度。", tool_names: ["evaluator_tutor"], completion_criteria: ["12 题作答完成"], status: "running", attempts: 1, max_attempts: 1, lease_owner: "evaluator", lease_expires_at: null, evidence: { done: 5, total: 12 }, error_code: "", created_at: "2026-07-04T10:36:00Z", updated_at: "2026-07-04T10:42:00Z" },
+    { id: "step_demo_004", run_id: "run_demo_001", plan_version: 1, sequence: 4, title: "错题回流与复盘", description: "【模拟步骤】把错题按掌握度分、权重和间隔窗口排入下一轮队列。", tool_names: ["summary_agent"], completion_criteria: ["生成复盘报告"], status: "queued", attempts: 0, max_attempts: 1, lease_owner: "", lease_expires_at: null, evidence: {}, error_code: "", created_at: "2026-07-04T10:42:00Z", updated_at: "2026-07-04T10:42:00Z" },
+  ],
+  tool_calls: [],
+  approvals: [],
+  workflow_skill_ids: [],
+};
+
+// Pi 创造模式 / 权限档位 / 运行时修复状态（演示）
+const DEMO_CREATIVE_SETTINGS: CreativeModeSettingsState = {
+  enabled: false,
+  permission_profile: "request_approval",
+  rules_version: 1,
+  rules: [
+    { id: "rule_demo_001", tool: "shell", command_prefix: "git status", confirmation: "allow", precedence: 10 },
+    { id: "rule_demo_002", path_pattern: "~/LangDrill/**", confirmation: "allow", precedence: 20 },
+    { id: "rule_demo_003", network_domain: "example.com", confirmation: "require_approval", precedence: 30 },
+  ],
+  created_at: "2026-07-01T10:00:00Z",
+  updated_at: "2026-07-01T10:00:00Z",
+};
+
+const DEMO_CREATIVE_RUNTIME: CreativeRuntimeStatus = {
+  state: "ready",
+  version: "demo-1.0",
+  error_code: "",
+  details: { note: "演示：Pi 运行时已就绪（模拟状态）" },
+  updated_at: "2026-07-04T10:00:00Z",
+  ready: true,
+  log_path: "~/LangDrill/logs/pi-runtime.log",
+};
+
+const DEMO_CREATIVE_STATUS: CreativeStatusResponse = {
+  settings: DEMO_CREATIVE_SETTINGS,
+  runtime: DEMO_CREATIVE_RUNTIME,
+  approvals: [],
+};
+
+// 真实真题库 / 检索 / 蒸馏（演示）
+const DEMO_PAST_PAPER_CATALOG: PastPaperCatalog = {
+  exam_id: "cet4",
+  remote_count: 3,
+  installed_count: 2,
+  sources: [
+    { id: "src_cet4_2024", exam_id: "cet4", title: "大学英语四级 2024 年真题（演示）", source_url: "https://www.guojiya.cn/#exams", year: 2024, session: "6月", set_number: 1, installed: true },
+    { id: "src_cet4_2023", exam_id: "cet4", title: "大学英语四级 2023 年真题（演示）", source_url: "https://www.guojiya.cn/#exams", year: 2023, session: "6月", set_number: 1, installed: true },
+    { id: "src_cet4_2022", exam_id: "cet4", title: "大学英语四级 2022 年真题（演示）", source_url: "https://www.guojiya.cn/#exams", year: 2022, session: "6月", set_number: 1, installed: false },
+  ],
+  documents: [
+    { id: "doc_cet4_2024", source_id: "src_cet4_2024", exam_id: "cet4", title: "大学英语四级 2024 年真题（演示）", year: 2024, status: "ready", parser: "mineru-lite", raw_path: "~/LangDrill/papers/cet4/2024.md", markdown_path: "~/LangDrill/papers/cet4/2024.md", structured_path: "~/LangDrill/papers/cet4/2024.json", error_code: "" },
+    { id: "doc_cet4_2023", source_id: "src_cet4_2023", exam_id: "cet4", title: "大学英语四级 2023 年真题（演示）", year: 2023, status: "ready", parser: "mineru-lite", raw_path: "~/LangDrill/papers/cet4/2023.md", markdown_path: "~/LangDrill/papers/cet4/2023.md", structured_path: "~/LangDrill/papers/cet4/2023.json", error_code: "" },
+  ],
+  imports: [],
+  settings: {
+    exam_id: "cet4",
+    auto_sync: false,
+    sync_cadence_hours: 168,
+    recent_count: 3,
+    allowed_sources: ["src_cet4_2024", "src_cet4_2023"],
+    parser: "auto",
+    auto_distill: false,
+    verified_answers_only: true,
+    long_tail_min_ratio: 0.15,
+    max_question_type_ratio: 0.4,
+    coverage_window: 3,
+  },
+};
+
+const DEMO_PAST_PAPER_SEARCH_RESULT: { mode: "fts" | "hybrid"; items: RetrievedPastPaperQuestion[] } = {
+  mode: "fts",
+  items: [
+    { id: "pq_demo_001", document_id: "doc_cet4_2024", document_title: "大学英语四级 2024 年真题（演示）", question_type: "reading", prompt: "【模拟检索题目】What is the main idea of the passage about sustainable development?", source_page: 3, verification_status: "verified", correctness_evidence: true },
+    { id: "pq_demo_002", document_id: "doc_cet4_2023", document_title: "大学英语四级 2023 年真题（演示）", question_type: "context_vocabulary", prompt: "【模拟检索题目】The team worked together to ___ the goal before Friday.", source_page: 5, verification_status: "verified", correctness_evidence: true },
+  ],
+};
+
 // ---------- 模拟延迟 ----------
 
 function delay<T>(value: T, ms = 220): Promise<T> {
@@ -350,7 +645,10 @@ const SESSION_MESSAGES: Record<string, Message[]> = {
     {
       id: "msg_8a948d3493d7",
       role: "assistant",
-      content: "截图词表已解析为 12 个高频词，并已先生成完整题组入库。\n\n本轮覆盖：词汇语境、完形填空、阅读理解、同义改写和翻译判断。先从易混词开始。"
+      content: "截图词表已解析为 12 个高频词，并已先生成完整题组入库。\n\n本轮覆盖：词汇语境、完形填空、阅读理解、同义改写和翻译判断。先从易混词开始。",
+      payload: {
+        agent_run: DEMO_AGENT_RUN
+      }
     },
     { id: "msg_fc7e36c9d846", role: "user", content: "A\n补充提问：为什么这里不能选另一个看起来也合理的词？" },
     {
@@ -796,6 +1094,33 @@ export async function apiGet<T>(url: string): Promise<T> {
       token_usage: DEFAULT_TOKEN_USAGE,
       learning_stats: DEFAULT_LEARNING_STATS
     };
+  } else if (path === "/api/knowledge/documents") {
+    data = { documents: DEMO_KNOWLEDGE_DOCUMENTS };
+  } else if (path.startsWith("/api/memory/items/")) {
+    data = DEMO_MEMORY_DETAIL;
+  } else if (path === "/api/memory/items") {
+    data = { items: DEMO_MEMORY_ITEMS };
+  } else if (path === "/api/memory/candidates") {
+    data = { candidates: DEMO_MEMORY_CANDIDATES };
+  } else if (path === "/api/memory/status") {
+    data = DEMO_MEMORY_STATUS;
+  } else if (path === "/api/memory/export") {
+    data = { schema_version: 1, settings: DEMO_MEMORY_SETTINGS, records: [] } as MemoryExport;
+  } else if (path.startsWith("/api/agent-runs/") && path.endsWith("/plan")) {
+    data = DEMO_AGENT_RUN_DETAIL;
+  } else if (path.startsWith("/api/agent-runs/")) {
+    data = { run: DEMO_AGENT_RUN };
+  } else if (path === "/api/creative/status") {
+    data = DEMO_CREATIVE_STATUS;
+  } else if (path === "/api/creative/runtime-status") {
+    data = DEMO_CREATIVE_RUNTIME;
+  } else if (path === "/api/creative/approvals") {
+    data = { approvals: [] };
+  } else if (path === "/api/creative/audit") {
+    data = { events: [] };
+  } else if (path === "/api/past-papers/catalog") {
+    const examId = query.get("exam_id") || "cet4";
+    data = { ...DEMO_PAST_PAPER_CATALOG, exam_id: examId };
   } else {
     data = {};
   }
@@ -881,6 +1206,46 @@ export async function apiPost<T>(url: string, body: unknown): Promise<T> {
     data = mockScreenshotParse();
   } else if (path === "/api/phone-mirror/start") {
     data = { ok: false, command: "", error: "展示站不连接本机 adb / scrcpy。" };
+  } else if (path === "/api/knowledge/search") {
+    data = DEMO_KNOWLEDGE_SEARCH_RESULT;
+  } else if (path === "/api/knowledge/reindex") {
+    data = { reindexed: true, message: "演示：知识库重建索引完成（模拟）" };
+  } else if (path === "/api/memory/settings") {
+    data = { settings: { ...DEMO_MEMORY_SETTINGS, ...(payload as AnyObj) } };
+  } else if (path.startsWith("/api/memory/candidates/") && path.endsWith("/review")) {
+    data = { reviewed: true, action: payload.action };
+  } else if (path.startsWith("/api/memory/items/") && path.endsWith("/action")) {
+    data = { acted: true, action: payload.action };
+  } else if (path.startsWith("/api/memory/items/")) {
+    data = { item: { ...DEMO_MEMORY_ITEMS[0], ...(payload as AnyObj) } };
+  } else if (path === "/api/memory/import") {
+    data = { imported_count: 0, skipped_count: 0, message: "演示：展示站不会真实导入记忆。" };
+  } else if (path === "/api/memory/reindex") {
+    data = { indexed_count: DEMO_MEMORY_ITEMS.length };
+  } else if (path === "/api/memory/provider/prepare") {
+    data = { result: { requested_provider_id: String(payload.provider_id || ""), current_primary_id: "mimo", switched: false, migration_required: false, migration_verified: false, verification_token: "demo-token", source_count: DEMO_MEMORY_ITEMS.length, destination_count: DEMO_MEMORY_ITEMS.length, detail: "演示：供应商切换准备完成（模拟）" } as ProviderSwitchResult };
+  } else if (path === "/api/memory/provider/commit") {
+    data = { result: { requested_provider_id: String(payload.provider_id || ""), current_primary_id: String(payload.provider_id || "mimo"), switched: true, migration_required: false, migration_verified: true, verification_token: "", source_count: DEMO_MEMORY_ITEMS.length, destination_count: DEMO_MEMORY_ITEMS.length, detail: "演示：供应商切换已提交（模拟）" } as ProviderSwitchResult };
+  } else if (path.match(/^\/api\/agent-runs\/[^/]+\/(pause|resume|cancel)$/)) {
+    data = { run: { ...DEMO_AGENT_RUN, status: "paused" } };
+  } else if (path === "/api/creative/settings") {
+    data = { settings: { ...DEMO_CREATIVE_SETTINGS, ...(payload as AnyObj) } as CreativeModeSettingsState };
+  } else if (path.startsWith("/api/creative/approvals/") && path.endsWith("/resolve")) {
+    data = { ok: true };
+  } else if (path === "/api/creative/runtime/repair") {
+    data = { ok: true, log_path: "~/LangDrill/logs/pi-runtime.log", detail: "演示：Pi 运行时修复完成（模拟）" } as CreativeRuntimeRepairResult;
+  } else if (path === "/api/creative/runtime/open-log") {
+    data = { path: "~/LangDrill/logs/pi-runtime.log" };
+  } else if (path === "/api/past-papers/sync") {
+    data = { synced: 0, message: "演示：展示站不会真实下载真题。" };
+  } else if (path === "/api/past-papers/search") {
+    data = DEMO_PAST_PAPER_SEARCH_RESULT;
+  } else if (path === "/api/past-papers/distill") {
+    data = { status: "demo", findings: [{ type: "coverage_gap", detail: "演示：近三年阅读题型覆盖完整，翻译题型集中在文化类话题（模拟）" }] };
+  } else if (path === "/api/past-papers/reparse" || path === "/api/past-papers/reindex") {
+    data = { ok: true, message: "演示：操作已接受（模拟）" };
+  } else if (path === "/api/past-papers/settings") {
+    data = { ok: true, message: "演示：设置已保存（模拟）" };
   } else {
     data = {};
   }
@@ -913,6 +1278,10 @@ export async function apiPostFile<T>(url: string, file: File): Promise<T> {
     return delay({ draft, parser: "mock", message: "演示返回。", file_parser: "mock" } as T, 600);
   }
 
+  if (path.startsWith("/api/knowledge/import-file")) {
+    return delay({ imported: true, message: "演示：知识库文档已接受（模拟），展示站不会真实保存文件。" } as T, 600);
+  }
+
   return delay({} as T);
 }
 
@@ -921,6 +1290,10 @@ export async function apiDelete<T>(url: string): Promise<T> {
 
   if (path.startsWith("/api/sessions/")) {
     return delay({ deleted: true, sessions: DEMO_SESSIONS.filter((s) => !path.endsWith(s.id)) } as T);
+  }
+
+  if (path.startsWith("/api/knowledge/documents/")) {
+    return delay({ deleted: true } as T);
   }
 
   return delay({ deleted: true } as T);
