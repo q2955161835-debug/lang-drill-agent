@@ -10,6 +10,11 @@ from .context import ContextService
 from .knowledge.context import build_knowledge_context
 from .models import AuthoredQuestionSet, EvaluationResult, Question, TaskType
 from .past_papers.retrieval import PastPaperQuery, PastPaperRetrievalService
+from .past_papers.scheduler import (
+    AdaptivePracticeScheduler,
+    LearningTargetCandidate,
+    SchedulingConfig,
+)
 from .prompt_engine import PromptAssembler, PromptRegistry
 from .providers import ModelProvider
 from .services import PastPaperService, ProfileService, QuestionService, SessionService
@@ -247,6 +252,27 @@ class QuestionAuthorAgent:
         )
         exam_style_evidence = [item.model_dump() for item in paper_evidence.items]
         distilled_exam_patterns = self._distilled_exam_patterns(profile.exam_id)
+        schedule_decision = self._schedule_targets(
+            session_id=session_id,
+            exam_id=profile.exam_id,
+            content_pool=content_pool,
+            enabled_question_types=enabled_paper_types,
+            distilled_exam_patterns=distilled_exam_patterns,
+            count=count,
+        )
+        scheduled_targets = [item.model_dump() for item in schedule_decision.items]
+        scheduled_content_pool = [
+            {
+                **item.payload,
+                "term": str(item.payload.get("term") or item.label),
+                "meaning": str(item.payload.get("meaning") or item.label),
+                "scheduled_target_id": item.target_id,
+                "scheduled_question_type": item.question_type,
+                "scheduled_source": item.source,
+                "scheduled_reason": item.reason,
+            }
+            for item in schedule_decision.items
+        ]
         pack = self.assembler.assemble(
             task_type="question_authoring",
             exam_id=profile.exam_id,
@@ -259,7 +285,8 @@ class QuestionAuthorAgent:
                 "start_sequence": start_sequence,
                 "target_count": count,
                 "content_pool": content_pool,
-                "primary_learning_targets": content_pool,
+                "primary_learning_targets": scheduled_targets,
+                "schedule_decision": schedule_decision.model_dump(),
                 "past_paper_context": past_paper_context,
                 "exam_style_evidence": exam_style_evidence,
                 "distilled_exam_patterns": distilled_exam_patterns,
@@ -299,7 +326,7 @@ class QuestionAuthorAgent:
                 exam_id=profile.exam_id,
                 start_sequence=start_sequence,
                 target_count=count,
-                content_pool=content_pool,
+                content_pool=scheduled_content_pool or content_pool,
                 exact_count=exact_count,
             )
             self._attach_knowledge_source_refs(questions, knowledge_context)
@@ -327,7 +354,7 @@ class QuestionAuthorAgent:
                 exam_id=profile.exam_id,
                 start_sequence=start_sequence,
                 target_count=count,
-                content_pool=content_pool,
+                content_pool=scheduled_content_pool or content_pool,
                 exact_count=exact_count,
             )
             validation_status = "fallback_after_validation_failure"
@@ -338,7 +365,7 @@ class QuestionAuthorAgent:
                 exam_id=profile.exam_id,
                 start_sequence=start_sequence,
                 target_count=count,
-                content_pool=content_pool,
+                content_pool=scheduled_content_pool or content_pool,
                 exact_count=exact_count,
             )
             validation_status = "fallback_after_short_set"
@@ -351,6 +378,86 @@ class QuestionAuthorAgent:
             "opening_message": authored["opening_message"],
             "progress": question_service.question_progress(session_id),
         }
+
+    def _schedule_targets(
+        self,
+        *,
+        session_id: str,
+        exam_id: str,
+        content_pool: list[dict[str, object]],
+        enabled_question_types: list[str],
+        distilled_exam_patterns: list[dict[str, Any]],
+        count: int,
+    ):
+        enabled_types = [
+            question_type
+            for question_type in enabled_question_types
+            if question_type and question_type != "listening"
+        ] or ["reading", "translation", "writing", "vocabulary"]
+        candidates: list[LearningTargetCandidate] = []
+        for index, item in enumerate(content_pool):
+            source_scope = str(item.get("source_scope") or "")
+            source = (
+                "current_import"
+                if source_scope in {"screenshot_import", "chat_input"}
+                else "personal_review"
+            )
+            term = str(item.get("term") or item.get("id") or f"target-{index}")
+            mastery = float(item.get("mastery_score") or 0)
+            candidates.append(
+                LearningTargetCandidate(
+                    target_id=str(item.get("id") or f"content-{index}-{term}"),
+                    source=source,
+                    question_type=enabled_types[index % len(enabled_types)],
+                    label=term,
+                    mastery_gap=max(0, min(1, 1 - mastery)),
+                    due=bool(item.get("due_at")),
+                    uncertainty=0.5,
+                    payload=item,
+                )
+            )
+        for finding in distilled_exam_patterns:
+            question_type = str(finding.get("label") or "")
+            if question_type not in enabled_types:
+                continue
+            candidates.append(
+                LearningTargetCandidate(
+                    target_id=f"distillation:{finding.get('id')}",
+                    source="distillation",
+                    question_type=question_type,
+                    label=question_type,
+                    exam_frequency=float(
+                        (finding.get("finding") or {}).get("share_of_verified") or 0
+                    ),
+                    uncertainty=max(0, 1 - float(finding.get("confidence") or 0)),
+                    payload={
+                        "term": question_type,
+                        "meaning": "已验证真题证据支持的考试模式",
+                        "distillation_id": finding.get("id"),
+                    },
+                )
+            )
+        for question_type in enabled_types:
+            candidates.append(
+                LearningTargetCandidate(
+                    target_id=f"long-tail:{question_type}",
+                    source="long_tail",
+                    question_type=question_type,
+                    label=question_type,
+                    uncertainty=0.7,
+                    payload={
+                        "term": question_type,
+                        "meaning": "已启用题型的滚动覆盖目标",
+                    },
+                )
+            )
+        return AdaptivePracticeScheduler(self.conn).schedule(
+            candidates=candidates,
+            exam_id=exam_id,
+            count=count,
+            config=SchedulingConfig(enabled_question_types=frozenset(enabled_types)),
+            session_id=session_id,
+        )
 
     def _distilled_exam_patterns(self, exam_id: str) -> list[dict[str, Any]]:
         rows = self.conn.execute(
@@ -704,6 +811,11 @@ class QuestionAuthorAgent:
                     meaning,
                     terms,
                     source_scope=str(item.get("source_scope") or ""),
+                    scheduled_question_type=str(
+                        item.get("scheduled_question_type") or "context_vocabulary"
+                    ),
+                    scheduled_target_id=str(item.get("scheduled_target_id") or ""),
+                    scheduled_reason=str(item.get("scheduled_reason") or ""),
                 )
             )
         return questions
@@ -718,6 +830,9 @@ class QuestionAuthorAgent:
         terms: list[dict[str, object]],
         *,
         source_scope: str = "",
+        scheduled_question_type: str = "context_vocabulary",
+        scheduled_target_id: str = "",
+        scheduled_reason: str = "",
     ) -> Question:
         distractors = [
             str(item.get("term") or "").strip().lower()
@@ -739,7 +854,16 @@ class QuestionAuthorAgent:
         sentence = self._fallback_context_sentence(term.lower(), meaning)
         source_type = "user_import" if source_scope == "screenshot_import" else "generated"
         paper_refs = PastPaperService(self.conn).generation_context(exam_id).get("selected_papers", [])
-        source_refs = [{"type": source_type, "boundary": "practice_only", "term": term}]
+        source_refs = [
+            {"type": source_type, "boundary": "practice_only", "term": term},
+            {
+                "type": "scheduled_target",
+                "target_id": scheduled_target_id,
+                "question_type": scheduled_question_type,
+                "reason": scheduled_reason,
+                "boundary": "scheduler_decision",
+            },
+        ]
         if paper_refs:
             ref = paper_refs[0]
             source_refs.append(
@@ -751,6 +875,37 @@ class QuestionAuthorAgent:
                     "source_url": ref.get("source_url", ""),
                     "boundary": "style_reference_only",
                 }
+            )
+        if scheduled_question_type == "translation":
+            return Question(
+                id=new_id("q"),
+                session_id=session_id,
+                sequence=sequence,
+                type="translation",
+                prompt=f"第 {sequence} 题\nTranslate the target expression in context: {meaning}",
+                answer={"correct": term},
+                explanation=f"A reference translation for this scheduled target is `{term}`.",
+                knowledge_tags=[f"translation:{term}"],
+                difficulty=0.5,
+                source_refs=source_refs,
+            )
+        if scheduled_question_type in {"writing", "writing_task1", "writing_task2", "speaking"}:
+            return Question(
+                id=new_id("q"),
+                session_id=session_id,
+                sequence=sequence,
+                type="short_answer",
+                prompt=(
+                    f"第 {sequence} 题\nWrite one complete sentence that correctly uses `{term}` "
+                    f"to express this idea: {meaning}"
+                ),
+                answer={"correct": f"A complete context-appropriate sentence using {term}."},
+                explanation=(
+                    f"The response should use `{term}` accurately and preserve the target idea: {meaning}."
+                ),
+                knowledge_tags=[f"writing:{term}"],
+                difficulty=0.55,
+                source_refs=source_refs,
             )
         return Question(
             id=new_id("q"),
