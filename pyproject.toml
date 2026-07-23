@@ -1,6 +1,6 @@
 [project]
 name = "langdrill-agent"
-version = "1.0.0-alpha.1"
+version = "1.0.0-alpha.2"
 description = "CLI and Web language learning agent built from lang-drill-coach assets."
 requires-python = ">=3.11"
 license = { text = "PolyForm-Noncommercial-1.0.0; commercial use requires separate written permission" }

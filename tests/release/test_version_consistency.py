@@ -8,7 +8,7 @@
 - src-tauri/tauri.conf.json
 - 演示web2/src/demoVersion.ts（实验版元数据）
 
-发布说明 release-notes/v1.0.0-alpha.1.md 的 H1 标题必须同时包含
+发布说明 release-notes/v1.0.0-alpha.2.md 的 H1 标题必须同时包含
 `实验版`、`Experimental` 和 `実験版`，以体现三语实验版定位。
 """
 
@@ -31,7 +31,7 @@ TAURI_CONF = REPO_ROOT / "src-tauri" / "tauri.conf.json"
 DEMO_VERSION_TS = REPO_ROOT / "演示web2" / "src" / "demoVersion.ts"
 RELEASE_NOTES_DIR = REPO_ROOT / "release-notes"
 
-EXPECTED_VERSION = "1.0.0-alpha.1"
+EXPECTED_VERSION = "1.0.0-alpha.2"
 
 # SemVer 校验：MAJOR.MINOR.PATCH-prerelease.identifier
 # 接受 1.0.0-alpha.1 这类带预发布标签的实验版本号。
@@ -128,6 +128,11 @@ def test_cargo_lock_version_matches_canonical():
 def test_tauri_conf_version_matches_canonical():
     text = _read_text(TAURI_CONF)
     assert _extract_tauri_conf_version(text) == EXPECTED_VERSION
+
+
+def test_tauri_conf_builds_signed_updater_artifacts():
+    data = json.loads(_read_text(TAURI_CONF))
+    assert data.get("bundle", {}).get("createUpdaterArtifacts") is True
 
 
 def test_demo_version_metadata_matches_canonical():

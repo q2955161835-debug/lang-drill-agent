@@ -8,7 +8,7 @@ Many learning tools split word lists, practice, mistakes, explanations and stati
 
 The project focuses on exams such as CET-4/CET-6, CFT-4, CJT4/CJT6 and other language tests. Formal learning state is persisted in SQLite. Models generate questions and explanations; the program persists questions, scores answers, advances progress and computes statistics, so learning records never drift inside chat context.
 
-Both a Web edition and a Windows desktop edition are provided. The desktop edition wraps the same React/Vite UI with Tauri and starts a local FastAPI backend; the Web development workflow stays unchanged. The current version is `v1.0.0-alpha.1`. The default learning flow remains unchanged and creative mode is an optional experimental capability.
+Both a Web edition and a Windows desktop edition are provided. The desktop edition wraps the same React/Vite UI with Tauri and starts a local FastAPI backend; the Web development workflow stays unchanged. The current version is `v1.0.0-alpha.2`. The default learning flow remains unchanged and creative mode is an optional experimental capability.
 
 ## Core Features
 
@@ -141,7 +141,7 @@ GitHub Actions CI is configured. Pushes and pull requests run backend tests, Pyt
 
 ## Experimental Status
 
-The current version `v1.0.0-alpha.1` is an experimental pre release: creative mode, the signed update center, the trilingual UI and demo site sync are all experimental capabilities and may be unstable. The formal learning flow (word list import, question generation, answering, explanation, review) remains stable. Back up the `%APPDATA%\Lang Drill Agent` data directory before upgrading; to roll back, uninstall the new version and reinstall the previous one.
+The current version `v1.0.0-alpha.2` is an experimental pre release: creative mode, the signed update center, the trilingual UI and demo site sync are all experimental capabilities and may be unstable. The formal learning flow (word list import, question generation, answering, explanation, review) remains stable. Back up the `%APPDATA%\Lang Drill Agent` data directory before upgrading; to roll back, uninstall the new version and reinstall the previous one.
 
 ## License
 

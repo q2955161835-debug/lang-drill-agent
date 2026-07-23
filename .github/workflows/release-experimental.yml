@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to release (e.g. v1.0.0-alpha.1); defaults to GITHUB_REF"
+        description: "Tag to release (e.g. v1.0.0-alpha.2); defaults to GITHUB_REF"
         required: false
         default: ""
 
@@ -171,11 +171,14 @@ jobs:
           if (-not $installer) {
             throw "NSIS installer (*-setup.exe) was not produced by the desktop build."
           }
-          Copy-Item -LiteralPath $installer.FullName -Destination $stage
+          # 与历史 Release 和演示站下载链接保持一致：资产文件名使用点号代替空格。
+          $assetInstallerName = $installer.Name -replace " ", "."
+          $stagedInstaller = Join-Path $stage $assetInstallerName
+          Copy-Item -LiteralPath $installer.FullName -Destination $stagedInstaller
 
           $sigFile = "$($installer.FullName).sig"
           if (Test-Path -LiteralPath $sigFile) {
-            Copy-Item -LiteralPath $sigFile -Destination $stage
+            Copy-Item -LiteralPath $sigFile -Destination "$stagedInstaller.sig"
           } else {
             throw "Updater signature (.sig) was not produced. Check TAURI_SIGNING_PRIVATE_KEY secret."
           }
@@ -187,7 +190,7 @@ jobs:
           } else {
             $version = (Get-Content -LiteralPath "VERSION" -Raw -Encoding UTF8).Trim()
             $pubDate = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
-            $installerName = $installer.Name
+            $installerName = $assetInstallerName
             $signature = (Get-Content -LiteralPath $sigFile -Raw -Encoding UTF8).Trim()
             $manifest = @{
               version = $version

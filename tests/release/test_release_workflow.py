@@ -264,7 +264,7 @@ class TestVersionConsistency:
         ), "工作流必须验证 tag 版本与清单版本一致"
 
     def test_release_notes_file_exists(self):
-        notes = REPO_ROOT / "release-notes" / "v1.0.0-alpha.1.md"
+        notes = REPO_ROOT / "release-notes" / "v1.0.0-alpha.2.md"
         assert notes.exists(), "发布说明文件不存在"
 
 
