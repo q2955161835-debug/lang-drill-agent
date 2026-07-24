@@ -35,4 +35,3 @@
 - Use `superpowers:verification-before-completion` before claiming completion.
 - Use `superpowers:requesting-code-review` before final acceptance.
 - Use `superpowers:finishing-a-development-branch` only after the task acceptance record concludes `通过`.
-
