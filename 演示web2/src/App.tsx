@@ -30,6 +30,7 @@ import {
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { onlineExperience, releaseChannels } from "./releaseChannels";
 
 gsap.registerPlugin(useGSAP, ScrollTrigger);
 
@@ -39,9 +40,7 @@ type ThemeChoice = "system" | "light" | "dark";
 type ResolvedTheme = "light" | "dark";
 
 const GITHUB_URL = "https://github.com/q2955161835-debug/lang-drill-agent";
-const DOWNLOAD_VERSION = "v1.0.0-alpha.2";
-const DOWNLOAD_URL =
-  "https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v1.0.0-alpha.2/Lang.Drill.Agent_1.0.0-alpha.2_x64-setup.exe";
+const EXPERIMENTAL_DOWNLOAD = releaseChannels.experimental;
 
 const THEME_OPTIONS: Array<{ value: ThemeChoice; label: string }> = [
   { value: "system", label: "跟随系统" },
@@ -520,9 +519,9 @@ function SiteHeader({ themeChoice, onThemeCycle }: { themeChoice: ThemeChoice; o
             <GithubLogo size={18} />
             <span>GitHub</span>
           </a>
-          <a className="button primary-button" href={DOWNLOAD_URL}>
+          <a className="button primary-button" href={EXPERIMENTAL_DOWNLOAD.downloadUrl}>
             <DownloadSimple size={18} />
-            <span>Download {DOWNLOAD_VERSION}</span>
+            <span>下载实验版 v1.0.0-alpha.2</span>
           </a>
         </div>
       </div>
@@ -557,13 +556,13 @@ function HeroSection() {
           把截图词表、文本词条和文件材料变成考试式题组，让"记住单词"和"会做题"进入同一个闭环。
         </p>
         <div className="hero-actions">
-          <a className="button primary-button hero-cta" href="#/app">
+          <a className="button primary-button hero-cta" href={onlineExperience.href} aria-label={onlineExperience.label}>
             <Play size={18} weight="fill" />
-            在线体验
+            在线体验（实验版）
           </a>
-          <a className="button ghost-button" href={DOWNLOAD_URL}>
+          <a className="button ghost-button" href={EXPERIMENTAL_DOWNLOAD.downloadUrl}>
             <DownloadSimple size={18} />
-            下载 Windows 桌面版 {DOWNLOAD_VERSION}
+            下载 Windows 桌面版 {EXPERIMENTAL_DOWNLOAD.version}
           </a>
         </div>
         <div className="hero-meta">
@@ -913,9 +912,9 @@ function DemoCtaSection() {
           设置和拓展 Skills 都可以自由探索。所有数据均为演示用，不会调用真实模型或读取本地文件。
         </p>
         <div className="demo-cta-actions">
-          <a className="button primary-button large" href="#/app">
+          <a className="button primary-button large" href={onlineExperience.href} aria-label={onlineExperience.label}>
             <Play size={20} weight="fill" />
-            进入在线体验
+            进入在线体验（实验版）
           </a>
           <a className="button ghost-button" href={GITHUB_URL} target="_blank" rel="noreferrer">
             <GithubLogo size={18} />
@@ -944,17 +943,30 @@ function InstallSection() {
           <h2>复习策略可追踪</h2>
           <p>
             推荐安装 Windows 桌面版体验完整能力：掌握度分、错题权重和间隔复习窗口会随每次作答更新，下一轮优先召回最应该巩固的词和题。
-            当前版本 {DOWNLOAD_VERSION} 为实验版（Experimental），首次集成分层记忆、知识库 RAG 引用、Agent 计划时间线、Pi 创造模式、真实真题检索与蒸馏、三语 UI 和应用内签名更新中心；内测未签名安装包首次运行可能触发 Windows SmartScreen 提示，请选择"仍要运行"。
+            当前实验版 {EXPERIMENTAL_DOWNLOAD.version} 首次集成分层记忆、知识库 RAG 引用、Agent 计划时间线、Pi 创造模式、真实真题检索与蒸馏、三语 UI 和应用内签名更新中心；内测未签名安装包首次运行可能触发 Windows SmartScreen 提示，请选择"仍要运行"。稳定版 {releaseChannels.stable.version} 适合优先考虑稳定性的本地安装。
           </p>
           <div className="install-warning">
             <Warning size={16} weight="fill" />
             <span>测试版未代码签名，安装时如遇 SmartScreen 警告请选择"更多信息 → 仍要运行"。</span>
           </div>
+          <div className="release-channel-grid" aria-label="桌面版下载选择">
+            {Object.values(releaseChannels).map((channel) => (
+              <article className={`release-channel-card ${channel.id}`} key={channel.id}>
+                <span className="release-channel-label">{channel.label}</span>
+                <strong className="release-channel-version">{channel.version}</strong>
+                <p className="release-channel-desc">{channel.description}</p>
+                <a
+                  className={channel.id === "experimental" ? "button primary-button large" : "button ghost-button large"}
+                  href={channel.downloadUrl}
+                  aria-label={channel.id === "stable" ? "下载 稳定版" : "下载 实验版"}
+                >
+                  <DownloadSimple size={20} />
+                  {channel.id === "stable" ? "下载 稳定版" : "下载 实验版"}
+                </a>
+              </article>
+            ))}
+          </div>
           <div className="install-actions">
-            <a className="button primary-button large" href={DOWNLOAD_URL}>
-              <DownloadSimple size={20} />
-              Windows 安装包 {DOWNLOAD_VERSION}
-            </a>
             <a className="button ghost-button" href={GITHUB_URL} target="_blank" rel="noreferrer">
               <GithubLogo size={20} />
               GitHub 仓库
