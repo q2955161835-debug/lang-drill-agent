@@ -38,6 +38,11 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Build NSIS installer
+        env:
+          # tauri.conf.json 启用了 updater 产物；即使 VM 只验收安装行为，
+          # 构建阶段也必须提供与正式 Release 相同的签名密钥。
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\desktop\build-desktop.ps1 -SkipInstall
 
       - name: Locate installer
