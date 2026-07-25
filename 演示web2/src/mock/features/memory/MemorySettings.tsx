@@ -17,6 +17,7 @@ import { memoryApi, type MemoryApi } from "./api";
 import type {
   MemoryCandidate,
   MemoryCategory,
+  MemoryGroup,
   MemoryItem,
   MemoryItemDetail,
   MemorySettingsState,
@@ -48,6 +49,20 @@ const CANDIDATE_REASON_LABELS: Record<string, string> = {
   confidence_below_threshold: "置信度未达阈值",
 };
 
+// Plan 3 Task 1: 三档记忆模式。token 上限与后端 MODE_LIMITS 保持一致。
+const MODE_OPTIONS: Array<{ id: MemorySettingsState["mode"]; label: string; hint: string }> = [
+  { id: "economy", label: "节省", hint: "5,000 tokens · 适合快速对话" },
+  { id: "standard", label: "标准", hint: "10,000 tokens · 默认推荐" },
+  { id: "deep", label: "深入", hint: "动态（最多 70% 可用上下文）· 长程学习" },
+];
+
+// Plan 3 Task 1: 三个用户可见组，覆盖内部 8 类 category。
+const GROUP_OPTIONS: Array<{ id: MemoryGroup; label: string; description: string }> = [
+  { id: "about_me", label: "关于我", description: "核心信息、画像、语义记忆" },
+  { id: "learning_history", label: "学习记录", description: "情景、时序、薄弱点" },
+  { id: "usage_habits", label: "使用习惯", description: "流程、偏好" },
+];
+
 function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
@@ -74,6 +89,7 @@ export function MemorySettings({ api = memoryApi }: { api?: MemoryApi }) {
   const [providerSwitch, setProviderSwitch] = useState<ProviderSwitchResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [devOpen, setDevOpen] = useState(false);
   const importInputRef = useRef<HTMLInputElement | null>(null);
 
   const refresh = useCallback(async (search = "") => {
@@ -166,6 +182,14 @@ export function MemorySettings({ api = memoryApi }: { api?: MemoryApi }) {
     setDetails((current) => ({ ...current, [itemId]: detail }));
   }, "记忆详情加载失败");
 
+  const clearGroup = (group: MemoryGroup) => withBusy(async () => {
+    const label = GROUP_OPTIONS.find((option) => option.id === group)?.label || group;
+    if (!window.confirm(`清理“${label}”的全部记忆？此操作会归档相关记忆，可在开发者选项中恢复。`)) return;
+    const result = await api.clearGroup(group);
+    setMessage(`已归档 ${result.archived_count} 条记忆。`);
+    await refresh(query);
+  }, "记忆清理失败");
+
   const exportMemory = () => withBusy(async () => {
     const payload = await api.exportMemory();
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
@@ -216,12 +240,75 @@ export function MemorySettings({ api = memoryApi }: { api?: MemoryApi }) {
     return <p className="hint" role="status">{message || "正在加载记忆设置..."}</p>;
   }
 
+  const budget = status.effective_budget;
+  const groupCounts = status.group_counts;
+
   return (
     <div className="memory-settings">
       <div className="memory-summary" aria-label="记忆状态">
         <strong>{status.counts.active || 0} 条生效</strong>
         <span>{status.counts.candidates || 0} 条等待审核</span>
         <span>主写供应商：{status.provider.current_primary_id === "builtin" ? "内置" : status.provider.current_primary_id}</span>
+      </div>
+
+      <fieldset className="memory-mode-grid" aria-label="记忆模式">
+        <legend>记忆模式</legend>
+        {MODE_OPTIONS.map((option) => (
+          <label key={option.id} className={`memory-mode-card${settings.mode === option.id ? " is-selected" : ""}`}>
+            <input
+              type="radio"
+              name="memory-mode"
+              value={option.id}
+              checked={settings.mode === option.id}
+              onChange={() => setSettings({ ...settings, mode: option.id })}
+            />
+            <span>
+              <strong>{option.label}</strong>
+              <small>{option.hint}</small>
+            </span>
+          </label>
+        ))}
+      </fieldset>
+
+      {budget && (
+        <div className="memory-budget-summary" aria-label="记忆预算">
+          <span>当前有效预算：<strong>{budget.effective_tokens.toLocaleString()}</strong> tokens</span>
+          <span>已预留：{budget.reserved_tokens.toLocaleString()} tokens</span>
+          {budget.constrained_by_context && (
+            <span className="memory-budget-warning">可用上下文不足，已自动降低预算</span>
+          )}
+        </div>
+      )}
+
+      <div className="memory-group-grid" aria-label="记忆分组">
+        {GROUP_OPTIONS.map((group) => (
+          <article key={group.id} className="memory-group-card">
+            <div className="memory-group-head">
+              <strong>{group.label}</strong>
+              <span>{groupCounts?.[group.id] ?? 0} 条</span>
+            </div>
+            <small>{group.description}</small>
+            <div className="memory-group-actions">
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={settings.group_enabled[group.id]}
+                  onChange={(event) => setSettings({
+                    ...settings,
+                    group_enabled: { ...settings.group_enabled, [group.id]: event.target.checked },
+                  })}
+                />
+                <span>启用</span>
+              </label>
+              <button
+                type="button"
+                className="inline-action"
+                disabled={busy}
+                onClick={() => void clearGroup(group.id)}
+              >清理{group.label}</button>
+            </div>
+          </article>
+        ))}
       </div>
 
       <div className="memory-toggle-grid">
@@ -247,47 +334,7 @@ export function MemorySettings({ api = memoryApi }: { api?: MemoryApi }) {
         </label>
       </div>
 
-      <div className="memory-category-list" aria-label="记忆类别">
-        {(Object.keys(CATEGORY_LABELS) as MemoryCategory[]).map((category) => (
-          <label key={category} className="inline-check">
-            <input
-              type="checkbox"
-              checked={settings.category_enabled[category]}
-              onChange={(event) => setSettings({
-                ...settings,
-                category_enabled: { ...settings.category_enabled, [category]: event.target.checked },
-              })}
-            />
-            {CATEGORY_LABELS[category]}
-          </label>
-        ))}
-      </div>
-
-      <div className="memory-policy-grid">
-        <label><span>写入模式</span><select value={settings.write_mode} onChange={(event) => setSettings({ ...settings, write_mode: event.target.value as MemorySettingsState["write_mode"] })}><option value="explicit">仅显式</option><option value="approval">全部审核</option><option value="balanced">平衡</option><option value="proactive">主动</option></select></label>
-        <label><span>弱项证据数</span><input type="number" min="2" max="20" value={settings.learning_evidence_min} onChange={(event) => setSettings({ ...settings, learning_evidence_min: Number(event.target.value) })} /></label>
-        <label><span>最低置信度</span><input type="number" min="0" max="1" step="0.05" value={settings.confidence_min} onChange={(event) => setSettings({ ...settings, confidence_min: Number(event.target.value) })} /></label>
-        <label><span>默认有效天数</span><input type="number" min="1" max="3650" value={settings.default_ttl_days} onChange={(event) => setSettings({ ...settings, default_ttl_days: Number(event.target.value) })} /></label>
-        <label><span>核心记忆预算</span><input type="number" min="50" max="20000" value={settings.core_token_budget} onChange={(event) => setSettings({ ...settings, core_token_budget: Number(event.target.value) })} /></label>
-        <label><span>召回数量</span><input type="number" min="1" max="50" value={settings.recall_top_k} onChange={(event) => setSettings({ ...settings, recall_top_k: Number(event.target.value) })} /></label>
-        <label><span>召回令牌预算</span><input type="number" min="100" max="20000" value={settings.recall_token_budget} onChange={(event) => setSettings({ ...settings, recall_token_budget: Number(event.target.value) })} /></label>
-        <button type="button" className="inline-action primary-inline" disabled={busy} onClick={() => void saveSettings()}><FloppyDisk size={16} />保存记忆设置</button>
-      </div>
-
-      <div className="memory-tool-row">
-        <button type="button" className="inline-action" disabled={busy} onClick={() => void exportMemory()}><DownloadSimple size={16} />导出</button>
-        <button type="button" className="inline-action" disabled={busy} onClick={() => importInputRef.current?.click()}><UploadSimple size={16} />导入</button>
-        <input ref={importInputRef} type="file" accept="application/json,.json" hidden onChange={(event) => void importMemory(event.target.files?.[0] || null)} />
-        <button type="button" className="inline-action" disabled={busy} onClick={() => void reindex()}><ArrowClockwise size={16} />重建索引</button>
-      </div>
-
-      <div className="memory-provider-row">
-        <input aria-label="记忆供应商" value={providerId} onChange={(event) => setProviderId(event.target.value)} />
-        <button type="button" className="inline-action" disabled={busy || !providerId.trim()} onClick={() => void prepareProvider()}>预检供应商</button>
-        {providerSwitch?.migration_verified && providerSwitch.verification_token && (
-          <button type="button" className="inline-action primary-inline" disabled={busy} onClick={() => void commitProvider()}>确认切换主写</button>
-        )}
-      </div>
+      <button type="button" className="inline-action primary-inline" disabled={busy} onClick={() => void saveSettings()}><FloppyDisk size={16} />保存记忆设置</button>
 
       <section className="memory-review-section">
         <div className="memory-section-head"><strong>等待审核</strong><span>{candidates.length}</span></div>
@@ -353,6 +400,59 @@ export function MemorySettings({ api = memoryApi }: { api?: MemoryApi }) {
           {!items.length && <p className="hint">没有匹配的记忆。</p>}
         </div>
       </section>
+
+      <details className="memory-developer-options" open={devOpen}>
+        <summary
+          onClick={(event) => {
+            event.preventDefault();
+            setDevOpen((current) => !current);
+          }}
+        >开发者选项</summary>
+        {devOpen && (
+          <div className="memory-developer-body">
+            <div className="memory-category-list" aria-label="记忆类别">
+              {(Object.keys(CATEGORY_LABELS) as MemoryCategory[]).map((category) => (
+                <label key={category} className="inline-check">
+                  <input
+                    type="checkbox"
+                    checked={settings.category_enabled[category]}
+                    onChange={(event) => setSettings({
+                      ...settings,
+                      category_enabled: { ...settings.category_enabled, [category]: event.target.checked },
+                    })}
+                  />
+                  {CATEGORY_LABELS[category]}
+                </label>
+              ))}
+            </div>
+
+            <div className="memory-policy-grid">
+              <label><span>写入模式</span><select value={settings.write_mode} onChange={(event) => setSettings({ ...settings, write_mode: event.target.value as MemorySettingsState["write_mode"] })}><option value="explicit">仅显式</option><option value="approval">全部审核</option><option value="balanced">平衡</option><option value="proactive">主动</option></select></label>
+              <label><span>弱项证据数</span><input type="number" min="2" max="20" value={settings.learning_evidence_min} onChange={(event) => setSettings({ ...settings, learning_evidence_min: Number(event.target.value) })} /></label>
+              <label><span>最低置信度</span><input type="number" min="0" max="1" step="0.05" value={settings.confidence_min} onChange={(event) => setSettings({ ...settings, confidence_min: Number(event.target.value) })} /></label>
+              <label><span>默认有效天数</span><input type="number" min="1" max="3650" value={settings.default_ttl_days} onChange={(event) => setSettings({ ...settings, default_ttl_days: Number(event.target.value) })} /></label>
+              <label><span>核心记忆预算</span><input type="number" min="50" max="20000" value={settings.core_token_budget} onChange={(event) => setSettings({ ...settings, core_token_budget: Number(event.target.value) })} /></label>
+              <label><span>召回数量</span><input type="number" min="1" max="50" value={settings.recall_top_k} onChange={(event) => setSettings({ ...settings, recall_top_k: Number(event.target.value) })} /></label>
+              <label><span>召回令牌预算</span><input type="number" min="100" max="20000" value={settings.recall_token_budget} onChange={(event) => setSettings({ ...settings, recall_token_budget: Number(event.target.value) })} /></label>
+            </div>
+
+            <div className="memory-tool-row">
+              <button type="button" className="inline-action" disabled={busy} onClick={() => void exportMemory()}><DownloadSimple size={16} />导出</button>
+              <button type="button" className="inline-action" disabled={busy} onClick={() => importInputRef.current?.click()}><UploadSimple size={16} />导入</button>
+              <input ref={importInputRef} type="file" accept="application/json,.json" hidden onChange={(event) => void importMemory(event.target.files?.[0] || null)} />
+              <button type="button" className="inline-action" disabled={busy} onClick={() => void reindex()}><ArrowClockwise size={16} />重建索引</button>
+            </div>
+
+            <div className="memory-provider-row">
+              <input aria-label="记忆供应商" value={providerId} onChange={(event) => setProviderId(event.target.value)} />
+              <button type="button" className="inline-action" disabled={busy || !providerId.trim()} onClick={() => void prepareProvider()}>预检供应商</button>
+              {providerSwitch?.migration_verified && providerSwitch.verification_token && (
+                <button type="button" className="inline-action primary-inline" disabled={busy} onClick={() => void commitProvider()}>确认切换主写</button>
+              )}
+            </div>
+          </div>
+        )}
+      </details>
 
       {message && <p className="hint strong-hint" role="status">{message}</p>}
     </div>

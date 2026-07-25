@@ -433,6 +433,12 @@ const DEMO_MEMORY_SETTINGS: MemorySettingsState = {
   enabled: true,
   capture_enabled: true,
   recall_enabled: true,
+  mode: "standard",
+  group_enabled: {
+    about_me: true,
+    learning_history: true,
+    usage_habits: true,
+  },
   category_enabled: {
     core: true, semantic: true, episodic: true, procedural: true,
     temporal: true, preference: true, profile: true, learning_weakness: true,
@@ -456,6 +462,19 @@ const DEMO_MEMORY_STATUS: MemoryStatusResponse = {
     migration_required: false,
   },
   counts: { core: 12, semantic: 28, episodic: 8, procedural: 5, temporal: 14, preference: 3, profile: 7, learning_weakness: 9 },
+  effective_budget: {
+    mode: "standard",
+    configured_limit: 10000,
+    available_context_tokens: 1000000,
+    reserved_tokens: 300000,
+    effective_tokens: 10000,
+    constrained_by_context: false,
+  },
+  group_counts: {
+    about_me: 47,
+    learning_history: 31,
+    usage_habits: 8,
+  },
 };
 
 const DEMO_MEMORY_ITEMS: MemoryItem[] = [
@@ -1226,6 +1245,16 @@ export async function apiPost<T>(url: string, body: unknown): Promise<T> {
     data = { result: { requested_provider_id: String(payload.provider_id || ""), current_primary_id: "mimo", switched: false, migration_required: false, migration_verified: false, verification_token: "demo-token", source_count: DEMO_MEMORY_ITEMS.length, destination_count: DEMO_MEMORY_ITEMS.length, detail: "演示：供应商切换准备完成（模拟）" } as ProviderSwitchResult };
   } else if (path === "/api/memory/provider/commit") {
     data = { result: { requested_provider_id: String(payload.provider_id || ""), current_primary_id: String(payload.provider_id || "mimo"), switched: true, migration_required: false, migration_verified: true, verification_token: "", source_count: DEMO_MEMORY_ITEMS.length, destination_count: DEMO_MEMORY_ITEMS.length, detail: "演示：供应商切换已提交（模拟）" } as ProviderSwitchResult };
+  } else if (path.match(/^\/api\/memory\/groups\/[^/]+\/clear$/)) {
+    const match = path.match(/^\/api\/memory\/groups\/([^/]+)\/clear$/);
+    const groupId = (match && match[1]) || "learning_history";
+    const groupCategories: Record<string, string[]> = {
+      about_me: ["core", "profile", "semantic"],
+      learning_history: ["episodic", "temporal", "learning_weakness"],
+      usage_habits: ["procedural", "preference"],
+    };
+    const categories = groupCategories[groupId] || [];
+    data = { group: groupId, categories, archived_count: categories.length };
   } else if (path.match(/^\/api\/agent-runs\/[^/]+\/(pause|resume|cancel)$/)) {
     data = { run: { ...DEMO_AGENT_RUN, status: "paused" } };
   } else if (path === "/api/creative/settings") {

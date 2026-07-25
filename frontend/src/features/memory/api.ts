@@ -2,6 +2,7 @@ import { apiGet, apiPost } from "../../api";
 import type {
   MemoryCandidate,
   MemoryExport,
+  MemoryGroup,
   MemoryItem,
   MemoryItemDetail,
   MemorySettingsState,
@@ -23,6 +24,8 @@ export type MemoryApi = {
   reindex(): Promise<{ indexed_count: number }>;
   prepareProvider(providerId: string): Promise<ProviderSwitchResult>;
   commitProvider(providerId: string, verificationToken: string): Promise<ProviderSwitchResult>;
+  // Plan 3 Task 3: 清理指定用户组的全部记忆（归档）。后端要求 confirmed=true 才执行。
+  clearGroup(group: MemoryGroup): Promise<{ archived_count: number }>;
 };
 
 export const memoryApi: MemoryApi = {
@@ -75,5 +78,12 @@ export const memoryApi: MemoryApi = {
       verification_token: verificationToken,
     });
     return response.result;
+  },
+  async clearGroup(group) {
+    const response = await apiPost<{ archived_count: number }>(
+      `/api/memory/groups/${encodeURIComponent(group)}/clear`,
+      { confirmed: true },
+    );
+    return { archived_count: response.archived_count };
   },
 };

@@ -1663,6 +1663,30 @@ body.panel-resize-active * {
 .memory-detail { display: flex; flex-wrap: wrap; gap: 5px 12px; padding-top: 4px; }
 .memory-detail small { flex: 1 1 180px; }
 .memory-row-actions .danger-action { color: var(--danger); }
+.memory-mode-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 14px; border: var(--border-thin); border-radius: var(--radius-sm); margin: 0; }
+.memory-mode-grid > legend { padding: 0 6px; color: var(--muted-strong); font-size: .82rem; font-weight: 700; }
+.memory-mode-card { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border: var(--border-thin); border-radius: var(--radius-sm); background: var(--surface); cursor: pointer; min-width: 0; }
+.memory-mode-card input { width: auto; margin-top: 2px; }
+.memory-mode-card span { display: grid; gap: 2px; min-width: 0; }
+.memory-mode-card strong { color: var(--muted-strong); font-size: .9rem; }
+.memory-mode-card small { color: var(--muted); font-size: .76rem; }
+.memory-mode-card.is-selected { border-color: var(--accent); background: var(--accent-4); }
+.memory-budget-summary { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 10px 14px; border: var(--border-thin); border-radius: var(--radius-sm); background: var(--surface-strong); }
+.memory-budget-summary span { color: var(--muted-strong); font-size: .84rem; }
+.memory-budget-summary strong { color: var(--accent); }
+.memory-budget-warning { color: var(--danger) !important; font-weight: 700; }
+.memory-group-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.memory-group-card { display: grid; gap: 6px; padding: 12px; border: var(--border-thin); border-radius: var(--radius-sm); background: var(--surface-strong); min-width: 0; }
+.memory-group-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; min-width: 0; }
+.memory-group-head strong { color: var(--accent); }
+.memory-group-head span { color: var(--muted); font-size: .8rem; }
+.memory-group-card small { color: var(--muted-strong); font-size: .8rem; line-height: 1.4; }
+.memory-group-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.memory-group-actions .check-row { display: inline-flex; align-items: center; gap: 6px; }
+.memory-group-actions .check-row span { color: var(--muted-strong); font-size: .82rem; font-weight: 700; }
+.memory-developer-options { border: var(--border-thin); border-radius: var(--radius-sm); background: var(--surface); padding: 10px 14px; }
+.memory-developer-options > summary { cursor: pointer; color: var(--muted-strong); font-size: .86rem; font-weight: 700; }
+.memory-developer-body { display: grid; gap: 12px; padding-top: 12px; }
 .embedding-settings { display: grid; gap: 16px; padding: 18px; border: var(--border-thin); border-radius: var(--radius-sm); background: var(--surface); }
 .embedding-summary { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 12px 14px; border: var(--border-thin); border-radius: var(--radius-sm); background: var(--surface-strong); }
 .embedding-summary strong { color: var(--accent); }
@@ -2295,7 +2319,7 @@ body.panel-resize-active * {
   .right-rail.closed { width: 0; overflow: hidden; border: none; }
   .panel-resizer { display: none; }
   .chat-main { min-height: 100dvh; }
-  .long-grid, .settings-grid, .settings-layout, .onboarding-flow, .options, .question-followup, .usage-dashboard, .usage-ledger-grid, .context-setting-row, .data-path-grid, .toggle-grid, .permission-grid, .skill-highlight, .skill-card, .settings-action-card dl, .knowledge-import-row, .knowledge-search-row, .paper-search-row, .paper-library-settings, .memory-toggle-grid, .memory-policy-grid, .embedding-mode-grid, .embedding-config-row, .embedding-search-row, .embedding-developer-details dl { grid-template-columns: 1fr; }
+  .long-grid, .settings-grid, .settings-layout, .onboarding-flow, .options, .question-followup, .usage-dashboard, .usage-ledger-grid, .context-setting-row, .data-path-grid, .toggle-grid, .permission-grid, .skill-highlight, .skill-card, .settings-action-card dl, .knowledge-import-row, .knowledge-search-row, .paper-search-row, .paper-library-settings, .memory-toggle-grid, .memory-policy-grid, .memory-mode-grid, .memory-group-grid, .embedding-mode-grid, .embedding-config-row, .embedding-search-row, .embedding-developer-details dl { grid-template-columns: 1fr; }
   .knowledge-result-item, .knowledge-document-item, .paper-source-card, .paper-document-card, .memory-row, .embedding-model-card { display: grid; }
   .embedding-model-card .inline-action { justify-self: start; }
   .memory-row-actions { max-width: none; justify-content: flex-start; }

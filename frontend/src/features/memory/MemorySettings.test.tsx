@@ -1,16 +1,26 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { MemorySettings } from "./MemorySettings";
 import type { MemoryApi } from "./api";
 import type { MemorySettingsState, MemoryStatusResponse } from "./types";
 
+afterEach(() => {
+  cleanup();
+});
+
 const settings: MemorySettingsState = {
   enabled: true,
   capture_enabled: true,
   recall_enabled: true,
+  mode: "standard",
+  group_enabled: {
+    about_me: true,
+    learning_history: true,
+    usage_habits: true,
+  },
   category_enabled: {
     core: true,
     semantic: true,
@@ -40,6 +50,19 @@ const status: MemoryStatusResponse = {
     migration_required: false,
   },
   counts: { active: 1, archived: 0, deleted: 0, candidates: 1 },
+  effective_budget: {
+    mode: "standard",
+    configured_limit: 10000,
+    available_context_tokens: 1000000,
+    reserved_tokens: 300000,
+    effective_tokens: 10000,
+    constrained_by_context: false,
+  },
+  group_counts: {
+    about_me: 0,
+    learning_history: 1,
+    usage_habits: 0,
+  },
 };
 
 function createApi(): MemoryApi {
@@ -113,6 +136,7 @@ function createApi(): MemoryApi {
       destination_count: 0,
       detail: "switched",
     }),
+    clearGroup: vi.fn().mockResolvedValue({ archived_count: 1 }),
   };
 }
 
@@ -138,5 +162,29 @@ describe("MemorySettings", () => {
 
     await waitFor(() => expect(window.confirm).toHaveBeenCalled());
     expect(api.actOnItem).not.toHaveBeenCalledWith("memory-1", "purge", true);
+  });
+
+  it("defaults to standard ten thousand token mode", async () => {
+    render(<MemorySettings api={createApi()} />);
+    const standard = await screen.findByRole("radio", { name: /标准.*10,000/ });
+    expect((standard as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("shows only three user facing groups before developer options open", async () => {
+    render(<MemorySettings api={createApi()} />);
+    expect(await screen.findByText("关于我")).toBeTruthy();
+    expect(screen.getByText("学习记录")).toBeTruthy();
+    expect(screen.getByText("使用习惯")).toBeTruthy();
+    expect(screen.queryByText("最低置信度")).toBeNull();
+    fireEvent.click(screen.getByText("开发者选项"));
+    expect(screen.getByText("最低置信度")).toBeTruthy();
+  });
+
+  it("confirms before clearing a group", async () => {
+    const api = createApi();
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<MemorySettings api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "清理学习记录" }));
+    expect(api.clearGroup).not.toHaveBeenCalled();
   });
 });
