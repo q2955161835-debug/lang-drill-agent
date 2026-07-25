@@ -1501,8 +1501,7 @@ section { position: relative; }
   box-shadow: 0 0 0 1px var(--accent-soft), 0 18px 40px -28px var(--accent-glow);
 }
 
-.release-channel-card.stable,
-.release-channel-card.history {
+.release-channel-card.stable {
   border-color: color-mix(in srgb, var(--accent-2) 35%, var(--line-strong));
 }
 
@@ -1518,8 +1517,7 @@ section { position: relative; }
   color: var(--accent);
 }
 
-.release-channel-card.stable .release-channel-label,
-.release-channel-card.history .release-channel-label {
+.release-channel-card.stable .release-channel-label {
   color: var(--accent-2);
 }
 

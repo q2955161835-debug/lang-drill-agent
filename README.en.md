@@ -104,7 +104,7 @@ npm run dev
 npm run build
 ```
 
-The site is a static frontend built and deployed to GitHub Pages by `.github/workflows/pages-demo-web2.yml` at `https://q2955161835-debug.github.io/lang-drill-agent/`. Its download area lists stable `v0.1.2`, current experimental `v1.0.1`, and the historical v1.0.0-series build. The online experience remains experimental. The demo workbench does not connect to a real backend, does not read `.env`, and model replies are fixed mock content.
+The site is a static frontend built and deployed to GitHub Pages by `.github/workflows/pages-demo-web2.yml` at `https://q2955161835-debug.github.io/lang-drill-agent/`. Its download area only lists stable `v0.1.2` and current experimental `v1.0.1`; the header and home-page download actions default to the stable build. The online experience remains experimental. Historical builds remain available on GitHub Releases but are not shown on the demo site. The demo workbench does not connect to a real backend, does not read `.env`, and model replies are fixed mock content.
 
 ## Windows Installer and Update
 

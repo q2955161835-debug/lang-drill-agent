@@ -104,7 +104,7 @@ npm run dev
 npm run build
 ```
 
-このサイトは静的フロントエンドで、`.github/workflows/pages-demo-web2.yml` によって GitHub Pages にビルド・デプロイされます：`https://q2955161835-debug.github.io/lang-drill-agent/`。ダウンロード欄には安定版 `v0.1.2`、現在の実験版 `v1.0.1`、v1.0.0 系列の履歴版を表示し、オンライン体験は引き続き実験版です。デモワークベンチは実際のバックエンドに接続せず、`.env` を読み取らず、モデルの返信は固定のモック内容です。
+このサイトは静的フロントエンドで、`.github/workflows/pages-demo-web2.yml` によって GitHub Pages にビルド・デプロイされます：`https://q2955161835-debug.github.io/lang-drill-agent/`。ダウンロード欄には安定版 `v0.1.2` と現在の実験版 `v1.0.1` だけを表示し、ヘッダーとホーム画面の既定ダウンロードは安定版です。オンライン体験は引き続き実験版です。履歴版は GitHub Releases に保持しますが、デモサイトには表示しません。デモワークベンチは実際のバックエンドに接続せず、`.env` を読み取らず、モデルの返信は固定のモック内容です。
 
 ## Windows インストーラーとアップデート
 
