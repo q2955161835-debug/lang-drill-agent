@@ -26,7 +26,7 @@ class MemoryRetrievalQuery(BaseModel):
     categories: list[str] = Field(default_factory=list)
     scope: str = "global"
     top_k: int = Field(default=8, ge=1, le=50)
-    token_budget: int = Field(default=1000, ge=1, le=20_000)
+    token_budget: int = Field(default=1000, ge=1, le=7_000_000)
     as_of: str = ""
 
 

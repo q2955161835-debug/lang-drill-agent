@@ -210,10 +210,15 @@ def _create_agentic_run(
     active_question: dict[str, Any] | None,
 ) -> dict[str, Any]:
     profile = ProfileService(conn).get()
+    usage = ContextService(conn).usage(session_id)
+    available = max(
+        0,
+        int(usage["context_limit"]) - int(usage["estimated_current_context"]),
+    )
     memory_context = MemoryHooks(conn).recall(
         content,
         scope=f"exam:{profile.exam_id}",
-        token_budget=800,
+        available_context_tokens=available,
     )
     repo = AgentRunRepository(conn)
     run = repo.create(
@@ -904,6 +909,11 @@ def _assemble_runtime_pack(
     attachments: list | None = None,
 ) -> PromptPack:
     profile = ProfileService(conn).get()
+    usage = ContextService(conn).usage(session_id)
+    available = max(
+        0,
+        int(usage["context_limit"]) - int(usage["estimated_current_context"]),
+    )
     context_pack = {
         "task_type": task_type,
         **_runtime_context(conn, session_id=session_id, active_question=active_question),
@@ -917,6 +927,7 @@ def _assemble_runtime_pack(
         "memory": MemoryHooks(conn).recall(
             user_content,
             scope=f"exam:{profile.exam_id}",
+            available_context_tokens=available,
         ).model_dump(mode="json"),
         **(extra_context or {}),
     }

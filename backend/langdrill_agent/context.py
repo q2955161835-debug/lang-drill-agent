@@ -121,6 +121,10 @@ class ContextService:
     def prompt_context(self, session_id: str | None) -> dict[str, Any]:
         snapshot = self.session_context_snapshot(session_id, max_messages=120)
         usage = self.usage(session_id)
+        available = max(
+            0,
+            int(usage["context_limit"]) - int(usage["estimated_current_context"]),
+        )
         session_scope = "global"
         if snapshot:
             session_scope = f"exam:{snapshot.get('session', {}).get('exam_id') or 'global'}"
@@ -137,6 +141,7 @@ class ContextService:
         memory_context = MemoryHooks(self.conn).recall(
             memory_query,
             scope=session_scope,
+            available_context_tokens=available,
         )
         return {
             "context_usage": usage,
