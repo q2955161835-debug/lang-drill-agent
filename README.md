@@ -112,7 +112,7 @@ npm run dev
 npm run build
 ```
 
-该站点是静态前端，由 `.github/workflows/pages-demo-web2.yml` 构建并部署到 GitHub Pages：`https://q2955161835-debug.github.io/lang-drill-agent/`。下载区提供稳定版 `v0.1.2`、当前实验版 `v1.0.1` 和 v1.0.0 系列历史版本，在线体验入口仍保持实验版。演示工作台不连接真实后端，不读取 `.env`，模型回复为固定模拟内容。
+该站点是静态前端，由 `.github/workflows/pages-demo-web2.yml` 构建并部署到 GitHub Pages：`https://q2955161835-debug.github.io/lang-drill-agent/`。下载区只展示稳定版 `v0.1.2` 与当前实验版 `v1.0.1`，右上角和首页默认下载稳定版；在线体验入口仍保持实验版。历史版本继续保留在 GitHub Release，但不出现在演示网页。演示工作台不连接真实后端，不读取 `.env`，模型回复为固定模拟内容。
 
 ## Windows 安装包与更新
 

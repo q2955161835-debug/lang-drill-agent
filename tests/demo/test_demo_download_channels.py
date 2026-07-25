@@ -2,11 +2,11 @@
 
 验证三件事：
 
-1. ``演示web2/src/releaseChannels.ts`` 同时声明稳定版 (v0.1.2)、实验版
-   (v1.0.1) 与 v1.0.0 系列历史版三个下载渠道，且各自指向正确资产。
+1. ``演示web2/src/releaseChannels.ts`` 只声明稳定版 (v0.1.2) 与实验版
+   (v1.0.1) 两个下载渠道，历史版本不出现在演示网页。
 2. ``演示web2/src/App.tsx`` 的在线体验入口仍指向 ``#/app`` 并标注为实验版，
    不得出现“稳定版在线体验”字样。
-3. 本任务不得修改 GitHub Release 元数据工作流。
+3. 页眉与首页下载按钮默认指向稳定版；本任务不得修改 GitHub Release 元数据工作流。
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ def test_release_channels_file_exists() -> None:
     assert RELEASE_CHANNELS.is_file(), f"缺少文件: {RELEASE_CHANNELS}"
 
 
-def test_demo_has_stable_experimental_and_history_downloads() -> None:
-    """releaseChannels.ts 必须同时声明稳定版、实验版与历史下载渠道。"""
+def test_demo_has_only_stable_and_experimental_downloads() -> None:
+    """releaseChannels.ts 只声明稳定版与实验版，不暴露历史下载渠道。"""
     text = RELEASE_CHANNELS.read_text(encoding="utf-8")
     assert 'label: "稳定版"' in text
     assert 'version: "v0.1.2"' in text
@@ -36,19 +36,18 @@ def test_demo_has_stable_experimental_and_history_downloads() -> None:
     assert 'label: "实验版"' in text
     assert 'version: "v1.0.1"' in text
     assert "Lang.Drill.Agent_1.0.1_x64-setup.exe" in text
-    assert 'label: "历史版本"' in text
-    assert 'version: "v1.0.0-alpha.2"' in text
-    assert "Lang.Drill.Agent_1.0.0-alpha.2_x64-setup.exe" in text
+    assert 'label: "历史版本"' not in text
+    assert "v1.0.0-alpha.2" not in text
 
 
-def test_release_channels_provide_three_distinct_https_urls() -> None:
-    """三个渠道的 downloadUrl 必须是三个不同的 GitHub Release 直链。"""
+def test_release_channels_provide_two_distinct_https_urls() -> None:
+    """两个渠道的 downloadUrl 必须是两个不同的 GitHub Release 直链。"""
     import re
 
     text = RELEASE_CHANNELS.read_text(encoding="utf-8")
     urls = re.findall(r'downloadUrl:\s*"([^"]+)"', text)
-    assert len(urls) == 3, f"应有三个 downloadUrl，实际: {urls}"
-    assert len(set(urls)) == 3, f"downloadUrl 重复: {urls}"
+    assert len(urls) == 2, f"应有两个 downloadUrl，实际: {urls}"
+    assert len(set(urls)) == 2, f"downloadUrl 重复: {urls}"
     for url in urls:
         assert url.startswith("https://github.com/"), url
         assert "/releases/download/" in url, url
@@ -62,14 +61,17 @@ def test_online_experience_remains_experimental() -> None:
     assert "稳定版在线体验" not in app
 
 
-def test_header_download_button_points_to_experimental() -> None:
-    """页眉紧凑下载按钮指向实验版，避免稳定版在头部喧宾夺主。"""
+def test_header_and_hero_download_buttons_point_to_stable() -> None:
+    """页眉与首页主下载按钮必须默认指向稳定版。"""
     app = APP_TSX.read_text(encoding="utf-8")
-    assert "下载实验版 {EXPERIMENTAL_DOWNLOAD.version}" in app
+    assert "const DEFAULT_DOWNLOAD = releaseChannels.stable;" in app
+    assert "下载稳定版 {DEFAULT_DOWNLOAD.version}" in app
+    assert "下载 Windows 桌面版 {DEFAULT_DOWNLOAD.version}" in app
+    assert "href={DEFAULT_DOWNLOAD.downloadUrl}" in app
 
 
-def test_install_section_renders_all_channels() -> None:
-    """安装区必须渲染全部渠道卡片，并使用对应按钮文案。"""
+def test_install_section_renders_public_channels_without_history() -> None:
+    """安装区必须渲染稳定版与实验版卡片，不显示历史版本。"""
     app = APP_TSX.read_text(encoding="utf-8")
     assert "release-channel-grid" in app
     assert "release-channel-card" in app
@@ -77,7 +79,8 @@ def test_install_section_renders_all_channels() -> None:
     channels = RELEASE_CHANNELS.read_text(encoding="utf-8")
     assert 'label: "稳定版"' in channels
     assert 'label: "实验版"' in channels
-    assert 'label: "历史版本"' in channels
+    assert 'label: "历史版本"' not in channels
+    assert "v1.0.0" not in app
 
 
 def test_demo_does_not_modify_release_metadata() -> None:
@@ -132,11 +135,11 @@ class _FakeResponse:
 
 
 def test_verifier_extracts_two_https_release_assets() -> None:
-    """load_download_urls 必须从 releaseChannels.ts 解析出三个 GitHub Release 直链。"""
+    """load_download_urls 必须从 releaseChannels.ts 解析出两个 GitHub Release 直链。"""
     verifier = _load_verifier()
     urls = verifier.load_download_urls(RELEASE_CHANNELS)
-    assert len(urls) == 3
-    assert len(set(urls)) == 3
+    assert len(urls) == 2
+    assert len(set(urls)) == 2
     for url in urls:
         assert url.startswith("https://github.com/"), url
         assert "/releases/download/" in url, url

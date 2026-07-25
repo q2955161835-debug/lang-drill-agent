@@ -40,6 +40,7 @@ type ThemeChoice = "system" | "light" | "dark";
 type ResolvedTheme = "light" | "dark";
 
 const GITHUB_URL = "https://github.com/q2955161835-debug/lang-drill-agent";
+const DEFAULT_DOWNLOAD = releaseChannels.stable;
 const EXPERIMENTAL_DOWNLOAD = releaseChannels.experimental;
 
 const THEME_OPTIONS: Array<{ value: ThemeChoice; label: string }> = [
@@ -519,9 +520,9 @@ function SiteHeader({ themeChoice, onThemeCycle }: { themeChoice: ThemeChoice; o
             <GithubLogo size={18} />
             <span>GitHub</span>
           </a>
-          <a className="button primary-button" href={EXPERIMENTAL_DOWNLOAD.downloadUrl}>
+          <a className="button primary-button" href={DEFAULT_DOWNLOAD.downloadUrl}>
             <DownloadSimple size={18} />
-            <span>下载实验版 {EXPERIMENTAL_DOWNLOAD.version}</span>
+            <span>下载稳定版 {DEFAULT_DOWNLOAD.version}</span>
           </a>
         </div>
       </div>
@@ -560,9 +561,9 @@ function HeroSection() {
             <Play size={18} weight="fill" />
             在线体验（实验版）
           </a>
-          <a className="button ghost-button" href={EXPERIMENTAL_DOWNLOAD.downloadUrl}>
+          <a className="button ghost-button" href={DEFAULT_DOWNLOAD.downloadUrl}>
             <DownloadSimple size={18} />
-            下载 Windows 桌面版 {EXPERIMENTAL_DOWNLOAD.version}
+            下载 Windows 桌面版 {DEFAULT_DOWNLOAD.version}
           </a>
         </div>
         <div className="hero-meta">
@@ -943,7 +944,7 @@ function InstallSection() {
           <h2>复习策略可追踪</h2>
           <p>
             推荐安装 Windows 桌面版体验完整能力：掌握度分、错题权重和间隔复习窗口会随每次作答更新，下一轮优先召回最应该巩固的词和题。
-            当前实验版 {EXPERIMENTAL_DOWNLOAD.version} 集成分层记忆、知识库 RAG 引用、Agent 计划时间线、Pi 创造模式、真实真题检索与蒸馏、三语 UI 和应用内签名更新中心；内测未代码签名安装包首次运行可能触发 Windows SmartScreen 提示，请选择"仍要运行"。稳定版 {releaseChannels.stable.version} 适合优先考虑稳定性的本地安装，v1.0.0 系列已归入历史版本。
+            稳定版 {DEFAULT_DOWNLOAD.version} 是右上角和首页的默认下载，适合优先考虑稳定性的本地安装。当前实验版 {EXPERIMENTAL_DOWNLOAD.version} 集成分层记忆、知识库 RAG 引用、Agent 计划时间线、Pi 创造模式、真实真题检索与蒸馏、三语 UI 和应用内签名更新中心；内测未代码签名安装包首次运行可能触发 Windows SmartScreen 提示，请选择"仍要运行"。
           </p>
           <div className="install-warning">
             <Warning size={16} weight="fill" />
@@ -956,7 +957,7 @@ function InstallSection() {
                 <strong className="release-channel-version">{channel.version}</strong>
                 <p className="release-channel-desc">{channel.description}</p>
                 <a
-                  className={channel.id === "experimental" ? "button primary-button large" : "button ghost-button large"}
+                  className={channel.id === "stable" ? "button primary-button large" : "button ghost-button large"}
                   href={channel.downloadUrl}
                   aria-label={`下载 ${channel.label}`}
                 >

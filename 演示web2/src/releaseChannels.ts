@@ -1,14 +1,14 @@
 /**
  * 演示站下载渠道清单。
  *
- * 仅在 `演示web2` 内部使用：把稳定版 (v0.1.2)、当前实验版 (v1.0.1) 与
- * v1.0.0 系列历史版本分别暴露给桌面版下载区。在线体验入口仍只指向实验版
- * (`#/app`)。
+ * 仅在 `演示web2` 内部使用：桌面版下载区只展示稳定版 (v0.1.2) 与
+ * 当前实验版 (v1.0.1)，默认下载入口指向稳定版。在线体验入口仍只指向
+ * 实验版 (`#/app`)。
  */
 
 export type DemoReleaseChannel = {
-  id: "stable" | "experimental" | "history";
-  label: "稳定版" | "实验版" | "历史版本";
+  id: "stable" | "experimental";
+  label: "稳定版" | "实验版";
   version: string;
   description: string;
   downloadUrl: string;
@@ -31,15 +31,7 @@ export const releaseChannels = {
     downloadUrl:
       "https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v1.0.1/Lang.Drill.Agent_1.0.1_x64-setup.exe",
   },
-  history: {
-    id: "history",
-    label: "历史版本",
-    version: "v1.0.0-alpha.2",
-    description: "v1.0.0 系列最后一个公开实验构建，保留用于回退。",
-    downloadUrl:
-      "https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v1.0.0-alpha.2/Lang.Drill.Agent_1.0.0-alpha.2_x64-setup.exe",
-  },
-} satisfies Record<"stable" | "experimental" | "history", DemoReleaseChannel>;
+} satisfies Record<"stable" | "experimental", DemoReleaseChannel>;
 
 export const onlineExperience = {
   channel: "experimental" as const,
