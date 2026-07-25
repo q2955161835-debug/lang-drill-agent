@@ -86,10 +86,10 @@ class EmbeddingIndexCoordinator:
     ) -> dict[str, dict[str, Any]]:
         if not confirmed:
             raise ValueError(CONFIRMATION_ERROR)
-        settings, provider = self.runtime.current()
-        if provider is None or settings.enabled_identity is None:
+        _config, provider = self.runtime.current()
+        if provider is None:
             raise ValueError(RUNTIME_NOT_READY_ERROR)
-        identity = settings.enabled_identity
+        identity = provider.identity
         results: dict[str, dict[str, Any]] = {}
         for target in targets:
             if target not in SUPPORTED_TARGETS:
@@ -109,7 +109,7 @@ class EmbeddingIndexCoordinator:
                     indexed_count=count,
                 )
                 results[target] = {"status": "indexed", "indexed_count": count}
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - isolate each index target
                 detail = str(exc)[:ERROR_DETAIL_MAX_LENGTH]
                 self._set_status(
                     target,

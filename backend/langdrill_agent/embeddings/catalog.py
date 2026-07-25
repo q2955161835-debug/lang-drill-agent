@@ -76,11 +76,17 @@ class EmbeddingModelCatalog:
             search=query,
             pipeline_tag=MODEL_PIPELINE_FEATURE_EXTRACTION,
             sort="downloads",
-            direction=-1,
             limit=20,
             full=True,
         )
-        return [self._summarize(item, recommended=False) for item in items]
+        return [
+            self._summarize(
+                item,
+                recommended=False,
+                require_license=False,
+            )
+            for item in items
+        ]
 
     def detail(
         self, model_id: str, revision: str | None = None
@@ -88,7 +94,11 @@ class EmbeddingModelCatalog:
         """Fetch full model metadata and assess compatibility (cloud call)."""
 
         client = self._resolve_client()
-        info = client.model_info(model_id, revision=revision)
+        info = client.model_info(
+            model_id,
+            revision=revision,
+            files_metadata=True,
+        )
         summary = self._summarize(
             info, recommended=model_id in RECOMMENDED_MODEL_IDS
         )
@@ -99,7 +109,11 @@ class EmbeddingModelCatalog:
         )
 
     def _summarize(
-        self, info: Any, *, recommended: bool
+        self,
+        info: Any,
+        *,
+        recommended: bool,
+        require_license: bool = True,
     ) -> EmbeddingModelSummary:
         siblings = list(info.siblings or []) if info.siblings is not None else []
         sibling_names = [getattr(sibling, "rfilename", "") for sibling in siblings]
@@ -113,7 +127,7 @@ class EmbeddingModelCatalog:
             blockers.append("unsupported_pipeline")
         if (info.library_name or "") not in SUPPORTED_LIBRARIES:
             blockers.append("unsupported_library")
-        if not license_name:
+        if require_license and not license_name:
             blockers.append("missing_license")
         if not any(
             name.endswith(suffix) for name in sibling_names
@@ -126,7 +140,7 @@ class EmbeddingModelCatalog:
             blockers.append("remote_code")
 
         return EmbeddingModelSummary(
-            model_id=info.model_id,
+            model_id=getattr(info, "id", "") or getattr(info, "model_id", ""),
             revision=getattr(info, "sha", "") or "",
             license=license_name,
             library=info.library_name or "",
@@ -156,10 +170,6 @@ class EmbeddingModelCatalog:
             name = getattr(sibling, "rfilename", "")
             if not name or name.endswith(".py"):
                 continue
-            if name.endswith(".safetensors"):
-                download_files.append(name)
-            elif name == "config.json":
-                download_files.append(name)
-            elif name in TOKENIZER_FILENAMES:
+            if name.endswith(".safetensors") or name == "config.json" or name in TOKENIZER_FILENAMES:
                 download_files.append(name)
         return download_files

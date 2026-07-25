@@ -1,8 +1,7 @@
 from pathlib import Path
 
-from langdrill_agent.db import connect, init_db
 import pytest
-
+from langdrill_agent.db import connect, init_db
 from langdrill_agent.past_papers.ingestion import (
     PastPaperImportError,
     PastPaperIngestionService,
@@ -149,3 +148,70 @@ def test_sync_writes_reviewable_markdown_and_structured_questions(tmp_path: Path
         assert parse_paper_markdown(Path(document.markdown_path).read_text(encoding="utf-8")).questions
         assert questions[0].answer == {"letter": "B"}
         assert questions[0].verification_status == "unverified"
+
+
+def test_local_style_evidence_normalizes_duplicate_question_numbers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "papers.db"
+    raw_source = tmp_path / "style-evidence.png"
+    raw_source.write_bytes(b"not-a-real-image")
+    monkeypatch.setenv("LANGDRILL_PAPER_ROOT", str(tmp_path / "confirmed-papers"))
+    init_db(db_path)
+
+    with connect(db_path) as conn:
+        service = PastPaperIngestionService(
+            conn,
+            papers_root=tmp_path / "library",
+        )
+        document = service.import_local_file(
+            raw_source,
+            exam_id="cet4",
+            title="Style evidence",
+            year=2025,
+            source_url="https://example.test/style-evidence.png",
+            extracted_text=(
+                "# Reading\n"
+                "1. First prompt without a verified answer.\n"
+                "# Vocabulary\n"
+                "1. Second prompt without a verified answer.\n"
+            ),
+            parser="rapidocr-onnxruntime",
+        )
+
+        questions = PastPaperRepository(conn).list_questions(document.id)
+        assert len(questions) == 2
+        assert [item.question_number for item in questions] == ["1", "1-2"]
+
+
+def test_local_import_rolls_back_document_when_question_write_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "papers.db"
+    raw_source = tmp_path / "paper.txt"
+    raw_source.write_text("paper", encoding="utf-8")
+    monkeypatch.setenv("LANGDRILL_PAPER_ROOT", str(tmp_path / "confirmed-papers"))
+    init_db(db_path)
+
+    with connect(db_path) as conn:
+        service = PastPaperIngestionService(conn, papers_root=tmp_path / "library")
+
+        def fail_question_write(*_args, **_kwargs):
+            raise RuntimeError("simulated question write failure")
+
+        monkeypatch.setattr(PastPaperRepository, "replace_questions", fail_question_write)
+        with pytest.raises(RuntimeError, match="simulated question write failure"):
+            service.import_local_file(
+                raw_source,
+                exam_id="cet4",
+                title="Rollback paper",
+                year=2025,
+                source_url="https://example.test/rollback.txt",
+                extracted_text="# Reading\n1. Prompt\n",
+                parser="plain-text",
+            )
+
+        assert PastPaperRepository(conn).list_documents("cet4") == []
+        assert list((tmp_path / "confirmed-papers").rglob("*.*")) == []

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import sqlite3
 from pathlib import Path
@@ -40,6 +41,7 @@ class EmbeddingDownloadService:
         self.conn = conn
         self.hub = hub
         self.catalog = EmbeddingModelCatalog(client=hub)
+        self._download_endpoint_override: str | None = None
 
     def _resolve_hub(self) -> Any:
         if self.hub is None:
@@ -116,12 +118,12 @@ class EmbeddingDownloadService:
                         (job_id,),
                     )
                     return
-                local_path = hub.hf_hub_download(
+                local_path = self._download_file(
+                    hub,
                     repo_id=row["model_id"],
                     revision=row["revision"],
                     filename=filename,
                     local_dir=Path(row["target_dir"]),
-                    repo_type="model",
                 )
                 files_completed += 1
                 bytes_downloaded += self._file_size(local_path)
@@ -135,7 +137,7 @@ class EmbeddingDownloadService:
                 "updated_at=CURRENT_TIMESTAMP WHERE id=?",
                 (job_id,),
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - persist background-job failures
             self.conn.execute(
                 "UPDATE embedding_download_jobs SET status='failed', "
                 "error_code=?, error_detail=?, updated_at=CURRENT_TIMESTAMP "
@@ -177,6 +179,38 @@ class EmbeddingDownloadService:
             return Path(local_path).stat().st_size
         except OSError:
             return 0
+
+    def _download_file(
+        self,
+        hub: Any,
+        *,
+        repo_id: str,
+        revision: str,
+        filename: str,
+        local_dir: Path,
+    ) -> Any:
+        kwargs = {
+            "repo_id": repo_id,
+            "revision": revision,
+            "filename": filename,
+            "local_dir": local_dir,
+            "repo_type": "model",
+        }
+        if self._download_endpoint_override:
+            kwargs["endpoint"] = self._download_endpoint_override
+        try:
+            return hub.hf_hub_download(**kwargs)
+        except Exception:
+            configured = os.getenv("HF_ENDPOINT", "").strip().rstrip("/")
+            if (
+                self._download_endpoint_override
+                or not configured
+                or configured == "https://huggingface.co"
+            ):
+                raise
+            self._download_endpoint_override = "https://huggingface.co"
+            kwargs["endpoint"] = self._download_endpoint_override
+            return hub.hf_hub_download(**kwargs)
 
     @staticmethod
     def _sanitize_error(exc: Exception) -> str:

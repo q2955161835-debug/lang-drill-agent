@@ -15,11 +15,16 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from langdrill_agent.db import connect, init_db
 from langdrill_agent.embeddings.indexing import EmbeddingIndexCoordinator
-from langdrill_agent.embeddings.models import EmbeddingIdentity
+from langdrill_agent.embeddings.models import (
+    EmbeddingIdentity,
+    EmbeddingSettings,
+    EmbeddingSettingsPatch,
+)
 from langdrill_agent.embeddings.providers import LocalSentenceTransformerProvider
+from langdrill_agent.embeddings.runtime import EmbeddingRuntime
+from langdrill_agent.embeddings.settings import EmbeddingSettingsService
 from langdrill_agent.knowledge.embeddings import EmbeddingConfig, EmbeddingProvider
 from langdrill_agent.knowledge.models import KnowledgeChunkInput
 from langdrill_agent.knowledge.repository import KnowledgeRepository
@@ -35,9 +40,17 @@ def test_local_provider_never_enables_remote_code() -> None:
         captured["kwargs"] = kwargs
 
         class _Stub:
+            max_seq_length = 32768
+
             def encode(
-                self, texts: list[str], *, normalize_embeddings: bool = False
+                self,
+                texts: list[str],
+                *,
+                normalize_embeddings: bool = False,
+                batch_size: int = 32,
             ) -> list[list[float]]:
+                captured["batch_size"] = batch_size
+                captured["max_seq_length"] = self.max_seq_length
                 return [[1.0] for _ in texts]
 
         return _Stub()
@@ -60,6 +73,103 @@ def test_local_provider_never_enables_remote_code() -> None:
         "trust_remote_code": False,
         "local_files_only": True,
     }
+    assert captured["batch_size"] == 2
+    assert captured["max_seq_length"] == 2048
+
+
+def test_health_probe_can_activate_local_model_without_existing_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path / "runtime.db"
+    init_db(db_path)
+    captured: dict[str, Any] = {}
+
+    class _ProbeProvider:
+        def __init__(self, *, model_path: Path, identity: EmbeddingIdentity) -> None:
+            captured["model_path"] = model_path
+            captured["identity"] = identity
+
+        def embed(self, texts: list[str]) -> list[list[float]]:
+            return [[0.1, 0.2, 0.3] for _ in texts]
+
+    monkeypatch.setattr(
+        "langdrill_agent.embeddings.runtime.LocalSentenceTransformerProvider",
+        _ProbeProvider,
+    )
+    (
+        tmp_path
+        / "models"
+        / "Qwen__Qwen3-Embedding-0.6B"
+        / "abc123"
+    ).mkdir(parents=True)
+    settings = EmbeddingSettings(
+        mode="local",
+        model_id="Qwen/Qwen3-Embedding-0.6B",
+        revision="abc123",
+        model_dir=str(tmp_path / "models"),
+        enabled_identity=None,
+    )
+
+    with connect(db_path) as conn:
+        identity = EmbeddingRuntime(conn).health_probe(settings)
+        settings_service = EmbeddingSettingsService(conn)
+        settings_service.save(
+            EmbeddingSettingsPatch(
+                mode=settings.mode,
+                model_id=settings.model_id,
+                revision=settings.revision,
+                model_dir=settings.model_dir,
+            )
+        )
+        settings_service.set_enabled_identity(identity)
+        shared_status = EmbeddingRuntime(conn).status()
+
+    assert identity == EmbeddingIdentity(
+        provider="local",
+        model_id="Qwen/Qwen3-Embedding-0.6B",
+        revision="abc123",
+        dimensions=3,
+    )
+    assert captured["model_path"] == (
+        tmp_path
+        / "models"
+        / "Qwen__Qwen3-Embedding-0.6B"
+        / "abc123"
+    )
+    assert shared_status["loaded"] is True
+    assert shared_status["healthy"] is True
+
+
+def test_missing_local_model_directory_does_not_report_healthy_runtime(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "runtime.db"
+    init_db(db_path)
+    identity = EmbeddingIdentity(
+        provider="local",
+        model_id="org/missing-model",
+        revision="missing-revision",
+        dimensions=3,
+    )
+
+    with connect(db_path) as conn:
+        settings_service = EmbeddingSettingsService(conn)
+        settings_service.save(
+            EmbeddingSettingsPatch(
+                mode="local",
+                model_id=identity.model_id,
+                revision=identity.revision,
+                model_dir=str(tmp_path / "models"),
+            )
+        )
+        settings_service.set_enabled_identity(identity)
+        _config, provider = EmbeddingRuntime(conn).current()
+        status = EmbeddingRuntime(conn).status()
+
+    assert provider is None
+    assert status["loaded"] is False
+    assert status["healthy"] is False
 
 
 class FailingProvider:
@@ -195,3 +305,29 @@ def test_reindex_requires_confirmation(tmp_path: Path) -> None:
         coordinator = EmbeddingIndexCoordinator(conn, runtime=_FakeRuntime())
         with pytest.raises(ValueError, match="EMBEDDING_REINDEX_CONFIRMATION_REQUIRED"):
             coordinator.reindex(["knowledge"], confirmed=False)
+
+
+def test_reindex_uses_provider_identity_from_runtime_config_tuple(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "knowledge.db"
+    init_db(db_path)
+    identity = EmbeddingIdentity(
+        provider="local",
+        model_id="org/model",
+        revision="r1",
+        dimensions=3,
+    )
+    provider = _StaticProvider(identity, [1.0, 0.0, 0.0])
+
+    class _ReadyRuntime:
+        def current(self):
+            return EmbeddingConfig.from_identity(identity), provider
+
+    with connect(db_path) as conn:
+        result = EmbeddingIndexCoordinator(
+            conn,
+            runtime=_ReadyRuntime(),
+        ).reindex([], confirmed=True)
+
+    assert result == {}

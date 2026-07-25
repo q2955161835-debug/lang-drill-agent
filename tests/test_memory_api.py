@@ -2,7 +2,6 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
 from langdrill_agent.api import app
 from langdrill_agent.db import connect, init_db
 from langdrill_agent.memory.models import MemoryCandidate
@@ -281,6 +280,28 @@ def test_status_exposes_mode_groups_and_effective_budget(client: TestClient) -> 
         "learning_history",
         "usage_habits",
     }
+
+
+def test_settings_api_persists_mode_and_group_switches(client: TestClient) -> None:
+    response = client.post(
+        "/api/memory/settings",
+        json={
+            "mode": "economy",
+            "group_enabled": {"about_me": False},
+        },
+    )
+
+    assert response.status_code == 200
+    saved = response.json()["settings"]
+    assert saved["mode"] == "economy"
+    assert saved["group_enabled"] == {
+        "about_me": False,
+        "learning_history": True,
+        "usage_habits": True,
+    }
+
+    status = client.get("/api/memory/status").json()
+    assert status["effective_budget"]["configured_limit"] == 5_000
 
 
 def test_group_clear_requires_confirmation(client: TestClient) -> None:

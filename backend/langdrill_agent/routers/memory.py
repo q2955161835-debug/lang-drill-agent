@@ -11,6 +11,7 @@ from ..memory.models import MemoryCandidate
 from ..memory.presets import (
     GROUP_CATEGORIES,
     MemoryGroup,
+    MemoryMode,
     read_context_limit,
     resolve_memory_budget,
 )
@@ -26,6 +27,8 @@ class MemorySettingsPatch(BaseModel):
     enabled: bool | None = None
     capture_enabled: bool | None = None
     recall_enabled: bool | None = None
+    mode: MemoryMode | None = None
+    group_enabled: dict[MemoryGroup, bool] | None = None
     category_enabled: dict[str, bool] | None = None
     write_mode: Literal["explicit", "approval", "balanced", "proactive"] | None = None
     learning_evidence_min: int | None = Field(default=None, ge=2, le=20)
@@ -403,6 +406,11 @@ def save_memory_settings(request: MemorySettingsPatch) -> dict[str, Any]:
         service = MemorySettingsService(conn)
         current = service.get().model_dump()
         patch = request.model_dump(exclude_none=True)
+        if "group_enabled" in patch:
+            patch["group_enabled"] = {
+                **current["group_enabled"],
+                **patch["group_enabled"],
+            }
         if "category_enabled" in patch:
             patch["category_enabled"] = {
                 **current["category_enabled"],

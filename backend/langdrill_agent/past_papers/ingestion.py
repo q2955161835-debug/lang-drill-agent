@@ -84,7 +84,7 @@ class PastPaperIngestionService:
                 {"stage": "documents_downloaded", "document_count": completed},
             )
             return run_repo.set_status(run.id, RunStatus.completed)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - record any ingestion failure
             run_repo.append_event(
                 run.id,
                 "failed",
@@ -243,7 +243,7 @@ class PastPaperIngestionService:
                         embedding_config,
                     )
                     embedding_mode = "hybrid"
-            except Exception:
+            except Exception:  # noqa: BLE001 - embeddings are an optional enhancement
                 embedding_mode = "fts_fallback"
             document = paper_repo.update_document_state(
                 document.id,
@@ -323,6 +323,7 @@ class PastPaperIngestionService:
             year=year,
             source_url=source_url,
         )
+        parsed = _normalize_duplicate_question_numbers(parsed)
         asset_id = new_id("paperasset")
         dirs = ensure_exam_paper_dirs(exam_id)
         suffix = source.suffix.lower() or ".bin"
@@ -332,6 +333,7 @@ class PastPaperIngestionService:
         paper_repo = PastPaperRepository(self.conn)
 
         created_paths: list[Path] = []
+        self.conn.execute("SAVEPOINT import_local_paper")
         try:
             _atomic_copy(source, raw_path)
             created_paths.append(raw_path)
@@ -377,10 +379,13 @@ class PastPaperIngestionService:
             )
             try:
                 paper_repo.rebuild_question_fts(document.id)
-            except Exception:
+            except Exception:  # noqa: BLE001,S110 - FTS can be rebuilt later
                 pass
+            self.conn.execute("RELEASE SAVEPOINT import_local_paper")
             return paper_repo.get_document(document.id)
         except Exception:
+            self.conn.execute("ROLLBACK TO SAVEPOINT import_local_paper")
+            self.conn.execute("RELEASE SAVEPOINT import_local_paper")
             for created in created_paths:
                 created.unlink(missing_ok=True)
             raise
@@ -395,7 +400,6 @@ class PastPaperIngestionService:
             """,
             (source_id,),
         ).fetchone()
-
     def _ready_document_for_source(self, source_id: str) -> sqlite3.Row | None:
         return self.conn.execute(
             """
@@ -438,6 +442,22 @@ class PastPaperIngestionService:
                 job_id,
             ),
         )
+
+
+def _normalize_duplicate_question_numbers(parsed):
+    """Keep parser output reviewable while making repository identities unique."""
+    seen: dict[str, int] = {}
+    normalized = []
+    for question in parsed.questions:
+        number = question.question_number.strip()
+        if not number:
+            normalized.append(question)
+            continue
+        occurrence = seen.get(number, 0) + 1
+        seen[number] = occurrence
+        unique_number = number if occurrence == 1 else f"{number}-{occurrence}"
+        normalized.append(question.model_copy(update={"question_number": unique_number}))
+    return parsed.model_copy(update={"questions": normalized})
 
 
 class PastPaperImportError(RuntimeError):

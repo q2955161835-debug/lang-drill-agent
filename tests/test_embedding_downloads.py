@@ -6,7 +6,6 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-
 from langdrill_agent.db import connect, init_db
 from langdrill_agent.embeddings.downloads import EmbeddingDownloadService
 from langdrill_agent.embeddings.runtime_install import (
@@ -88,6 +87,35 @@ def test_cancel_is_checked_between_files(
     service.run(job.id)
     assert service.status(job.id).status == "cancelled"
     fake_hf_client.hf_hub_download.assert_not_called()
+
+
+def test_download_falls_back_from_redirecting_mirror(
+    conn,
+    tmp_path: Path,
+    fake_hf_client: Mock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HF_ENDPOINT", "https://redirecting-mirror.test")
+
+    def download(**kwargs):
+        if kwargs.get("endpoint") != "https://huggingface.co":
+            raise RuntimeError("mirror cannot resolve files")
+        target = tmp_path / kwargs["filename"]
+        target.write_bytes(b"model-file")
+        return target
+
+    fake_hf_client.hf_hub_download.side_effect = download
+    service = EmbeddingDownloadService(conn, hub=fake_hf_client)
+    job = service.create("org/model", "rev123", tmp_path / "models", confirmed=True)
+
+    service.run(job.id)
+
+    assert service.status(job.id).status == "completed"
+    endpoints = [
+        call.kwargs.get("endpoint")
+        for call in fake_hf_client.hf_hub_download.call_args_list
+    ]
+    assert endpoints == [None, "https://huggingface.co", "https://huggingface.co", "https://huggingface.co"]
 
 
 def test_runtime_install_requires_confirmation(conn) -> None:

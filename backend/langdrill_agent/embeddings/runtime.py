@@ -32,6 +32,9 @@ from .settings import (
 
 HEALTH_PROBE_TEXT = "Lang Drill embedding health probe"
 HEALTH_PROBE_FAILED = "EMBEDDING_HEALTH_PROBE_FAILED"
+_RUNTIME_LOCK = threading.Lock()
+_RUNTIME_PROVIDER: EmbeddingProvider | None = None
+_RUNTIME_IDENTITY: EmbeddingIdentity | None = None
 
 
 def _config_from_settings(settings: EmbeddingSettings) -> EmbeddingConfig:
@@ -62,9 +65,6 @@ class EmbeddingRuntime:
         clock: type[datetime] | None = None,
     ) -> None:
         self.conn = conn
-        self._lock = threading.Lock()
-        self._cached_provider: EmbeddingProvider | None = None
-        self._cached_identity: EmbeddingIdentity | None = None
         self._clock = clock or datetime
 
     def current(self) -> tuple[EmbeddingConfig, EmbeddingProvider | None]:
@@ -79,18 +79,19 @@ class EmbeddingRuntime:
         config = _config_from_settings(settings)
         if settings.mode == "off" or settings.enabled_identity is None:
             return config, None
-        with self._lock:
+        global _RUNTIME_IDENTITY, _RUNTIME_PROVIDER
+        with _RUNTIME_LOCK:
             current_key = settings.enabled_identity.key
             if (
-                self._cached_identity is None
-                or self._cached_identity.key != current_key
+                _RUNTIME_IDENTITY is None
+                or _RUNTIME_IDENTITY.key != current_key
             ):
                 self._unload_locked()
                 provider = self._build_provider(settings)
                 if provider is not None:
-                    self._cached_provider = provider
-                    self._cached_identity = settings.enabled_identity
-            return config, self._cached_provider
+                    _RUNTIME_PROVIDER = provider
+                    _RUNTIME_IDENTITY = settings.enabled_identity
+            return config, _RUNTIME_PROVIDER
 
     def settings(self) -> EmbeddingSettings:
         """Return the current EmbeddingSettings (persistence layer view)."""
@@ -104,7 +105,16 @@ class EmbeddingRuntime:
         cannot return a non-empty finite vector.
         """
 
-        provider = self._build_provider(settings)
+        probe_identity = settings.enabled_identity or EmbeddingIdentity(
+            provider=settings.mode,
+            model_id=settings.model_id,
+            revision=settings.revision,
+            dimensions=max(1, settings.dimensions),
+        )
+        provider = self._build_provider(
+            settings,
+            identity=probe_identity,
+        )
         if provider is None:
             raise ValueError(HEALTH_PROBE_FAILED)
         try:
@@ -116,38 +126,46 @@ class EmbeddingRuntime:
         vector = vectors[0]
         if not vector or any(not _is_finite(value) for value in vector):
             raise ValueError(HEALTH_PROBE_FAILED)
-        base_identity = settings.enabled_identity or EmbeddingIdentity(
-            provider=settings.mode,
-            model_id=settings.model_id,
-            revision=settings.revision,
-            dimensions=len(vector),
+        enabled_identity = probe_identity.model_copy(
+            update={"dimensions": len(vector)}
         )
-        return base_identity.model_copy(update={"dimensions": len(vector)})
+        global _RUNTIME_IDENTITY, _RUNTIME_PROVIDER
+        with _RUNTIME_LOCK:
+            self._unload_locked()
+            _RUNTIME_PROVIDER = provider
+            _RUNTIME_IDENTITY = enabled_identity
+        return enabled_identity
 
     def status(self) -> dict[str, Any]:
         settings = EmbeddingSettingsService(self.conn).get()
         enabled_key = (
             settings.enabled_identity.key if settings.enabled_identity else ""
         )
-        loaded = bool(
-            self._cached_identity is not None
-            and self._cached_identity.key == enabled_key
-        )
+        with _RUNTIME_LOCK:
+            loaded = bool(
+                _RUNTIME_IDENTITY is not None
+                and _RUNTIME_IDENTITY.key == enabled_key
+            )
+            identity = _RUNTIME_IDENTITY
+            healthy = loaded and _RUNTIME_PROVIDER is not None
         return {
             "mode": settings.mode,
             "loaded": loaded,
-            "healthy": loaded and self._cached_provider is not None,
+            "healthy": healthy,
             "identity": (
-                self._cached_identity.model_dump(mode="json")
-                if self._cached_identity
+                identity.model_dump(mode="json")
+                if identity
                 else None
             ),
         }
 
     def _build_provider(
-        self, settings: EmbeddingSettings
+        self,
+        settings: EmbeddingSettings,
+        *,
+        identity: EmbeddingIdentity | None = None,
     ) -> EmbeddingProvider | None:
-        identity = settings.enabled_identity
+        identity = identity or settings.enabled_identity
         if identity is None:
             return None
         if settings.mode == "local":
@@ -158,6 +176,8 @@ class EmbeddingRuntime:
                 / safe_model_dir(settings.model_id)
                 / settings.revision
             )
+            if not model_path.is_dir():
+                return None
             return LocalSentenceTransformerProvider(
                 model_path=model_path,
                 identity=identity,
@@ -184,8 +204,9 @@ class EmbeddingRuntime:
         return None
 
     def _unload_locked(self) -> None:
-        self._cached_provider = None
-        self._cached_identity = None
+        global _RUNTIME_IDENTITY, _RUNTIME_PROVIDER
+        _RUNTIME_PROVIDER = None
+        _RUNTIME_IDENTITY = None
         gc.collect()
 
 

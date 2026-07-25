@@ -15,6 +15,9 @@ import httpx
 
 from .models import EmbeddingIdentity
 
+LOCAL_EMBEDDING_BATCH_SIZE = 2
+LOCAL_EMBEDDING_MAX_SEQUENCE_LENGTH = 2048
+
 
 class LocalSentenceTransformerProvider:
     """Local sentence-transformer model loaded with trust_remote_code disabled."""
@@ -38,17 +41,28 @@ class LocalSentenceTransformerProvider:
                 from sentence_transformers import SentenceTransformer
 
                 factory = SentenceTransformer
-            self._model = factory(
+            model = factory(
                 str(self.model_path),
                 trust_remote_code=False,
                 local_files_only=True,
             )
+            current_max = getattr(model, "max_seq_length", None)
+            if isinstance(current_max, int) and current_max > 0:
+                model.max_seq_length = min(
+                    current_max,
+                    LOCAL_EMBEDDING_MAX_SEQUENCE_LENGTH,
+                )
+            self._model = model
         return self._model
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
-        rows = self._load().encode(texts, normalize_embeddings=True)
+        rows = self._load().encode(
+            texts,
+            normalize_embeddings=True,
+            batch_size=LOCAL_EMBEDDING_BATCH_SIZE,
+        )
         return [[float(value) for value in row] for row in rows]
 
 

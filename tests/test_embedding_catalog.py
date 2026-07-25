@@ -4,7 +4,6 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-
 from langdrill_agent.embeddings.catalog import EmbeddingModelCatalog
 
 
@@ -73,3 +72,44 @@ def test_search_is_not_limited_to_recommendations(fake_hf_client: Mock) -> None:
     items = EmbeddingModelCatalog(client=fake_hf_client).search("custom")
     assert items
     assert items[0].model_id == "org/custom-embed"
+    fake_hf_client.list_models.assert_called_once_with(
+        search="custom",
+        pipeline_tag="feature-extraction",
+        sort="downloads",
+        limit=20,
+        full=True,
+    )
+
+
+def test_current_huggingface_model_info_id_field_is_supported(
+    fake_hf_client: Mock,
+) -> None:
+    info = model_info(model_id="Qwen/Qwen3-Embedding-0.6B")
+    info.id = info.model_id
+    del info.model_id
+    fake_hf_client.model_info.return_value = info
+
+    detail = EmbeddingModelCatalog(client=fake_hf_client).detail(info.id)
+
+    assert detail.model_id == "Qwen/Qwen3-Embedding-0.6B"
+    fake_hf_client.model_info.assert_called_once_with(
+        info.id,
+        revision=None,
+        files_metadata=True,
+    )
+
+
+def test_search_defers_missing_license_check_until_download_detail(
+    fake_hf_client: Mock,
+) -> None:
+    summary_info = model_info(model_id="org/search-result", license="")
+    fake_hf_client.list_models.return_value = [summary_info]
+    fake_hf_client.model_info.return_value = summary_info
+
+    search_result = EmbeddingModelCatalog(client=fake_hf_client).search("result")[0]
+    detail = EmbeddingModelCatalog(client=fake_hf_client).detail("org/search-result")
+
+    assert search_result.compatible is True
+    assert "missing_license" not in search_result.blockers
+    assert detail.compatible is False
+    assert "missing_license" in detail.blockers
