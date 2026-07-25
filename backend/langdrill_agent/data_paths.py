@@ -289,6 +289,8 @@ class DataPathService:
             "LANGDRILL_PROVIDER_API_KEY_CLAUDE",
             "LANGDRILL_PROVIDER_API_KEY_DEEPSEEK",
             "LANGDRILL_PROVIDER_API_KEY_MIMO",
+            "LANGDRILL_EMBEDDING_HF_TOKEN",
+            "LANGDRILL_EMBEDDING_CLOUD_API_KEY",
             "OPENAI_API_KEY",
             "OPENAI_BASE_URL",
             "OPENAI_MODEL",
