@@ -26,6 +26,7 @@ WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
 RELEASE_WORKFLOW = WORKFLOWS_DIR / "release-experimental.yml"
 CI_WORKFLOW = WORKFLOWS_DIR / "ci.yml"
 PAGES_WORKFLOW = WORKFLOWS_DIR / "pages-demo-web2.yml"
+VM_WORKFLOW = WORKFLOWS_DIR / "desktop-installer-vm-test.yml"
 VERSION_FILE = REPO_ROOT / "VERSION"
 VERIFY_SCRIPT = REPO_ROOT / "scripts" / "release" / "verify-release-assets.ps1"
 
@@ -56,6 +57,11 @@ def release_workflow_text() -> str:
 @pytest.fixture(scope="module")
 def pages_workflow_text() -> str:
     return _read_text(PAGES_WORKFLOW)
+
+
+@pytest.fixture(scope="module")
+def vm_workflow_text() -> str:
+    return _read_text(VM_WORKFLOW)
 
 
 @pytest.fixture(scope="module")
@@ -249,6 +255,22 @@ class TestReleaseSecrets:
             assert not re.search(pattern, release_workflow_text, re.IGNORECASE), (
                 f"不应在 echo 中输出 {secret} 的值"
             )
+
+
+class TestDesktopInstallerVmSigning:
+    def test_vm_workflow_uses_signing_private_key(self, vm_workflow_text: str):
+        assert "TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" in vm_workflow_text
+
+    def test_vm_workflow_uses_signing_password(self, vm_workflow_text: str):
+        assert (
+            "TAURI_SIGNING_PRIVATE_KEY_PASSWORD: "
+            "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}"
+        ) in vm_workflow_text
+
+    def test_vm_workflow_does_not_print_secret_values(self, vm_workflow_text: str):
+        for secret in ["TAURI_SIGNING_PRIVATE_KEY", "TAURI_SIGNING_PRIVATE_KEY_PASSWORD"]:
+            pattern = rf"echo.*\$\{{{{\s*secrets\.{secret}\s*\}}}}"
+            assert not re.search(pattern, vm_workflow_text, re.IGNORECASE)
 
 
 # ---------- 版本一致性 ----------
