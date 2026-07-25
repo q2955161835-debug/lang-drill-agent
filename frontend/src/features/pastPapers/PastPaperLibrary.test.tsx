@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { PastPaperLibrary } from "./PastPaperLibrary";
 import type { PastPaperLibraryApi } from "./api";
+
+afterEach(() => {
+  cleanup();
+});
 
 function createApi(): PastPaperLibraryApi {
   return {
@@ -56,5 +60,10 @@ describe("PastPaperLibrary（真题库）", () => {
     expect(await screen.findByText("尚未下载")).toBeTruthy();
     expect(screen.getByText("本地真题 0")).toBeTruthy();
     expect(screen.getByText("远程目录 1")).toBeTruthy();
+  });
+
+  it("renders the shared staged import queue for past papers（呈现共享的真题暂存导入队列）", async () => {
+    render(<PastPaperLibrary examId="cet4" api={createApi()} />);
+    expect(await screen.findByLabelText("拖拽或选择真题文件")).toBeTruthy();
   });
 });

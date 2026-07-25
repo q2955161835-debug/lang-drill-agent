@@ -1663,6 +1663,35 @@ body.panel-resize-active * {
 .memory-detail { display: flex; flex-wrap: wrap; gap: 5px 12px; padding-top: 4px; }
 .memory-detail small { flex: 1 1 180px; }
 .memory-row-actions .danger-action { color: var(--danger); }
+.resource-import-queue { display: grid; gap: 12px; }
+.resource-import-drop { grid-template-columns: auto minmax(0, 1fr); }
+.resource-import-list { display: grid; gap: 10px; }
+.resource-import-item { display: grid; gap: 8px; padding: 14px; border: var(--border-thin); border-radius: var(--radius-sm); background: var(--surface-strong); }
+.resource-import-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.resource-import-head strong { min-width: 0; overflow-wrap: anywhere; color: var(--text); font-size: 0.92rem; }
+.resource-import-head span { color: var(--muted); font-size: 0.78rem; font-weight: 650; }
+.resource-import-head svg { color: var(--accent); }
+.resource-import-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.resource-import-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+.resource-import-fields label { display: grid; gap: 4px; min-width: 0; }
+.resource-import-fields label span { color: var(--muted-strong); font-size: 0.78rem; font-weight: 700; }
+.resource-import-preview { display: grid; gap: 6px; padding: 10px 12px; border: var(--border-thin); border-radius: var(--radius-sm); background: var(--surface); }
+.resource-import-preview strong { color: var(--text); }
+.resource-import-preview span, .resource-import-preview li { color: var(--muted); font-size: 0.82rem; }
+.resource-import-preview ul { margin: 0; padding-left: 18px; display: grid; gap: 2px; }
+.resource-import-warnings li { color: var(--warning, #b07c00); }
+.resource-import-text-preview {
+  margin: 0;
+  max-height: 120px;
+  overflow: auto;
+  color: var(--muted-strong);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  border-top: var(--border-thin);
+  padding-top: 6px;
+}
+.resource-import-batch-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .past-paper-library { display: grid; gap: 16px; }
 .paper-library-summary { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; padding: 14px; border: var(--border-thin); border-radius: var(--radius-sm); background: var(--surface-strong); }
 .paper-library-summary strong { color: var(--accent); }

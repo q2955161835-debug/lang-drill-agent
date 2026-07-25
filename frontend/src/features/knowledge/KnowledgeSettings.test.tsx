@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { KnowledgeSettings } from "./KnowledgeSettings";
 import type { KnowledgeApi } from "./api";
+
+afterEach(() => {
+  cleanup();
+});
 
 function createApi(): KnowledgeApi {
   return {
@@ -17,14 +21,11 @@ function createApi(): KnowledgeApi {
 }
 
 describe("KnowledgeSettings", () => {
-  it("requires explicit confirmation before adding an attachment", () => {
+  it("renders the shared staged import queue without writing formal rows", () => {
     const api = createApi();
-    const file = new File(["# Notes\nconsecutive"], "notes.md", { type: "text/markdown" });
-
     render(<KnowledgeSettings api={api} />);
-    fireEvent.change(screen.getByLabelText("选择知识库文件"), { target: { files: [file] } });
-
-    expect((screen.getByRole("button", { name: "加入知识库" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.getByLabelText("拖拽或选择知识库文件")).toBeTruthy();
+    expect(api.listDocuments).toHaveBeenCalled();
     expect(api.importDocument).not.toHaveBeenCalled();
   });
 });
