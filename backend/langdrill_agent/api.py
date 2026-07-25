@@ -65,7 +65,7 @@ from .models import (
 from .paper_assets import extract_text_from_file, safe_path_part
 from .providers import ModelProvider
 from .phone_mirror import PhoneMirrorService
-from .routers import agent_runs, creative, knowledge, memory, past_papers, resource_imports
+from .routers import agent_runs, creative, embeddings, knowledge, memory, past_papers, resource_imports
 from .prompt_engine import PromptAssembler, PromptRegistry
 from .runtime.intent import CapabilityIntentClassifier
 from .runtime.models import AgentRunStep
@@ -98,6 +98,7 @@ from .web_search import BuiltinWebSearchService
 app = FastAPI(title="Lang Drill Agent API")
 app.include_router(agent_runs.router)
 app.include_router(creative.router)
+app.include_router(embeddings.router)
 app.include_router(knowledge.router)
 app.include_router(memory.router)
 app.include_router(past_papers.router)

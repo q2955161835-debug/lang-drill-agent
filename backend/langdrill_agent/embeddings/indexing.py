@@ -54,6 +54,30 @@ class EmbeddingIndexCoordinator:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    def mark_stale_all(self) -> None:
+        """Mark every supported target as ``stale`` without touching vectors.
+
+        Called after the user switches embedding settings so retrieval keeps
+        using FTS5 until an explicit, confirmed reindex is requested. The
+        ``identity_key`` and ``indexed_count`` columns are preserved so the UI
+        can show that a previous index existed; only ``status`` becomes
+        ``stale`` and ``error_code`` is cleared.
+        """
+
+        for target in SUPPORTED_TARGETS:
+            self.conn.execute(
+                """
+                INSERT INTO embedding_index_state
+                  (target, identity_key, status, indexed_count, error_code, updated_at)
+                VALUES (?, '', 'stale', 0, '', CURRENT_TIMESTAMP)
+                ON CONFLICT(target) DO UPDATE SET
+                  status='stale',
+                  error_code='',
+                  updated_at=CURRENT_TIMESTAMP
+                """,
+                (target,),
+            )
+
     def reindex(
         self,
         targets: list[str],

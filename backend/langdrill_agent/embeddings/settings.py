@@ -128,3 +128,30 @@ class EmbeddingSettingsService:
             ),
         )
         return self.get()
+
+    def set_enabled_identity(
+        self, identity: EmbeddingIdentity | None
+    ) -> EmbeddingSettings:
+        """Persist the enabled identity returned by a successful health probe.
+
+        ``enabled_identity`` is stored in the same ``app_settings`` payload as
+        the rest of the embedding settings so retrieval can compare the current
+        runtime identity against the identity recorded at probe time.
+        """
+
+        current = self.get()
+        payload = current.model_copy(update={"enabled_identity": identity})
+        self.conn.execute(
+            """
+            INSERT INTO app_settings (key, value_json, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(key) DO UPDATE SET
+              value_json=excluded.value_json,
+              updated_at=CURRENT_TIMESTAMP
+            """,
+            (
+                SETTING_KEY,
+                dumps(payload.model_dump(exclude={"api_key_configured"})),
+            ),
+        )
+        return self.get()

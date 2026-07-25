@@ -6,6 +6,8 @@ import {
 } from "@phosphor-icons/react";
 
 import { ResourceImportQueue } from "../../components/ResourceImportQueue";
+import { EmbeddingSettings } from "../embeddings/EmbeddingSettings";
+import { embeddingApi as defaultEmbeddingApi, type EmbeddingApi } from "../embeddings/api";
 import { knowledgeApi, type KnowledgeApi } from "./api";
 import type { KnowledgeDocument, RetrievedKnowledgeChunk } from "./types";
 
@@ -16,7 +18,15 @@ const STATUS_LABELS: Record<KnowledgeDocument["status"], string> = {
   failed: "失败",
 };
 
-export function KnowledgeSettings({ api = knowledgeApi }: { api?: KnowledgeApi }) {
+type KnowledgeSettingsProps = {
+  api?: KnowledgeApi;
+  embeddingApi?: EmbeddingApi;
+};
+
+export function KnowledgeSettings({
+  api = knowledgeApi,
+  embeddingApi = defaultEmbeddingApi,
+}: KnowledgeSettingsProps) {
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<RetrievedKnowledgeChunk[]>([]);
@@ -90,6 +100,8 @@ export function KnowledgeSettings({ api = knowledgeApi }: { api?: KnowledgeApi }
         defaultMetadata={{ language: "ch" }}
         onConfirmed={() => void refreshDocuments()}
       />
+
+      <EmbeddingSettings api={embeddingApi} />
 
       <div className="knowledge-search-row">
         <input
