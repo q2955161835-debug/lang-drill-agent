@@ -30,8 +30,10 @@ Lang Drill Agent 是一个面向语言考试备考的本地学习工作台，核
 
 ## 知识库与记忆
 
-- 知识库（RAG）：用户可导入本地文档建立知识库，答题讲解和分支对话可引用知识库来源，引用结果带可核验来源标注。
-- 分层记忆：维护用户画像、学习目标、薄弱项和长期偏好，用于个性化出题和讲解；记忆写入本地数据库，可在设置页查看与清除。
+- 知识库（RAG）：支持拖拽或选择 PDF、DOCX、TXT、Markdown 和截图。文件先进入待解析队列，用户可检查文本预览、诊断和元数据，再确认写入知识库；答题讲解和分支对话可引用带来源标注的检索结果。
+- 真题库：本地文件和截图使用同一套“暂存 → 解析预览 → 编辑元数据 → 确认入库”流程。没有可靠答案的内容只作为题型与风格证据，不会伪装成已验证答案。
+- 嵌入模型与向量增强检索：RAG 可主动关闭或开启；关闭、模型未就绪或索引异常时自动使用 SQLite FTS5。用户可选择推荐的 `Qwen/Qwen3-Embedding-0.6B`，搜索并确认下载 Hugging Face 上兼容的任意嵌入模型，也可配置 Hugging Face 云端或 OpenAI-compatible 云端嵌入服务。
+- 分层记忆：设置页只暴露“关于我 / 学习记录 / 使用习惯”三个易懂分组，并提供节省（5,000 token）、标准（10,000 token）和深入（动态使用最多 70% 可用上下文）三档预算。记忆保存在本地数据库，支持查看来源证据、修订历史、归档、恢复和分组清理。
 
 ## 真题版权边界
 
@@ -66,11 +68,17 @@ Web 开发模式：
 ```powershell
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -e .[dev]
+pip install -e ".[dev,paper-parsing]"
 cd frontend
 npm install
 cd ..
 .\start.bat
+```
+
+如需在本机运行下载后的 Hugging Face 嵌入模型，再安装可选运行时：
+
+```powershell
+pip install -e ".[embeddings-local]"
 ```
 
 访问：
@@ -104,14 +112,14 @@ npm run dev
 npm run build
 ```
 
-该站点是静态前端，由 `.github/workflows/pages-demo-web2.yml` 构建并部署到 GitHub Pages：`https://q2955161835-debug.github.io/lang-drill-agent/`。演示工作台不连接真实后端，不读取 `.env`，模型回复为固定模拟内容。
+该站点是静态前端，由 `.github/workflows/pages-demo-web2.yml` 构建并部署到 GitHub Pages：`https://q2955161835-debug.github.io/lang-drill-agent/`。下载区同时提供稳定版 `v0.1.2` 和实验版 `v1.0.0-alpha.2`，在线体验入口仍保持实验版。演示工作台不连接真实后端，不读取 `.env`，模型回复为固定模拟内容。
 
 ## Windows 安装包与更新
 
 当前 Windows 安装包发布在 GitHub Release：
 
-- 发布页：[Lang Drill Agent v0.1.2](https://github.com/q2955161835-debug/lang-drill-agent/releases/tag/v0.1.2)
-- 安装包下载：[Lang.Drill.Agent_0.1.2_x64-setup.exe](https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v0.1.2/Lang.Drill.Agent_0.1.2_x64-setup.exe)
+- 稳定版 `v0.1.2`：[发布页](https://github.com/q2955161835-debug/lang-drill-agent/releases/tag/v0.1.2) · [安装包](https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v0.1.2/Lang.Drill.Agent_0.1.2_x64-setup.exe)
+- 实验版 `v1.0.0-alpha.2`：[发布页](https://github.com/q2955161835-debug/lang-drill-agent/releases/tag/v1.0.0-alpha.2) · [安装包](https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v1.0.0-alpha.2/Lang.Drill.Agent_1.0.0-alpha.2_x64-setup.exe)
 - SHA256：`6b26f9901efd089650ed3cf584a8dcbc64ce0af808bbf5ad8d62d4924d4f1702`
 
 这是未签名的内测安装包。Windows 可能提示未知发布者，确认来源后继续安装即可。

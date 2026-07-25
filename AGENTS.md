@@ -9,6 +9,9 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - 正式刷题必须先生成完整题组并写入数据库，再逐题展示、逐题判分、自动推进下一题。
 - Question Author（出题 Agent）调用模型失败、超时或返回不可用时，必须使用本地规则兜底生成完整考试式题组并写入数据库；组卷前 Orchestrator（调度器）规划模型失败或超时也不得阻断后续 Question Author（出题 Agent）写题，不能让正式练习、截图导入自动练习或主聊天词表练习在组卷阶段中断。
 - 正式学习、截图导入、模型配置、题目数据库迁移和验收流程优先通过 Web（网页）完成；CLI（命令行接口）已有功能不删除，但只作为维护、调试和脚本化兜底。
+- 知识库和真题库的本地文件、截图导入统一使用两阶段资源流程：文件先暂存并解析预览，允许修改元数据和排除失败项，只有用户明确确认后才写入正式文档、题目和索引；单项失败不得污染数据库或阻断其它队列项。
+- RAG（向量增强检索）由用户主动开启或关闭。默认关闭时使用 SQLite FTS5；本地/云端嵌入模型不可用、目录缺失、健康检查失败或索引过期时必须可见地回退 FTS5。用户可搜索 Hugging Face 兼容模型并确认下载，推荐 `Qwen/Qwen3-Embedding-0.6B`，也可选择 Hugging Face 云端或 OpenAI-compatible 云端服务；禁止启用 `trust_remote_code`，下载、启用和重建索引都必须显式确认。
+- 记忆设置只向普通用户暴露“关于我 / 学习记录 / 使用习惯”三个分组和节省/标准/深入三档：节省 5,000 token，标准 10,000 token，深入不设固定上限但最多使用扣除 30% 保留量后的可用上下文。分组开关、模式、来源证据和修订历史必须持久化；密钥样式内容不得进入记忆。
 - Web（网页）体验以三栏学习工作台为主：左侧学习状态，中间聊天与题目，右侧分支/手机映像/截图导入。
 - 桌面版必须复用同一前端和后端业务能力，不改变 `start.bat`、`scripts/dev/start-dev.ps1`、Vite（前端构建工具）代理和浏览器访问路径的语义；桌面构建通过独立 `scripts/desktop/` 脚本和 `src-tauri/` 工程完成。
 - Web（网页）三栏边界必须可拖拽调整并持久化左右栏宽度；折叠侧栏或切换右侧工作台页签时不得卸载工作台内部状态，截图导入的待解析队列、解析状态、识别文本和已解析可编辑词条卡必须保留。
@@ -64,6 +67,11 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - `backend/langdrill_agent/services.py` 中的 `SkillRegistryService`：发现拓展 Skills（拓展技能）并维护单个拓展 Skill 开启/关闭状态；Multi Search Engine（多搜索引擎）作为无密钥推荐技能默认启用，其它拓展 Skill 默认关闭；状态中单独返回始终开启的内置必备工具。
 - `backend/langdrill_agent/web_search.py`：内置无密钥联网检索实现，普通聊天明确请求联网、搜索或最新信息时由 API（接口）注入可核验网页来源；该内置工具始终可用，实际调用受“联网功能”权限控制，不依赖拓展 Skills 开关。
 - `backend/langdrill_agent/paper_assets.py`：历年真题目录、原始文件保存、PDF（Portable Document Format，便携式文档格式）/DOCX（Word 文档格式）/Markdown（Markdown 文本格式）/图片文件文本抽取、解析 JSON（JSON 数据交换格式）生成和短摘录提取；配置 `MINERU_TOKEN` 时使用 MinerU 精准解析，否则使用 MinerU 轻量解析；图片 OCR（文字识别）失败时回退 RapidOCR（本地文字识别），复杂文档依赖可选 MinerU CLI。
+- `backend/langdrill_agent/resource_imports/`：知识库和真题库共用的两阶段暂存队列、解析状态、确认令牌与失败隔离；正式写入前不得改变知识库/真题库计数。
+- `backend/langdrill_agent/knowledge/`：知识文档切块、来源元数据、FTS/混合检索和知识上下文组装。
+- `backend/langdrill_agent/past_papers/`：真实真题来源、文件解析、题目/风格证据、检索、蒸馏和调度；无可靠答案的解析结果必须标记为未验证。
+- `backend/langdrill_agent/embeddings/`：嵌入设置、Hugging Face 模型目录与下载任务、本地/云端 provider、运行时健康检查和知识库/真题/记忆索引重建。RAG 关闭或运行时失败时由检索层回退 FTS5。
+- `backend/langdrill_agent/memory/`：本地分层记忆、三档预算、三个用户分组、证据/修订链、召回策略、敏感信息拦截和可替换 provider 边界。
 - `backend/langdrill_agent/learning_stats.py`：长期学习统计服务，按当前考试聚合题目完成、词汇掌握和整体正确率。
 - `backend/langdrill_agent/context.py`：上下文容量、会话上下文快照、主动压缩、使用统计和 token（令牌）统计口径。
 - `backend/langdrill_agent/data_paths.py`：用户数据目录、题目 SQLite（轻量数据库）路径状态、迁移、空库初始化、本机文件夹选择和 `.env` 路径账本更新。
@@ -77,7 +85,7 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - `frontend/src/api.ts`：前端 API（接口）基础地址。默认空字符串，Web（网页）模式继续走相对 `/api` 和 Vite（前端构建工具）代理；桌面构建通过 `VITE_LANGDRILL_API_BASE=http://127.0.0.1:18080` 指向桌面本地后端。
 - `frontend/public/assets/`：前端静态资源目录，当前保存深色主题背景图、浅色/深色 logo（标志）等无需打包导入的公开资产；浏览器 favicon（页签图标）使用 `frontend/public/favicon-light.png` 和 `frontend/public/favicon-dark.png`；聊天气泡使用浅蓝紫/深蓝紫专用颜色，不能把用户/助手消息退回纯白或纯黑。
 - `演示web/`：第一版独立产品展示网站，不重构或替代 `frontend/` 主应用；使用 React（前端框架）+ TypeScript（类型化 JavaScript）+ Vite（前端构建工具）+ GSAP（网页动画库）构建静态站点，不连接真实后端，不读取 `.env`，演示模型回复为固定模拟内容。
-- `演示web2/`：当前用于 GitHub Pages（GitHub 静态站点）公开部署的第二版产品展示网站，使用 React（前端框架）+ TypeScript（类型化 JavaScript）+ Vite（前端构建工具）+ GSAP（网页动画库）构建，包含动态单词银河、滚动组卷演示、脱敏截图画廊和 1:1 主应用 mock（模拟）前端；`vite.config.ts` 默认 `base=/lang-drill-agent/`，由 `.github/workflows/pages-demo-web2.yml` 构建 `演示web2/dist` 并发布到 `https://q2955161835-debug.github.io/lang-drill-agent/`。该站点不连接真实后端、不读取 `.env`，不得暴露真实主机路径、真实密钥或私有学习数据。
+- `演示web2/`：当前用于 GitHub Pages（GitHub 静态站点）公开部署的第二版产品展示网站，使用 React（前端框架）+ TypeScript（类型化 JavaScript）+ Vite（前端构建工具）+ GSAP（网页动画库）构建，包含动态单词银河、滚动组卷演示、脱敏截图画廊和 1:1 主应用 mock（模拟）前端；下载区同时展示稳定版 `v0.1.2` 与实验版 `v1.0.0-alpha.2`，在线体验入口仍为实验版；`vite.config.ts` 默认 `base=/lang-drill-agent/`，由 `.github/workflows/pages-demo-web2.yml` 在下载资产在线验证通过后构建 `演示web2/dist` 并发布到 `https://q2955161835-debug.github.io/lang-drill-agent/`。该站点不连接真实后端、不读取 `.env`，不得暴露真实主机路径、真实密钥或私有学习数据。
 - `logo/`：用户提供的浅色/深色 logo（标志）源图目录；替换品牌时应从这里重新生成 `frontend/public/assets/logo-light.png`、`frontend/public/assets/logo-dark.png`、`frontend/public/favicon-light.png`、`frontend/public/favicon-dark.png` 和 `src-tauri/icons/icon.ico`。
 - `frontend/src/App.tsx`：前端主入口，负责可拖拽三栏布局、聊天、主聊天粘贴图片/拖拽文件/上传按钮导入、设置、初始化、当前题吸附显示、已答题回顾卡片、上下文容量圆环、Agent 设置权限、拓展 Skills（拓展技能）状态页和右侧工作台接入。
 - `frontend/src/components/`：前端可复用组件，当前重点是 `RightWorkbench.tsx`、`ContextMenu.tsx` 和 `MarkdownText.tsx`；`RightWorkbench.tsx` 折叠和页签切换必须隐藏但不卸载内部面板状态。
