@@ -255,6 +255,45 @@ class MemoryRepository:
         self.conn.execute("DELETE FROM memory_item_fts WHERE memory_id=?", (memory_id,))
         self.conn.execute("DELETE FROM memory_items WHERE id=?", (memory_id,))
 
+    def archive_categories(self, categories: list[str]) -> int:
+        """Soft-archive every active memory item whose category is listed.
+
+        Used by the user-facing group clear endpoint. Items are marked
+        ``archived`` (not deleted) so evidence, revisions and history remain
+        intact. Returns the number of rows touched.
+        """
+        if not categories:
+            return 0
+        placeholders = ",".join("?" for _ in categories)
+        cursor = self.conn.execute(
+            f"""UPDATE memory_items
+                SET status='archived', updated_at=CURRENT_TIMESTAMP
+                WHERE status='active' AND category IN ({placeholders})""",
+            categories,
+        )
+        # Refresh FTS index so archived items drop out of recall results.
+        self.conn.execute(
+            f"""DELETE FROM memory_item_fts
+                WHERE memory_id IN (
+                    SELECT id FROM memory_items
+                    WHERE status<>'active' AND category IN ({placeholders})
+                )""",
+            categories,
+        )
+        self._event(
+            "memory_group_archived",
+            payload={"categories": categories, "count": int(cursor.rowcount)},
+        )
+        return int(cursor.rowcount)
+
+    def count_active_by_category(self) -> dict[str, int]:
+        """Return ``{category: active_count}`` for all active memory items."""
+        rows = self.conn.execute(
+            "SELECT category, COUNT(*) AS count FROM memory_items "
+            "WHERE status='active' GROUP BY category"
+        ).fetchall()
+        return {str(row["category"]): int(row["count"]) for row in rows}
+
     def get(self, memory_id: str) -> MemoryItem:
         row = self.conn.execute(
             "SELECT * FROM memory_items WHERE id=?",

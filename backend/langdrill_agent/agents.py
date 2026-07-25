@@ -74,10 +74,15 @@ class OrchestratorAgent:
             (dumps(plan), (content.strip() or "日常学习")[:18], session_id),
         )
 
+        usage = ContextService(self.conn).usage(session_id)
+        available = max(
+            0,
+            int(usage["context_limit"]) - int(usage["estimated_current_context"]),
+        )
         memory_context = MemoryHooks(self.conn).recall(
             content or "daily learning plan",
             scope=f"exam:{profile.exam_id}",
-            token_budget=800,
+            available_context_tokens=available,
         )
         pack = self.assembler.assemble(
             task_type="daily_drill",
@@ -259,11 +264,16 @@ class QuestionAuthorAgent:
         )
         exam_style_evidence = [item.model_dump() for item in paper_evidence.items]
         distilled_exam_patterns = self._distilled_exam_patterns(profile.exam_id)
+        usage = ContextService(self.conn).usage(session_id)
+        available = max(
+            0,
+            int(usage["context_limit"]) - int(usage["estimated_current_context"]),
+        )
         memory_context = MemoryHooks(self.conn).recall(
             knowledge_query or requested_content or profile.exam_name,
             scope=f"exam:{profile.exam_id}",
             categories=["learning_weakness", "profile", "preference", "temporal"],
-            token_budget=800,
+            available_context_tokens=available,
         )
         schedule_decision = self._schedule_targets(
             session_id=session_id,

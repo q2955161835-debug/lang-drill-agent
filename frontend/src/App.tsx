@@ -33,7 +33,7 @@ import {
 import { apiDelete, apiGet, apiPost } from "./api";
 import { useI18n } from "./i18n/I18nProvider";
 import { ContextMenu, type ContextMenuItem } from "./components/ContextMenu";
-import { appendImportedText, extractTextFromFiles, fileTitle, fileToDataUrl, isImageFile, uploadPastPaperDraftFile, uploadPastPaperFile } from "./fileImport";
+import { appendImportedText, extractTextFromFiles, fileTitle, fileToDataUrl, isImageFile } from "./fileImport";
 import { MarkdownText } from "./components/MarkdownText";
 import { RightWorkbench, type WorkbenchTab } from "./components/RightWorkbench";
 import { AgentRunCard } from "./features/agentRuns/AgentRunCard";
@@ -2531,19 +2531,6 @@ function SettingsDialog({
   const [syllabusMessage, setSyllabusMessage] = useState("");
   const [pastPaperDraft, setPastPaperDraft] = useState(pastPaperStatus);
   const [pastPaperMessage, setPastPaperMessage] = useState("");
-  const [paperImportOpen, setPaperImportOpen] = useState(false);
-  const [paperImportDraft, setPaperImportDraft] = useState({
-    title: "",
-    year: "",
-    source_url: "",
-    local_path: "",
-    summary: "",
-    question_types: "",
-    raw_text: ""
-  });
-  const [paperImportFile, setPaperImportFile] = useState<File | null>(null);
-  const [paperImportDragActive, setPaperImportDragActive] = useState(false);
-  const paperFileInputRef = useRef<HTMLInputElement | null>(null);
   const [customExam, setCustomExam] = useState({
     name: "",
     target_language: "",
@@ -2564,18 +2551,8 @@ function SettingsDialog({
     modelDraft.thinking_level,
     defaultThinkingLevelForModel(provider, modelDraft.model)
   );
-  const applyPaperDraftToForm = useCallback((draft: PastPaperDraft, message: string) => {
-    setActiveSettingsTab("syllabus");
-    setPaperImportOpen(true);
-    setPaperImportDraft((current) => ({
-      title: draft.title || current.title,
-      year: draft.year ? String(draft.year) : current.year,
-      source_url: draft.source_url || current.source_url,
-      local_path: draft.local_path || current.local_path,
-      summary: draft.summary || current.summary,
-      question_types: draft.question_types?.length ? draft.question_types.join(", ") : current.question_types,
-      raw_text: draft.raw_text || current.raw_text
-    }));
+  const applyPaperDraftToForm = useCallback((_draft: PastPaperDraft, message: string) => {
+    setActiveSettingsTab("past-papers");
     setPastPaperMessage(message);
   }, []);
   const applyCustomModelDraftToForm = useCallback((draft: CustomModelDraft, message: string) => {
@@ -2765,75 +2742,6 @@ function SettingsDialog({
       setPastPaperMessage(err instanceof Error ? err.message : "题型保存失败");
     }
   };
-  const draftPastPaperImport = async () => {
-    setPastPaperMessage("正在解析试卷草稿...");
-    try {
-      const questionTypes = paperImportDraft.question_types.split(/[，,\n]/).map((item) => item.trim()).filter(Boolean);
-      const data = paperImportFile
-        ? await uploadPastPaperDraftFile<{ draft: PastPaperDraft; parser: string; message: string; file_parser?: string }>(paperImportFile, {
-          exam_id: draft.exam_id,
-          title: paperImportDraft.title.trim() || fileTitle(paperImportFile),
-          year: paperImportDraft.year,
-          source_url: paperImportDraft.source_url,
-          summary: paperImportDraft.summary,
-          question_types: paperImportDraft.question_types,
-          parse_now: false
-        })
-        : await apiPost<{ draft: PastPaperDraft; parser: string; message: string; file_parser?: string }>("/api/past-papers/draft", {
-          exam_id: draft.exam_id,
-          title: paperImportDraft.title,
-          year: paperImportDraft.year ? Number(paperImportDraft.year) : null,
-          source_url: paperImportDraft.source_url,
-          local_path: paperImportDraft.local_path,
-          summary: paperImportDraft.summary,
-          question_types: questionTypes,
-          raw_text: paperImportDraft.raw_text,
-          filename: paperImportDraft.local_path
-        });
-      applyPaperDraftToForm(data.draft, data.file_parser ? `${data.message} 文件解析器：${data.file_parser}` : data.message);
-    } catch (err) {
-      setPastPaperMessage(err instanceof Error ? err.message : "草稿解析失败");
-    }
-  };
-  const importPastPaper = async () => {
-    const finalTitle = paperImportDraft.title.trim() || (paperImportFile ? fileTitle(paperImportFile) : "");
-    if (!finalTitle) {
-      setPastPaperMessage("请先填写试卷标题。");
-      return;
-    }
-    try {
-      const questionTypes = paperImportDraft.question_types.split(/[，,\n]/).map((item) => item.trim()).filter(Boolean);
-      const status = paperImportFile
-        ? await uploadPastPaperFile<PastPaperStatus>(paperImportFile, {
-          exam_id: draft.exam_id,
-          title: finalTitle,
-          year: paperImportDraft.year,
-          source_url: paperImportDraft.source_url,
-          summary: paperImportDraft.summary,
-          question_types: paperImportDraft.question_types,
-          parse_now: true
-        })
-        : await apiPost<PastPaperStatus>("/api/past-papers/import", {
-          exam_id: draft.exam_id,
-          title: finalTitle,
-          year: paperImportDraft.year ? Number(paperImportDraft.year) : null,
-          source_url: paperImportDraft.source_url,
-          local_path: paperImportDraft.local_path,
-          summary: paperImportDraft.summary,
-          question_types: questionTypes,
-          raw_text: paperImportDraft.raw_text,
-          parse_now: true
-        });
-      setPastPaperDraft(status);
-      onPastPaperStatusChange(status);
-      setPaperImportDraft({ title: "", year: "", source_url: "", local_path: "", summary: "", question_types: "", raw_text: "" });
-      setPaperImportFile(null);
-      setPaperImportOpen(false);
-      setPastPaperMessage("已保存试卷文件/文本、完成解析并加入当前参考列表。");
-    } catch (err) {
-      setPastPaperMessage(err instanceof Error ? err.message : "手动导入失败");
-    }
-  };
   const parsePastPaper = async (paperId: string) => {
     setPastPaperMessage("正在重新解析试卷...");
     try {
@@ -2847,28 +2755,6 @@ function SettingsDialog({
     } catch (err) {
       setPastPaperMessage(err instanceof Error ? err.message : "重新解析失败");
     }
-  };
-  const selectPastPaperFile = useCallback((file: File) => {
-    setPaperImportOpen(true);
-    setPaperImportFile(file);
-    setPaperImportDraft((current) => ({
-      ...current,
-      title: current.title || fileTitle(file),
-      local_path: file.name
-    }));
-    setPastPaperMessage(`已选择文件：${file.name}。`);
-  }, []);
-  const handlePastPaperDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    setPaperImportDragActive(false);
-    const file = Array.from(event.dataTransfer.files || [])[0];
-    if (!file) return;
-    selectPastPaperFile(file);
-  }, [selectPastPaperFile]);
-  const handlePastPaperFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = Array.from(event.target.files || [])[0];
-    if (file) selectPastPaperFile(file);
-    event.target.value = "";
   };
   const refreshProviderModels = async () => {
     setModelRefreshing(true);
@@ -3838,58 +3724,8 @@ function SettingsDialog({
                       <button className="inline-action compact-action" onClick={() => void parsePastPaper(paper.id)}>重新解析</button>
                     </div>
                   ))}
-                  {!pastPaperDraft.papers.length && <p className="hint">暂无真题试卷索引，可手动导入。</p>}
+                  {!pastPaperDraft.papers.length && <p className="hint">暂无真题试卷索引，可在「真实真题库」标签页拖拽文件加入。</p>}
                 </div>
-                <div className="inline-row">
-                  <button type="button" className="inline-action" onClick={() => setPaperImportOpen((open) => !open)}>
-                    <Plus size={16} /> {paperImportOpen ? "收起加入试卷" : "加入试卷"}
-                  </button>
-                </div>
-                {paperImportOpen && (
-                  <div className="paper-import-grid">
-                    <div
-                      className={`drop-zone paper-import-drop ${paperImportDragActive ? "drag-over" : ""}`}
-                      onDragEnter={(event) => {
-                        if (event.dataTransfer.types.includes("Files")) setPaperImportDragActive(true);
-                      }}
-                      onDragOver={(event) => {
-                        if (event.dataTransfer.types.includes("Files")) event.preventDefault();
-                      }}
-                      onDragLeave={(event) => {
-                        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-                          setPaperImportDragActive(false);
-                        }
-                      }}
-                      onDrop={handlePastPaperDrop}
-                    >
-                      <FolderOpen size={20} />
-                      <strong>{paperImportFile ? paperImportFile.name : "拖入或选择试卷文件"}</strong>
-                      <span>PDF / DOCX / TXT / MD / 图片</span>
-                      <input
-                        ref={paperFileInputRef}
-                        className="hidden-file-input"
-                        type="file"
-                        accept=".pdf,.doc,.docx,.txt,.md,.markdown,image/*"
-                        onChange={handlePastPaperFileChange}
-                      />
-                      <button type="button" className="drop-zone-action" onClick={() => paperFileInputRef.current?.click()}>
-                        <FolderOpen size={16} /> 选择文件
-                      </button>
-                    </div>
-                    <input value={paperImportDraft.title} onChange={(event) => setPaperImportDraft({ ...paperImportDraft, title: event.target.value })} placeholder="试卷标题，例如：2025 年 6 月英语四级真题" />
-                    <input value={paperImportDraft.year} onChange={(event) => setPaperImportDraft({ ...paperImportDraft, year: event.target.value })} placeholder="年份" inputMode="numeric" />
-                    <input value={paperImportDraft.source_url} onChange={(event) => setPaperImportDraft({ ...paperImportDraft, source_url: event.target.value })} placeholder="来源网站或网页 URL" />
-                    <input value={paperImportDraft.local_path} onChange={(event) => setPaperImportDraft({ ...paperImportDraft, local_path: event.target.value })} placeholder="本地试卷文件路径，可为空" />
-                    <input value={paperImportDraft.question_types} onChange={(event) => setPaperImportDraft({ ...paperImportDraft, question_types: event.target.value })} placeholder="试卷题型，用逗号分隔" />
-                    <textarea value={paperImportDraft.raw_text} onChange={(event) => setPaperImportDraft({ ...paperImportDraft, raw_text: event.target.value })} placeholder="可直接粘贴试卷文本或已提取的 Markdown；填写后会保存到 papers/<考试>/raw 并解析" />
-                    <textarea value={paperImportDraft.summary} onChange={(event) => setPaperImportDraft({ ...paperImportDraft, summary: event.target.value })} placeholder="风格摘要、题量、分值、注意事项；不要粘贴大段受版权限制的完整真题原文" />
-                    <div className="paper-import-actions">
-                      <button type="button" className="inline-action" onClick={() => void draftPastPaperImport()}><Sparkle size={16} /> 解析草稿</button>
-                      <button type="button" className="inline-action" onClick={() => void importPastPaper()}><Plus size={16} /> 确认加入试卷</button>
-                      <button type="button" className="inline-action" onClick={() => setPaperImportOpen(false)}>收起</button>
-                    </div>
-                  </div>
-                )}
                 <div className="question-type-grid">
                   {pastPaperDraft.question_types.map((type) => {
                     const typeDisabled = Boolean(type.disabled);

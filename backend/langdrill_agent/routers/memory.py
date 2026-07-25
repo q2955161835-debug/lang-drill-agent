@@ -8,6 +8,13 @@ from pydantic import BaseModel, Field
 from ..db import init_db, transaction
 from ..memory.hooks import MemorySettings, MemorySettingsService
 from ..memory.models import MemoryCandidate
+from ..memory.presets import (
+    GROUP_CATEGORIES,
+    MemoryGroup,
+    MemoryMode,
+    read_context_limit,
+    resolve_memory_budget,
+)
 from ..memory.repository import MemoryRepository
 from ..memory.secrets import scan_memory_secrets
 from ..memory.service import MemoryService
@@ -20,6 +27,8 @@ class MemorySettingsPatch(BaseModel):
     enabled: bool | None = None
     capture_enabled: bool | None = None
     recall_enabled: bool | None = None
+    mode: MemoryMode | None = None
+    group_enabled: dict[MemoryGroup, bool] | None = None
     category_enabled: dict[str, bool] | None = None
     write_mode: Literal["explicit", "approval", "balanced", "proactive"] | None = None
     learning_evidence_min: int | None = Field(default=None, ge=2, le=20)
@@ -46,6 +55,10 @@ class MemoryItemUpdateRequest(BaseModel):
 
 class MemoryItemActionRequest(BaseModel):
     action: Literal["archive", "restore", "delete", "purge", "pin", "unpin"]
+    confirmed: bool = False
+
+
+class MemoryGroupClearRequest(BaseModel):
     confirmed: bool = False
 
 
@@ -110,10 +123,40 @@ def memory_status() -> dict[str, Any]:
         service = MemoryService(conn)
         provider = service.status()
         counts = _status_counts(conn, service)
+        available_context = read_context_limit(conn)
+        budget = resolve_memory_budget(settings.mode, available_context)
+        category_counts = MemoryRepository(conn).count_active_by_category()
+        group_counts = {
+            group: sum(category_counts.get(category, 0) for category in categories)
+            for group, categories in GROUP_CATEGORIES.items()
+        }
     return {
         "settings": settings.model_dump(mode="json"),
         "provider": provider.model_dump(mode="json"),
         "counts": counts,
+        "effective_budget": budget.model_dump(mode="json"),
+        "group_counts": group_counts,
+    }
+
+
+@router.post("/groups/{group}/clear")
+def clear_memory_group(
+    group: MemoryGroup,
+    request: MemoryGroupClearRequest,
+) -> dict[str, Any]:
+    init_db()
+    if not request.confirmed:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "MEMORY_GROUP_CLEAR_CONFIRMATION_REQUIRED", "params": {}},
+        )
+    categories = list(GROUP_CATEGORIES[group])
+    with transaction() as conn:
+        archived_count = MemoryRepository(conn).archive_categories(categories)
+    return {
+        "group": group,
+        "categories": categories,
+        "archived_count": archived_count,
     }
 
 
@@ -363,6 +406,11 @@ def save_memory_settings(request: MemorySettingsPatch) -> dict[str, Any]:
         service = MemorySettingsService(conn)
         current = service.get().model_dump()
         patch = request.model_dump(exclude_none=True)
+        if "group_enabled" in patch:
+            patch["group_enabled"] = {
+                **current["group_enabled"],
+                **patch["group_enabled"],
+            }
         if "category_enabled" in patch:
             patch["category_enabled"] = {
                 **current["category_enabled"],

@@ -6,6 +6,7 @@ import {
   MagnifyingGlass,
 } from "@phosphor-icons/react";
 
+import { ResourceImportQueue } from "../../components/ResourceImportQueue";
 import { pastPaperLibraryApi, type PastPaperLibraryApi } from "./api";
 import type {
   PastPaperCatalog,
@@ -155,6 +156,12 @@ export function PastPaperLibrary({
         </button>
       </div>
 
+      <ResourceImportQueue
+        target="past_paper"
+        defaultMetadata={{ exam_id: examId }}
+        onConfirmed={() => void refresh()}
+      />
+
       <div className="paper-source-list" aria-label="远程真题目录">
         {catalog.sources.map((source) => (
           <article key={source.id} className="paper-source-card">
@@ -214,27 +221,30 @@ export function PastPaperLibrary({
         </div>
       )}
 
-      <div className="paper-library-settings">
-        <label>
-          <span>允许来源，每行一个 HTTPS（安全网址）</span>
-          <textarea
-            aria-label="允许真题来源"
-            value={settings.allowed_sources.join("\n")}
-            onChange={(event) => setSettings({ ...settings, allowed_sources: event.target.value.split(/\n+/).map((item) => item.trim()).filter(Boolean) })}
-            placeholder="https://example.edu/past-papers"
-          />
-        </label>
-        <label><span>同步周期（小时）</span><input type="number" min="1" max="720" value={settings.sync_cadence_hours} onChange={(event) => setSettings({ ...settings, sync_cadence_hours: Number(event.target.value) })} /></label>
-        <label><span>最近试卷数</span><input type="number" min="1" max="20" value={settings.recent_count} onChange={(event) => setSettings({ ...settings, recent_count: Number(event.target.value) })} /></label>
-        <label><span>解析器</span><select value={settings.parser} onChange={(event) => setSettings({ ...settings, parser: event.target.value as PastPaperLibrarySettings["parser"] })}><option value="auto">自动</option><option value="mineru">MinerU（文档解析）</option><option value="rapidocr">RapidOCR（本地文字识别）</option><option value="text">纯文本</option></select></label>
-        <label><span>冷门保底比例</span><input type="number" min="0" max="0.5" step="0.05" value={settings.long_tail_min_ratio} onChange={(event) => setSettings({ ...settings, long_tail_min_ratio: Number(event.target.value) })} /></label>
-        <label><span>单题型最大比例</span><input type="number" min="0.1" max="1" step="0.05" value={settings.max_question_type_ratio} onChange={(event) => setSettings({ ...settings, max_question_type_ratio: Number(event.target.value) })} /></label>
-        <label><span>覆盖窗口</span><input type="number" min="5" max="200" value={settings.coverage_window} onChange={(event) => setSettings({ ...settings, coverage_window: Number(event.target.value) })} /></label>
-        <label className="inline-check"><input type="checkbox" checked={settings.auto_sync} onChange={(event) => setSettings({ ...settings, auto_sync: event.target.checked })} />自动同步</label>
-        <label className="inline-check"><input type="checkbox" checked={settings.auto_distill} onChange={(event) => setSettings({ ...settings, auto_distill: event.target.checked })} />同步后自动蒸馏</label>
-        <label className="inline-check"><input type="checkbox" checked={settings.verified_answers_only} onChange={(event) => setSettings({ ...settings, verified_answers_only: event.target.checked })} />仅使用已验证答案</label>
-        <button type="button" className="inline-action primary-inline" disabled={busy} onClick={() => void saveSettings()}>保存真题库设置</button>
-      </div>
+      <details className="paper-advanced-settings">
+        <summary>高级同步设置</summary>
+        <div className="paper-library-settings">
+          <label>
+            <span>允许来源，每行一个 HTTPS（安全网址）</span>
+            <textarea
+              aria-label="允许真题来源"
+              value={settings.allowed_sources.join("\n")}
+              onChange={(event) => setSettings({ ...settings, allowed_sources: event.target.value.split(/\n+/).map((item) => item.trim()).filter(Boolean) })}
+              placeholder="https://example.edu/past-papers"
+            />
+          </label>
+          <label><span>同步周期（小时）</span><input type="number" min="1" max="720" value={settings.sync_cadence_hours} onChange={(event) => setSettings({ ...settings, sync_cadence_hours: Number(event.target.value) })} /></label>
+          <label><span>最近试卷数</span><input type="number" min="1" max="20" value={settings.recent_count} onChange={(event) => setSettings({ ...settings, recent_count: Number(event.target.value) })} /></label>
+          <label><span>解析器</span><select value={settings.parser} onChange={(event) => setSettings({ ...settings, parser: event.target.value as PastPaperLibrarySettings["parser"] })}><option value="auto">自动</option><option value="mineru">MinerU（文档解析）</option><option value="rapidocr">RapidOCR（本地文字识别）</option><option value="text">纯文本</option></select></label>
+          <label><span>冷门保底比例</span><input type="number" min="0" max="0.5" step="0.05" value={settings.long_tail_min_ratio} onChange={(event) => setSettings({ ...settings, long_tail_min_ratio: Number(event.target.value) })} /></label>
+          <label><span>单题型最大比例</span><input type="number" min="0.1" max="1" step="0.05" value={settings.max_question_type_ratio} onChange={(event) => setSettings({ ...settings, max_question_type_ratio: Number(event.target.value) })} /></label>
+          <label><span>覆盖窗口</span><input type="number" min="5" max="200" value={settings.coverage_window} onChange={(event) => setSettings({ ...settings, coverage_window: Number(event.target.value) })} /></label>
+          <label className="inline-check"><input type="checkbox" checked={settings.auto_sync} onChange={(event) => setSettings({ ...settings, auto_sync: event.target.checked })} />自动同步</label>
+          <label className="inline-check"><input type="checkbox" checked={settings.auto_distill} onChange={(event) => setSettings({ ...settings, auto_distill: event.target.checked })} />同步后自动蒸馏</label>
+          <label className="inline-check"><input type="checkbox" checked={settings.verified_answers_only} onChange={(event) => setSettings({ ...settings, verified_answers_only: event.target.checked })} />仅使用已验证答案</label>
+          <button type="button" className="inline-action primary-inline" disabled={busy} onClick={() => void saveSettings()}>保存真题库设置</button>
+        </div>
+      </details>
 
       {catalog.imports.length > 0 && (
         <div className="paper-import-progress" aria-label="真题导入进度">

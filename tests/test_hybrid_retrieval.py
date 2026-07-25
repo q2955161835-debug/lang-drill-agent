@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from langdrill_agent.db import connect, init_db
+from langdrill_agent.embeddings.models import EmbeddingIdentity
 import httpx
 
 from langdrill_agent.knowledge.embeddings import (
@@ -15,9 +16,18 @@ from langdrill_agent.knowledge.repository import KnowledgeRepository
 from langdrill_agent.knowledge.retrieval import KnowledgeRetrievalService, RetrievalQuery
 
 
+def _fake_identity(model_id: str = "v1") -> EmbeddingIdentity:
+    return EmbeddingIdentity(
+        provider="fake",
+        model_id=model_id,
+        revision="r1",
+        dimensions=2,
+    )
+
+
 class FakeEmbeddingProvider:
-    def __init__(self, identity: str = "fake:v1") -> None:
-        self.identity = identity
+    def __init__(self, identity: EmbeddingIdentity | None = None) -> None:
+        self.identity = identity or _fake_identity()
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         vectors = []
@@ -55,6 +65,13 @@ def test_mmr_prefers_relevant_but_diverse_vectors() -> None:
 
 
 def test_openai_compatible_embedding_provider_parses_indexed_vectors() -> None:
+    identity = EmbeddingIdentity(
+        provider="openai_compatible",
+        model_id="embed-v1",
+        revision="r1",
+        dimensions=2,
+    )
+
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/v1/embeddings"
         assert request.headers["authorization"] == "Bearer test-key"
@@ -70,14 +87,14 @@ def test_openai_compatible_embedding_provider_parses_indexed_vectors() -> None:
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
     provider = OpenAICompatibleEmbeddingProvider(
+        identity=identity,
         base_url="https://example.test/v1",
         api_key="test-key",
-        model="embed-v1",
         client=client,
     )
 
     assert provider.embed(["first", "second"]) == [[1.0, 0.0], [0.0, 1.0]]
-    assert provider.identity == "https://example.test/v1::embed-v1"
+    assert provider.identity == identity
 
 
 def test_hybrid_retrieval_keeps_semantic_hit_and_persists_identity(tmp_path: Path) -> None:
@@ -110,12 +127,12 @@ def test_hybrid_retrieval_keeps_semantic_hit_and_persists_identity(tmp_path: Pat
                 ),
             ],
         )
-        provider = FakeEmbeddingProvider()
+        provider = FakeEmbeddingProvider(_fake_identity())
         indexed = EmbeddingIndexService(conn).index_chunks(provider, chunks)
         result = KnowledgeRetrievalService(
             conn,
             embedding_provider=provider,
-            embedding_config=EmbeddingConfig(provider="fake", model="v1", dimensions=2, enabled=True),
+            embedding_config=EmbeddingConfig.from_identity(_fake_identity()),
         ).search_result(RetrievalQuery(text="consecutive", top_k=5, token_budget=500))
 
         assert indexed == 2
@@ -148,11 +165,13 @@ def test_changed_embedding_identity_falls_back_to_fts(tmp_path: Path) -> None:
                 )
             ],
         )
-        EmbeddingIndexService(conn).index_chunks(FakeEmbeddingProvider("fake:v1"), chunks)
+        EmbeddingIndexService(conn).index_chunks(
+            FakeEmbeddingProvider(_fake_identity("v1")), chunks
+        )
         result = KnowledgeRetrievalService(
             conn,
-            embedding_provider=FakeEmbeddingProvider("fake:v2"),
-            embedding_config=EmbeddingConfig(provider="fake", model="v2", dimensions=2, enabled=True),
+            embedding_provider=FakeEmbeddingProvider(_fake_identity("v2")),
+            embedding_config=EmbeddingConfig.from_identity(_fake_identity("v2")),
         ).search_result(RetrievalQuery(text="consecutive", top_k=5, token_budget=500))
 
         assert result.mode == "fts"

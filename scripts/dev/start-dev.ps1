@@ -200,7 +200,7 @@ try {
 
     if (-not $SkipInstall) {
         Write-Step "[prepare] Installing/updating backend dependencies..."
-        & $VenvPython -m pip install -e "$Root[dev]"
+        & $VenvPython -m pip install -e "$Root[dev,paper-parsing]"
         Assert-ExitCode -ExitCode $LASTEXITCODE -FailureMessage "Failed to install backend dependencies."
 
         if (-not (Test-Path (Join-Path $FrontendDir "node_modules"))) {

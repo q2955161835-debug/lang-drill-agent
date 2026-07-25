@@ -10,10 +10,28 @@ export type MemoryCategory =
 
 export type MemoryStatus = "active" | "archived" | "superseded" | "deleted";
 
+// Plan 3 Task 1: 三档记忆模式与三个用户可见组。后端 backend/langdrill_agent/memory/presets.py
+// 是权威定义；这里必须与 MODE_LIMITS / GROUP_CATEGORIES 保持一致。
+export type MemoryMode = "economy" | "standard" | "deep";
+
+export type MemoryGroup = "about_me" | "learning_history" | "usage_habits";
+
+export type MemoryBudget = {
+  mode: MemoryMode;
+  configured_limit: number | null;
+  available_context_tokens: number;
+  reserved_tokens: number;
+  effective_tokens: number;
+  constrained_by_context: boolean;
+};
+
 export type MemorySettingsState = {
   enabled: boolean;
   capture_enabled: boolean;
   recall_enabled: boolean;
+  // Plan 3 Task 1: 用户可见的三档模式与三组开关；category_enabled 保留为开发者选项。
+  mode: MemoryMode;
+  group_enabled: Record<MemoryGroup, boolean>;
   category_enabled: Record<MemoryCategory, boolean>;
   write_mode: "explicit" | "approval" | "balanced" | "proactive";
   learning_evidence_min: number;
@@ -100,6 +118,9 @@ export type MemoryStatusResponse = {
     migration_required: boolean;
   };
   counts: Record<string, number>;
+  // Plan 3 Task 3: 后端 /api/memory/status 已返回 effective_budget 与 group_counts。
+  effective_budget?: MemoryBudget;
+  group_counts?: Record<MemoryGroup, number>;
 };
 
 export type ProviderSwitchResult = {

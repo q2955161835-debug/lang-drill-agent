@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
-from .embeddings import embedding_runtime_from_env
+from ..embeddings.runtime import EmbeddingRuntime
 from .retrieval import KnowledgeRetrievalService, RetrievalQuery
 
 
@@ -19,7 +19,7 @@ def build_knowledge_context(
     clean_query = query.strip()
     if not clean_query:
         return _empty_context(task_type)
-    embedding_config, embedding_provider = embedding_runtime_from_env()
+    embedding_config, embedding_provider = EmbeddingRuntime(conn).current()
     result = KnowledgeRetrievalService(
         conn,
         embedding_provider=embedding_provider,

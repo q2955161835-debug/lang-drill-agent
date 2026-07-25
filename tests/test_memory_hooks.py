@@ -1,14 +1,17 @@
 from pathlib import Path
 
+import pytest
+
 from langdrill_agent.agents import EvaluatorTutorAgent, QuestionAuthorAgent
 from langdrill_agent.db import connect, init_db
-from langdrill_agent.memory.hooks import MemoryHooks, MemorySettingsService
+from langdrill_agent.memory.hooks import MemoryHooks, MemorySettings, MemorySettingsService
 from langdrill_agent.memory.models import MemoryCandidate
 from langdrill_agent.memory.repository import MemoryRepository
 from langdrill_agent.models import Question
 from langdrill_agent.providers import ModelResult
 from langdrill_agent.runtime.repository import AgentRunRepository
 from langdrill_agent.services import QuestionService, SessionService
+from langdrill_agent.utils import dumps
 
 
 class CapturingProvider:
@@ -267,3 +270,79 @@ def test_question_author_excludes_procedural_memory(tmp_path: Path) -> None:
         memory = provider.packs[0].context_pack["memory"]
         assert memory["trust"] == "derived_memory"
         assert {item["category"] for item in memory["items"]} == {"learning_weakness"}
+
+
+@pytest.fixture
+def seeded_memories(conn) -> None:
+    """Seed memory items across all eight internal categories."""
+    categories = [
+        ("core", "User is preparing for CET4 exam"),
+        ("profile", "User profile shows intermediate English level"),
+        ("semantic", "User study preferences include spaced repetition"),
+        ("episodic", "User completed a grammar drill yesterday"),
+        ("temporal", "User exam deadline is next month"),
+        ("learning_weakness", "User repeatedly struggles with conditionals"),
+        ("procedural", "User follows a morning vocabulary review routine"),
+        ("preference", "User prefers concise grammar examples"),
+    ]
+    for category, content in categories:
+        commit_memory(
+            conn,
+            MemoryCandidate(
+                category=category,
+                scope="global",
+                content=content,
+                normalized_key=f"{category}:{content[:20]}",
+                confidence=0.9,
+                importance=0.8,
+            ),
+        )
+
+
+def test_legacy_settings_load_as_standard(conn) -> None:
+    conn.execute(
+        "INSERT INTO app_settings(key,value_json) VALUES ('memory.settings', ?)",
+        (dumps({"core_token_budget": 400, "recall_token_budget": 1200}),),
+    )
+    settings = MemorySettingsService(conn).get()
+    assert settings.mode == "standard"
+    assert settings.group_enabled == {
+        "about_me": True,
+        "learning_history": True,
+        "usage_habits": True,
+    }
+
+
+def test_recall_standard_uses_ten_thousand_when_available(
+    conn, seeded_memories
+) -> None:
+    context = MemoryHooks(conn).recall(
+        "study preferences",
+        scope="global",
+        available_context_tokens=100_000,
+    )
+    assert context.budget.effective_tokens == 10_000
+    assert context.budget.reserved_tokens == 30_000
+
+
+def test_disabled_group_filters_internal_categories(
+    conn, seeded_memories
+) -> None:
+    MemorySettingsService(conn).save(
+        MemorySettings(
+            group_enabled={
+                "about_me": False,
+                "learning_history": True,
+                "usage_habits": True,
+            }
+        )
+    )
+    context = MemoryHooks(conn).recall(
+        "profile",
+        scope="global",
+        available_context_tokens=100_000,
+    )
+    assert all(
+        item.category not in {"core", "profile", "semantic"}
+        for item in context.items
+    )

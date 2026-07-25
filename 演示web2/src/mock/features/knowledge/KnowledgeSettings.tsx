@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import {
   ArrowClockwise,
-  FileArrowUp,
   MagnifyingGlass,
   Trash,
 } from "@phosphor-icons/react";
 
+import { ResourceImportQueue } from "../../components/ResourceImportQueue";
+import { EmbeddingSettings } from "../embeddings/EmbeddingSettings";
+import { embeddingApi as defaultEmbeddingApi, type EmbeddingApi } from "../embeddings/api";
 import { knowledgeApi, type KnowledgeApi } from "./api";
 import type { KnowledgeDocument, RetrievedKnowledgeChunk } from "./types";
 
@@ -16,11 +18,16 @@ const STATUS_LABELS: Record<KnowledgeDocument["status"], string> = {
   failed: "失败",
 };
 
-export function KnowledgeSettings({ api = knowledgeApi }: { api?: KnowledgeApi }) {
+type KnowledgeSettingsProps = {
+  api?: KnowledgeApi;
+  embeddingApi?: EmbeddingApi;
+};
+
+export function KnowledgeSettings({
+  api = knowledgeApi,
+  embeddingApi = defaultEmbeddingApi,
+}: KnowledgeSettingsProps) {
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [title, setTitle] = useState("");
-  const [language, setLanguage] = useState("");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<RetrievedKnowledgeChunk[]>([]);
   const [busy, setBusy] = useState(false);
@@ -41,31 +48,6 @@ export function KnowledgeSettings({ api = knowledgeApi }: { api?: KnowledgeApi }
         setMessage(error instanceof Error ? error.message : "知识库加载失败");
       });
   }, [api]);
-
-  const chooseFile = (file: File | null) => {
-    setSelectedFile(file);
-    if (file && !title.trim()) {
-      setTitle(file.name.replace(/\.[^.]+$/, ""));
-    }
-    setMessage("");
-  };
-
-  const importSelected = async () => {
-    if (!selectedFile) return;
-    setBusy(true);
-    setMessage("正在加入知识库...");
-    try {
-      await api.importDocument(selectedFile, title.trim(), language.trim());
-      setSelectedFile(null);
-      setTitle("");
-      setMessage("文档已加入知识库。");
-      await refreshDocuments();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "知识库导入失败");
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const runSearch = async () => {
     const cleanQuery = query.trim();
@@ -113,39 +95,13 @@ export function KnowledgeSettings({ api = knowledgeApi }: { api?: KnowledgeApi }
 
   return (
     <div className="knowledge-settings">
-      <div className="knowledge-import-row">
-        <label className="knowledge-file-picker">
-          <FileArrowUp size={18} />
-          <span>{selectedFile?.name || "选择文件"}</span>
-          <input
-            type="file"
-            aria-label="选择知识库文件"
-            accept=".txt,.md,.markdown,.pdf,.docx,image/*"
-            onChange={(event) => chooseFile(event.target.files?.[0] || null)}
-          />
-        </label>
-        <input
-          aria-label="文档标题"
-          value={title}
-          onChange={(event) => setTitle(event.target.value)}
-          placeholder="文档标题"
-        />
-        <input
-          aria-label="文档语言"
-          value={language}
-          onChange={(event) => setLanguage(event.target.value)}
-          placeholder="语言，例如 en"
-        />
-        <button
-          type="button"
-          className="inline-action primary-inline"
-          disabled={!selectedFile || busy}
-          onClick={() => void importSelected()}
-        >
-          <FileArrowUp size={16} />
-          加入知识库
-        </button>
-      </div>
+      <ResourceImportQueue
+        target="knowledge"
+        defaultMetadata={{ language: "ch" }}
+        onConfirmed={() => void refreshDocuments()}
+      />
+
+      <EmbeddingSettings api={embeddingApi} />
 
       <div className="knowledge-search-row">
         <input

@@ -26,9 +26,10 @@ class PastPaperEmbeddingIndexService:
         dimensions = len(vectors[0])
         if dimensions < 1 or any(len(vector) != dimensions for vector in vectors):
             raise RuntimeError("embedding vectors have inconsistent dimensions")
+        identity = provider.identity
         active_config = config or EmbeddingConfig(
-            provider=provider.identity,
-            model=provider.identity,
+            provider=identity.key,
+            model=identity.model_id,
             dimensions=dimensions,
             enabled=True,
         )
@@ -47,8 +48,8 @@ class PastPaperEmbeddingIndexService:
                 """,
                 (
                     question.id,
-                    provider.identity,
-                    active_config.model or provider.identity,
+                    identity.key,
+                    active_config.model or identity.model_id,
                     dimensions,
                     dumps(vector),
                     question.content_hash,

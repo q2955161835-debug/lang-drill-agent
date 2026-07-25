@@ -133,13 +133,21 @@ class PastPaperRetrievalService:
         query: PastPaperQuery,
         query_vector: list[float],
     ) -> list[RetrievedPaperQuestion]:
+        identity = self.embedding_provider.identity
         filters = [
             "e.provider=?",
+            "e.model=?",
+            "e.dimensions=?",
             "d.exam_id=?",
             "d.status='ready'",
             "e.content_hash=q.content_hash",
         ]
-        params: list[object] = [self.embedding_provider.identity, query.exam_id]
+        params: list[object] = [
+            identity.key,
+            identity.model_id,
+            identity.dimensions,
+            query.exam_id,
+        ]
         _append_filters(filters, params, query)
         rows = self.conn.execute(
             f"""

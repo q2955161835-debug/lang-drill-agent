@@ -65,7 +65,7 @@ from .models import (
 from .paper_assets import extract_text_from_file, safe_path_part
 from .providers import ModelProvider
 from .phone_mirror import PhoneMirrorService
-from .routers import agent_runs, creative, knowledge, memory, past_papers
+from .routers import agent_runs, creative, embeddings, knowledge, memory, past_papers, resource_imports
 from .prompt_engine import PromptAssembler, PromptRegistry
 from .runtime.intent import CapabilityIntentClassifier
 from .runtime.models import AgentRunStep
@@ -98,9 +98,11 @@ from .web_search import BuiltinWebSearchService
 app = FastAPI(title="Lang Drill Agent API")
 app.include_router(agent_runs.router)
 app.include_router(creative.router)
+app.include_router(embeddings.router)
 app.include_router(knowledge.router)
 app.include_router(memory.router)
 app.include_router(past_papers.router)
+app.include_router(resource_imports.router)
 logger = logging.getLogger(__name__)
 _PI_RUN_LOCK = threading.Lock()
 _PI_SUPERVISOR = PiProcessSupervisor(
@@ -208,10 +210,15 @@ def _create_agentic_run(
     active_question: dict[str, Any] | None,
 ) -> dict[str, Any]:
     profile = ProfileService(conn).get()
+    usage = ContextService(conn).usage(session_id)
+    available = max(
+        0,
+        int(usage["context_limit"]) - int(usage["estimated_current_context"]),
+    )
     memory_context = MemoryHooks(conn).recall(
         content,
         scope=f"exam:{profile.exam_id}",
-        token_budget=800,
+        available_context_tokens=available,
     )
     repo = AgentRunRepository(conn)
     run = repo.create(
@@ -902,6 +909,11 @@ def _assemble_runtime_pack(
     attachments: list | None = None,
 ) -> PromptPack:
     profile = ProfileService(conn).get()
+    usage = ContextService(conn).usage(session_id)
+    available = max(
+        0,
+        int(usage["context_limit"]) - int(usage["estimated_current_context"]),
+    )
     context_pack = {
         "task_type": task_type,
         **_runtime_context(conn, session_id=session_id, active_question=active_question),
@@ -915,6 +927,7 @@ def _assemble_runtime_pack(
         "memory": MemoryHooks(conn).recall(
             user_content,
             scope=f"exam:{profile.exam_id}",
+            available_context_tokens=available,
         ).model_dump(mode="json"),
         **(extra_context or {}),
     }

@@ -10,7 +10,8 @@ dependencies = [
   "typer>=0.12.0",
   "pydantic>=2.7.0",
   "python-dotenv>=1.0.0",
-  "httpx>=0.27.0"
+  "httpx>=0.27.0",
+  "huggingface-hub>=0.34,<2"
 ]
 
 [project.optional-dependencies]
@@ -26,6 +27,10 @@ paper-parsing = [
   "pypdf>=4.3.0",
   "python-docx>=1.1.2",
   "rapidocr-onnxruntime>=1.2.3"
+]
+embeddings-local = [
+  "sentence-transformers>=5.0,<6",
+  "safetensors>=0.5,<1"
 ]
 
 [project.scripts]
@@ -51,3 +56,9 @@ pythonpath = ["backend"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.ruff.lint]
+# Ruff 0.16 changed the implicit rule selection. Keep the project's
+# historical CI contract explicit so dependency upgrades do not enable
+# unrelated rule families without a dedicated cleanup task.
+select = ["E4", "E7", "E9", "F"]

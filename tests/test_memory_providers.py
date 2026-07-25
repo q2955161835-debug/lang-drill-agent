@@ -260,7 +260,7 @@ def test_external_recall_is_revalidated_against_scope_category_secret_and_budget
                 "exam",
                 scope="exam:CET-4",
                 categories=["profile"],
-                token_budget=5,
+                available_context_tokens=8,
             )
 
             assert [item.id for item in recalled.items] == ["allowed"]

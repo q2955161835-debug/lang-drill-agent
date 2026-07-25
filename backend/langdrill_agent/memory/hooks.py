@@ -16,36 +16,55 @@ from .policy import (
     MemoryPolicyConfig,
     MemoryPolicyEvidence,
 )
+from .presets import (
+    MemoryGroup,
+    MemoryMode,
+    categories_for_groups,
+    intersect_categories,
+    read_context_limit,
+    resolve_memory_budget,
+)
 from .repository import MemoryRepository
 from .retrieval import MemoryRetrievalQuery
 from .secrets import scan_memory_secrets
 from .service import MemoryService
 
 
+def default_internal_categories() -> dict[str, bool]:
+    """Return the eight internal memory categories all enabled by default."""
+    return {
+        "core": True,
+        "semantic": True,
+        "episodic": True,
+        "procedural": True,
+        "temporal": True,
+        "preference": True,
+        "profile": True,
+        "learning_weakness": True,
+    }
+
+
 class MemorySettings(BaseModel):
     enabled: bool = True
     capture_enabled: bool = True
     recall_enabled: bool = True
-    category_enabled: dict[str, bool] = Field(
+    mode: MemoryMode = "standard"
+    group_enabled: dict[MemoryGroup, bool] = Field(
         default_factory=lambda: {
-            "core": True,
-            "semantic": True,
-            "episodic": True,
-            "procedural": True,
-            "temporal": True,
-            "preference": True,
-            "profile": True,
-            "learning_weakness": True,
+            "about_me": True,
+            "learning_history": True,
+            "usage_habits": True,
         }
+    )
+    category_enabled: dict[str, bool] = Field(
+        default_factory=default_internal_categories
     )
     write_mode: str = "balanced"
     learning_evidence_min: int = 3
     confidence_min: float = 0.70
     default_ttl_days: int = 365
-    core_token_budget: int = 400
-    recall_top_k: int = 8
-    recall_token_budget: int = 1200
-    embeddings_enabled: bool = False
+    recall_top_k: int = 50
+    embeddings_enabled: bool = True
     compaction_flush_enabled: bool = True
 
 
@@ -219,30 +238,36 @@ class MemoryHooks:
         *,
         scope: str,
         categories: list[str] | None = None,
-        token_budget: int | None = None,
+        available_context_tokens: int | None = None,
     ) -> MemoryContext:
         try:
             settings = self.settings_service.get()
             if not settings.enabled or not settings.recall_enabled:
                 return MemoryContext(items=[], token_count=0)
-            enabled_categories = [
-                category
-                for category, enabled in settings.category_enabled.items()
-                if enabled and (not categories or category in categories)
-            ]
-            if categories and not enabled_categories:
-                return MemoryContext(items=[], token_count=0)
+            available = (
+                available_context_tokens
+                if available_context_tokens is not None
+                else read_context_limit(self.conn)
+            )
+            budget = resolve_memory_budget(settings.mode, available)
+            enabled_categories = intersect_categories(
+                categories,
+                categories_for_groups(settings.group_enabled),
+                settings.category_enabled,
+            )
+            if not enabled_categories:
+                return MemoryContext(items=[], token_count=0, budget=budget)
             query = MemoryRetrievalQuery(
                 text=text.strip(),
                 categories=enabled_categories,
                 scope=scope,
                 top_k=settings.recall_top_k,
-                token_budget=token_budget or settings.recall_token_budget,
+                token_budget=max(1, budget.effective_tokens),
             )
             if self.memory_service.current_primary_id == "builtin":
                 return MemoryContextAssembler(self.conn).build(
                     query,
-                    core_token_budget=settings.core_token_budget,
+                    budget=budget,
                     embeddings_enabled=settings.embeddings_enabled,
                 )
             result = self.memory_service.retrieve(query)
@@ -250,6 +275,7 @@ class MemoryHooks:
                 mode=result.mode,
                 items=result.items,
                 token_count=result.token_count,
+                budget=budget,
             )
         except Exception as exc:
             self._record_failure("recall", exc)

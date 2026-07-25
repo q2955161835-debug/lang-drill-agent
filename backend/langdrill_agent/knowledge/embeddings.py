@@ -7,13 +7,14 @@ from typing import Protocol
 
 import httpx
 
-from ..utils import dumps, normalize_api_key, validate_http_header_value
+from ..embeddings.models import EmbeddingIdentity
+from ..utils import dumps
 from .models import KnowledgeChunk
 
 
 class EmbeddingProvider(Protocol):
     @property
-    def identity(self) -> str: ...
+    def identity(self) -> EmbeddingIdentity: ...
 
     def embed(self, texts: list[str]) -> list[list[float]]: ...
 
@@ -25,25 +26,37 @@ class EmbeddingConfig:
     dimensions: int = 0
     enabled: bool = False
 
+    @classmethod
+    def from_identity(
+        cls,
+        identity: EmbeddingIdentity,
+        *,
+        enabled: bool = True,
+    ) -> EmbeddingConfig:
+        return cls(
+            provider=identity.key,
+            model=identity.model_id,
+            dimensions=identity.dimensions,
+            enabled=enabled,
+        )
+
 
 class OpenAICompatibleEmbeddingProvider:
+    """OpenAI-compatible /v1/embeddings provider bound to an EmbeddingIdentity."""
+
     def __init__(
         self,
         *,
+        identity: EmbeddingIdentity,
         base_url: str,
         api_key: str,
-        model: str,
         timeout: float = 60.0,
         client: httpx.Client | None = None,
     ) -> None:
+        self.identity = identity
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
-        self.model = model
         self._client = client or httpx.Client(timeout=timeout)
-
-    @property
-    def identity(self) -> str:
-        return f"{self.base_url}::{self.model}"
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
@@ -51,7 +64,7 @@ class OpenAICompatibleEmbeddingProvider:
         response = self._client.post(
             f"{self.base_url}/embeddings",
             headers={"Authorization": f"Bearer {self.api_key}"},
-            json={"model": self.model, "input": texts},
+            json={"model": self.identity.model_id, "input": texts},
         )
         response.raise_for_status()
         payload = response.json()
@@ -66,28 +79,15 @@ class OpenAICompatibleEmbeddingProvider:
 
 
 def embedding_runtime_from_env() -> tuple[EmbeddingConfig, EmbeddingProvider | None]:
-    enabled = os.getenv("LANGDRILL_KNOWLEDGE_EMBEDDING_ENABLED", "").strip() == "1"
-    base_url = os.getenv("LANGDRILL_KNOWLEDGE_EMBEDDING_BASE_URL", "").strip()
-    api_key = normalize_api_key(os.getenv("LANGDRILL_KNOWLEDGE_EMBEDDING_API_KEY", ""))
-    model = os.getenv("LANGDRILL_KNOWLEDGE_EMBEDDING_MODEL", "").strip()
-    try:
-        dimensions = int(os.getenv("LANGDRILL_KNOWLEDGE_EMBEDDING_DIMENSIONS", "0") or 0)
-    except ValueError:
-        dimensions = 0
-    config = EmbeddingConfig(
-        provider=base_url,
-        model=model,
-        dimensions=max(dimensions, 0),
-        enabled=enabled,
-    )
-    if not enabled or not base_url or not model or not api_key:
-        return config, None
-    validate_http_header_value(api_key, "Knowledge Embedding API Key")
-    return config, OpenAICompatibleEmbeddingProvider(
-        base_url=base_url,
-        api_key=api_key,
-        model=model,
-    )
+    """Deprecated compatibility shim.
+
+    New call sites use ``EmbeddingRuntime(conn).current()`` which reads the
+    identity-bound settings store. This function returns an off-state config so
+    any unmigrated importer safely falls back to FTS-only retrieval.
+    """
+
+    _ = os.getenv("LANGDRILL_KNOWLEDGE_EMBEDDING_ENABLED", "")
+    return EmbeddingConfig(enabled=False), None
 
 
 class EmbeddingIndexService:
@@ -108,9 +108,10 @@ class EmbeddingIndexService:
         dimensions = len(vectors[0])
         if dimensions < 1 or any(len(vector) != dimensions for vector in vectors):
             raise RuntimeError("embedding vectors have inconsistent dimensions")
+        identity = provider.identity
         active_config = config or EmbeddingConfig(
-            provider=provider.identity,
-            model=provider.identity,
+            provider=identity.key,
+            model=identity.model_id,
             dimensions=dimensions,
             enabled=True,
         )
@@ -129,8 +130,8 @@ class EmbeddingIndexService:
                 """,
                 (
                     chunk.id,
-                    provider.identity,
-                    active_config.model or provider.identity,
+                    identity.key,
+                    active_config.model or identity.model_id,
                     dimensions,
                     dumps(vector),
                     chunk.content_hash,

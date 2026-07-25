@@ -7,16 +7,6 @@ export type ExtractedFileText = {
   size: number;
 };
 
-export type PastPaperUploadParams = {
-  exam_id: string;
-  title: string;
-  year?: string;
-  source_url?: string;
-  summary?: string;
-  question_types?: string;
-  parse_now?: boolean;
-};
-
 export function fileTitle(file: File) {
   return file.name.replace(/\.[^.]+$/, "").trim() || file.name;
 }
@@ -62,31 +52,4 @@ export async function extractTextFromFiles(files: File[], language = "ch") {
       .filter(Boolean)
       .join("\n\n"),
   };
-}
-
-export async function uploadPastPaperFile<T>(file: File, params: PastPaperUploadParams) {
-  const query = new URLSearchParams({
-    exam_id: params.exam_id,
-    title: params.title,
-    filename: file.name,
-    source_url: params.source_url || "",
-    summary: params.summary || "",
-    question_types: params.question_types || "",
-    parse_now: String(params.parse_now ?? true),
-  });
-  if (params.year) query.set("year", params.year);
-  return apiPostFile<T>(`/api/past-papers/import-file?${query.toString()}`, file);
-}
-
-export async function uploadPastPaperDraftFile<T>(file: File, params: PastPaperUploadParams) {
-  const query = new URLSearchParams({
-    exam_id: params.exam_id,
-    title: params.title,
-    filename: file.name,
-    source_url: params.source_url || "",
-    summary: params.summary || "",
-    question_types: params.question_types || "",
-  });
-  if (params.year) query.set("year", params.year);
-  return apiPostFile<T>(`/api/past-papers/draft-file?${query.toString()}`, file);
 }

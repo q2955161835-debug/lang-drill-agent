@@ -2,7 +2,6 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
 from langdrill_agent.api import app
 from langdrill_agent.db import connect, init_db
 from langdrill_agent.memory.models import MemoryCandidate
@@ -53,6 +52,36 @@ def seed_candidate() -> str:
             )
         )
         return candidate.id
+
+
+@pytest.fixture
+def seeded_memories() -> None:
+    """Seed one active memory item per internal category across all groups."""
+    categories = [
+        ("core", "core:identity", "User identity anchor"),
+        ("profile", "profile:background", "User background summary"),
+        ("semantic", "semantic:fact", "User studies French"),
+        ("episodic", "episodic:session-1", "Completed reading practice"),
+        ("temporal", "temporal:exam-date", "Exam deadline 2026-12-01"),
+        ("learning_weakness", "weakness:conditionals", "Struggles with conditionals"),
+        ("procedural", "procedural:flow", "User prefers spaced repetition"),
+        ("preference", "preference:examples", "User prefers concise examples"),
+    ]
+    with connect() as conn:
+        repository = MemoryRepository(conn)
+        for category, normalized_key, content in categories:
+            repository.commit(
+                repository.stage(
+                    MemoryCandidate(
+                        category=category,
+                        content=content,
+                        normalized_key=normalized_key,
+                        confidence=0.9,
+                        importance=0.7,
+                        evidence_ids=[f"message:{category}"],
+                    )
+                )
+            )
 
 
 def test_disabling_memory_keeps_items(client: TestClient) -> None:
@@ -238,3 +267,89 @@ def test_unknown_provider_cannot_replace_builtin_primary(client: TestClient) -> 
     assert status.json()["provider"]["current_primary_id"] == "builtin"
     with connect() as conn:
         assert MemoryRepository(conn).get(item_id).status == "active"
+
+
+def test_status_exposes_mode_groups_and_effective_budget(client: TestClient) -> None:
+    payload = client.get("/api/memory/status").json()
+
+    assert payload["settings"]["mode"] == "standard"
+    assert payload["settings"]["group_enabled"]["about_me"] is True
+    assert payload["effective_budget"]["configured_limit"] == 10_000
+    assert payload["group_counts"].keys() == {
+        "about_me",
+        "learning_history",
+        "usage_habits",
+    }
+
+
+def test_settings_api_persists_mode_and_group_switches(client: TestClient) -> None:
+    response = client.post(
+        "/api/memory/settings",
+        json={
+            "mode": "economy",
+            "group_enabled": {"about_me": False},
+        },
+    )
+
+    assert response.status_code == 200
+    saved = response.json()["settings"]
+    assert saved["mode"] == "economy"
+    assert saved["group_enabled"] == {
+        "about_me": False,
+        "learning_history": True,
+        "usage_habits": True,
+    }
+
+    status = client.get("/api/memory/status").json()
+    assert status["effective_budget"]["configured_limit"] == 5_000
+
+
+def test_group_clear_requires_confirmation(client: TestClient) -> None:
+    response = client.post(
+        "/api/memory/groups/learning_history/clear",
+        json={"confirmed": False},
+    )
+
+    assert response.status_code == 400
+
+
+def test_group_clear_archives_only_mapped_categories(
+    client: TestClient,
+    seeded_memories: None,
+) -> None:
+    response = client.post(
+        "/api/memory/groups/learning_history/clear",
+        json={"confirmed": True},
+    )
+
+    assert response.status_code == 200
+    assert set(response.json()["categories"]) == {
+        "episodic",
+        "temporal",
+        "learning_weakness",
+    }
+    with connect() as conn:
+        archived_categories = {
+            row["category"]
+            for row in conn.execute(
+                "SELECT category FROM memory_items WHERE status='archived'"
+            ).fetchall()
+        }
+        assert archived_categories == {
+            "episodic",
+            "temporal",
+            "learning_weakness",
+        }
+        active_categories = {
+            row["category"]
+            for row in conn.execute(
+                "SELECT category FROM memory_items WHERE status='active'"
+            ).fetchall()
+        }
+        assert active_categories == {
+            "core",
+            "profile",
+            "semantic",
+            "procedural",
+            "preference",
+        }

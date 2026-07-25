@@ -1478,10 +1478,68 @@ section { position: relative; }
   margin-bottom: 24px;
 }
 
+.release-channel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.release-channel-card {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  padding: 18px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-strong);
+  backdrop-filter: blur(18px);
+}
+
+.release-channel-card.experimental {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line-strong));
+  box-shadow: 0 0 0 1px var(--accent-soft), 0 18px 40px -28px var(--accent-glow);
+}
+
+.release-channel-card.stable {
+  border-color: color-mix(in srgb, var(--accent-2) 35%, var(--line-strong));
+}
+
+.release-channel-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-strong);
+}
+
+.release-channel-card.experimental .release-channel-label {
+  color: var(--accent);
+}
+
+.release-channel-card.stable .release-channel-label {
+  color: var(--accent-2);
+}
+
+.release-channel-version {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.release-channel-desc {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
 .install-actions {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
+  margin-top: 4px;
 }
 
 .install-code {

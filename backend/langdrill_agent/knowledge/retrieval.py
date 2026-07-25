@@ -146,8 +146,19 @@ class KnowledgeRetrievalService:
         query: RetrievalQuery,
         query_vector: list[float],
     ) -> list[RetrievedChunk]:
-        filters = ["e.provider = ?", "d.status = 'ready'", "e.content_hash = c.content_hash"]
-        params: list[object] = [self.embedding_provider.identity]
+        identity = self.embedding_provider.identity
+        filters = [
+            "e.provider = ?",
+            "e.model = ?",
+            "e.dimensions = ?",
+            "d.status = 'ready'",
+            "e.content_hash = c.content_hash",
+        ]
+        params: list[object] = [
+            identity.key,
+            identity.model_id,
+            identity.dimensions,
+        ]
         if query.document_ids:
             placeholders = ",".join("?" for _ in query.document_ids)
             filters.append(f"c.document_id IN ({placeholders})")

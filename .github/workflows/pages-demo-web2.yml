@@ -50,6 +50,9 @@ jobs:
       - name: Run demo sanitization test
         run: python -m pytest tests/demo/test_demo_sanitization.py -v
 
+      - name: Verify demo download assets
+        run: python scripts/release/verify_demo_downloads.py --live
+
       - name: Build demo site
         working-directory: 演示web2
         env:

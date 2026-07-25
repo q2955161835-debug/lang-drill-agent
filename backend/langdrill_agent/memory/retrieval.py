@@ -26,7 +26,7 @@ class MemoryRetrievalQuery(BaseModel):
     categories: list[str] = Field(default_factory=list)
     scope: str = "global"
     top_k: int = Field(default=8, ge=1, le=50)
-    token_budget: int = Field(default=1000, ge=1, le=20_000)
+    token_budget: int = Field(default=1000, ge=1, le=7_000_000)
     as_of: str = ""
 
 
@@ -167,13 +167,21 @@ class MemoryRetrievalService:
         query: MemoryRetrievalQuery,
         query_vector: list[float],
     ) -> list[RetrievedMemoryItem]:
+        identity = self.embedding_provider.identity
         filters, params = _validity_filters(
             categories=query.categories,
             scope=query.scope,
             as_of=query.as_of,
         )
-        filters.extend(["e.provider=?", "e.content_hash=printf('%s', e.content_hash)"])
-        params.append(self.embedding_provider.identity)
+        filters.extend(
+            [
+                "e.provider=?",
+                "e.model=?",
+                "e.dimensions=?",
+                "e.content_hash=printf('%s', e.content_hash)",
+            ]
+        )
+        params.extend([identity.key, identity.model_id, identity.dimensions])
         rows = self.conn.execute(
             f"""
             SELECT m.*, e.vector_json

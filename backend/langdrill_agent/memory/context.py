@@ -4,13 +4,25 @@ import sqlite3
 
 from pydantic import BaseModel, Field
 
-from ..knowledge.embeddings import embedding_runtime_from_env
+from ..embeddings.runtime import EmbeddingRuntime
+from .presets import MemoryBudget
 from .retrieval import (
     MemoryRetrievalQuery,
     MemoryRetrievalResult,
     MemoryRetrievalService,
     RetrievedMemoryItem,
 )
+
+
+def _default_budget() -> MemoryBudget:
+    return MemoryBudget(
+        mode="standard",
+        configured_limit=10_000,
+        available_context_tokens=0,
+        reserved_tokens=0,
+        effective_tokens=0,
+        constrained_by_context=True,
+    )
 
 
 class MemoryContext(BaseModel):
@@ -26,6 +38,7 @@ class MemoryContext(BaseModel):
     mode: str = "fts"
     items: list[RetrievedMemoryItem] = Field(default_factory=list)
     token_count: int = 0
+    budget: MemoryBudget = Field(default_factory=_default_budget)
 
 
 class MemoryContextAssembler:
@@ -36,10 +49,11 @@ class MemoryContextAssembler:
         self,
         query: MemoryRetrievalQuery,
         *,
+        budget: MemoryBudget | None = None,
         core_token_budget: int | None = None,
         embeddings_enabled: bool | None = None,
     ) -> MemoryContext:
-        embedding_config, embedding_provider = embedding_runtime_from_env()
+        embedding_config, embedding_provider = EmbeddingRuntime(self.conn).current()
         if embeddings_enabled is False:
             embedding_config = embedding_config.__class__(
                 provider=embedding_config.provider,
@@ -84,10 +98,12 @@ class MemoryContextAssembler:
             items.append(item)
             seen.add(item.id)
             consumed += item.token_count
+        resolved_budget = budget if budget is not None else _default_budget()
         return MemoryContext(
             mode=recall.mode,
             items=items,
             token_count=consumed,
+            budget=resolved_budget,
         )
 
     def build_core(
