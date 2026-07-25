@@ -167,13 +167,21 @@ class MemoryRetrievalService:
         query: MemoryRetrievalQuery,
         query_vector: list[float],
     ) -> list[RetrievedMemoryItem]:
+        identity = self.embedding_provider.identity
         filters, params = _validity_filters(
             categories=query.categories,
             scope=query.scope,
             as_of=query.as_of,
         )
-        filters.extend(["e.provider=?", "e.content_hash=printf('%s', e.content_hash)"])
-        params.append(self.embedding_provider.identity)
+        filters.extend(
+            [
+                "e.provider=?",
+                "e.model=?",
+                "e.dimensions=?",
+                "e.content_hash=printf('%s', e.content_hash)",
+            ]
+        )
+        params.extend([identity.key, identity.model_id, identity.dimensions])
         rows = self.conn.execute(
             f"""
             SELECT m.*, e.vector_json

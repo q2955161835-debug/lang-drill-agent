@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
 
 from ..db import init_db, transaction
-from ..knowledge.embeddings import embedding_runtime_from_env
+from ..embeddings.runtime import EmbeddingRuntime
 from ..paper_assets import extract_text_from_file, paper_root, write_paper_v2_assets
 from ..past_papers.markdown import parse_paper_markdown
 from ..past_papers.distillation import PastPaperDistillationService
@@ -243,7 +243,7 @@ def sync(request: PastPaperSyncRequest) -> dict:
 def search(request: PastPaperSearchRequest) -> dict:
     init_db()
     with transaction() as conn:
-        embedding_config, embedding_provider = embedding_runtime_from_env()
+        embedding_config, embedding_provider = EmbeddingRuntime(conn).current()
         result = PastPaperRetrievalService(
             conn,
             embedding_provider=embedding_provider,
@@ -296,7 +296,7 @@ def reindex(request: PastPaperReparseRequest) -> dict:
         mode = "fts"
         embedding_count = 0
         try:
-            embedding_config, embedding_provider = embedding_runtime_from_env()
+            embedding_config, embedding_provider = EmbeddingRuntime(conn).current()
             if embedding_config.enabled and embedding_provider is not None:
                 embedding_count = embedding_index.index_questions(
                     embedding_provider,

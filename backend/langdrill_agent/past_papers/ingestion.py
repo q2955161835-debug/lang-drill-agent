@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Protocol
 from urllib.parse import urlparse
 
-from ..knowledge.embeddings import embedding_runtime_from_env
+from ..embeddings.runtime import EmbeddingRuntime
 from ..paper_assets import (
     ensure_exam_paper_dirs,
     extract_text_from_file,
@@ -235,7 +235,7 @@ class PastPaperIngestionService:
             embedding_mode = "fts"
             embedding_count = 0
             try:
-                embedding_config, embedding_provider = embedding_runtime_from_env()
+                embedding_config, embedding_provider = EmbeddingRuntime(self.conn).current()
                 if embedding_config.enabled and embedding_provider is not None:
                     embedding_count = PastPaperEmbeddingIndexService(self.conn).index_questions(
                         embedding_provider,

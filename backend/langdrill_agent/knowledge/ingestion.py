@@ -8,11 +8,12 @@ from collections.abc import Callable
 from pathlib import Path
 
 from ..config import load_settings
+from ..embeddings.runtime import EmbeddingRuntime
 from ..paper_assets import extract_text_from_file
 from ..runtime.models import AgentRunRecord, RunStatus
 from ..runtime.repository import AgentRunRepository
 from .chunking import ChunkingConfig, chunk_markdown
-from .embeddings import EmbeddingIndexService, embedding_runtime_from_env
+from .embeddings import EmbeddingIndexService
 from .models import DocumentStatus
 from .repository import KnowledgeRepository
 
@@ -143,7 +144,7 @@ class KnowledgeIngestionService:
             embedding_mode = "fts"
             embedding_count = 0
             try:
-                embedding_config, embedding_provider = embedding_runtime_from_env()
+                embedding_config, embedding_provider = EmbeddingRuntime(self.conn).current()
                 if embedding_config.enabled and embedding_provider is not None:
                     embedding_count = EmbeddingIndexService(self.conn).index_chunks(
                         embedding_provider,

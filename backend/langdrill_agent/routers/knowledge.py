@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request, Response, status
 
 from ..db import init_db, transaction
-from ..knowledge.embeddings import embedding_runtime_from_env
+from ..embeddings.runtime import EmbeddingRuntime
 from ..knowledge.ingestion import KnowledgeIngestionService
 from ..knowledge.repository import KnowledgeRepository
 from ..knowledge.retrieval import KnowledgeRetrievalService, RetrievalQuery
@@ -96,7 +96,7 @@ async def import_uploaded_document(
 def search_knowledge(request: KnowledgeSearchRequest) -> dict[str, Any]:
     init_db()
     with transaction() as conn:
-        embedding_config, embedding_provider = embedding_runtime_from_env()
+        embedding_config, embedding_provider = EmbeddingRuntime(conn).current()
         result = KnowledgeRetrievalService(
             conn,
             embedding_provider=embedding_provider,

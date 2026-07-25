@@ -4,7 +4,7 @@ import sqlite3
 
 from pydantic import BaseModel, Field
 
-from ..knowledge.embeddings import embedding_runtime_from_env
+from ..embeddings.runtime import EmbeddingRuntime
 from .retrieval import (
     MemoryRetrievalQuery,
     MemoryRetrievalResult,
@@ -39,7 +39,7 @@ class MemoryContextAssembler:
         core_token_budget: int | None = None,
         embeddings_enabled: bool | None = None,
     ) -> MemoryContext:
-        embedding_config, embedding_provider = embedding_runtime_from_env()
+        embedding_config, embedding_provider = EmbeddingRuntime(self.conn).current()
         if embeddings_enabled is False:
             embedding_config = embedding_config.__class__(
                 provider=embedding_config.provider,
