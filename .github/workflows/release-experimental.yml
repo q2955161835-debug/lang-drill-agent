@@ -321,10 +321,20 @@ jobs:
         run: |
           $version = (Get-Content -LiteralPath "VERSION" -Raw -Encoding UTF8).Trim()
           $tag = "v$version"
-          # 验证 tag 与清单一致
-          $refTag = "${{ github.ref_name }}"
+          # tag push 使用当前 ref；手动重建使用显式输入，空输入默认当前清单版本。
+          $eventName = "${{ github.event_name }}"
+          if ($eventName -eq "workflow_dispatch") {
+            $refTag = "${{ inputs.tag }}".Trim()
+            if (-not $refTag) {
+              $refTag = $tag
+            }
+          } else {
+            $refTag = "${{ github.ref_name }}"
+          }
+
+          # 验证目标 tag 与清单一致，禁止把当前构建误传到其它版本。
           if ($refTag -and $refTag -ne "" -and $refTag -ne $tag) {
-            throw "Tag mismatch: github.ref_name=$refTag but VERSION=$version"
+            throw "Tag mismatch: requested tag=$refTag but VERSION=$version"
           }
           "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
@@ -333,6 +343,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           prerelease: true
+          overwrite_files: true
+          fail_on_unmatched_files: true
           tag_name: ${{ steps.version.outputs.tag }}
           name: "Lang Drill Agent ${{ steps.version.outputs.tag }} 实验版 / Experimental / 実験版"
           body_path: release-notes/v${{ steps.version.outputs.version }}.md
