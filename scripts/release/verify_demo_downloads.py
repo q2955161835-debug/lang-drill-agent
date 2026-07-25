@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """演示站下载资产验证脚本。
 
-在 ``演示web2`` 构建前确认 ``releaseChannels.ts`` 声明的两个 GitHub Release
-安装包 URL 静态合法；加 ``--live`` 时实际发起 HTTP 请求确认资产可达。
+在 ``演示web2`` 构建前确认 ``releaseChannels.ts`` 声明的 GitHub Release
+安装包 URL 静态合法；加 ``--live`` 时实际发起 HTTP 请求确认全部资产可达。
 
 用法：
 
@@ -30,12 +30,12 @@ _FALLBACK_STATUSES = {403, 405}
 
 
 def load_download_urls(path: Path = RELEASE_CHANNELS) -> list[str]:
-    """从 releaseChannels.ts 解析所有 downloadUrl，要求恰好两个不同 GitHub Release 直链。"""
+    """从 releaseChannels.ts 解析所有 downloadUrl，要求至少两个不同 GitHub Release 直链。"""
     text = path.read_text(encoding="utf-8")
     urls = _URL_PATTERN.findall(text)
-    if len(urls) != 2 or len(set(urls)) != 2:
+    if len(urls) < 2 or len(set(urls)) != len(urls):
         raise RuntimeError(
-            f"expected exactly two distinct demo download URLs, got: {urls}"
+            f"expected at least two distinct demo download URLs, got: {urls}"
         )
     for url in urls:
         if not url.startswith("https://github.com/") or "/releases/download/" not in url:

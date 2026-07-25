@@ -8,7 +8,7 @@ Lang Drill Agent は、語学試験対策向けのローカル学習ワークベ
 
 本プロジェクトは CET-4/CET-6、CFT-4、CJT4/CJT6 などの語学試験に重点を置いています。正式な学習状態は SQLite に保存されます。モデルは問題と解説を生成し、プログラムは問題の保存、採点、進捗の推进、統計を担当するため、学習記録がチャットのコンテキストに散逸しません。
 
-Web 版と Windows デスクトップ版の両方を提供しています。デスクトップ版は同じ React/Vite UI を Tauri で包み、ローカル FastAPI バックエンドを起動します。Web 開発の起動方法は変更されません。現在のバージョンは `v1.0.0-alpha.2` です。デフォルトの学習フローは変更されず、クリエイティブモードはオプションの実験的機能です。
+Web 版と Windows デスクトップ版の両方を提供しています。デスクトップ版は同じ React/Vite UI を Tauri で包み、ローカル FastAPI バックエンドを起動します。Web 開発の起動方法は変更されません。現在の実験版は `v1.0.1` で、`v1.0.0-alpha.2` は v1.0.0 系列の履歴版として保持されます。
 
 ## 主な機能
 
@@ -104,15 +104,16 @@ npm run dev
 npm run build
 ```
 
-このサイトは静的フロントエンドで、`.github/workflows/pages-demo-web2.yml` によって GitHub Pages にビルド・デプロイされます：`https://q2955161835-debug.github.io/lang-drill-agent/`。デモワークベンチは実際のバックエンドに接続せず、`.env` を読み取らず、モデルの返信は固定のモック内容です。
+このサイトは静的フロントエンドで、`.github/workflows/pages-demo-web2.yml` によって GitHub Pages にビルド・デプロイされます：`https://q2955161835-debug.github.io/lang-drill-agent/`。ダウンロード欄には安定版 `v0.1.2`、現在の実験版 `v1.0.1`、v1.0.0 系列の履歴版を表示し、オンライン体験は引き続き実験版です。デモワークベンチは実際のバックエンドに接続せず、`.env` を読み取らず、モデルの返信は固定のモック内容です。
 
 ## Windows インストーラーとアップデート
 
 現在の Windows インストーラーは GitHub Release で公開されています：
 
-- リリースページ：[Lang Drill Agent v0.1.2](https://github.com/q2955161835-debug/lang-drill-agent/releases/tag/v0.1.2)
-- インストーラーダウンロード：[Lang.Drill.Agent_0.1.2_x64-setup.exe](https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v0.1.2/Lang.Drill.Agent_0.1.2_x64-setup.exe)
-- SHA256：`6b26f9901efd089650ed3cf584a8dcbc64ce0af808bbf5ad8d62d4924d4f1702`
+- 安定版 `v0.1.2`：[リリース](https://github.com/q2955161835-debug/lang-drill-agent/releases/tag/v0.1.2) · [インストーラー](https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v0.1.2/Lang.Drill.Agent_0.1.2_x64-setup.exe)
+- 現在の実験版 `v1.0.1`：[リリース](https://github.com/q2955161835-debug/lang-drill-agent/releases/tag/v1.0.1) · [インストーラー](https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v1.0.1/Lang.Drill.Agent_1.0.1_x64-setup.exe)
+- v1.0.0 系列の履歴版 `v1.0.0-alpha.2`：[リリース](https://github.com/q2955161835-debug/lang-drill-agent/releases/tag/v1.0.0-alpha.2) · [インストーラー](https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v1.0.0-alpha.2/Lang.Drill.Agent_1.0.0-alpha.2_x64-setup.exe)
+- SHA256 値は各 Release の `checksums.sha256` 添付ファイルで公開します。
 
 これは未署名の社内テストインストーラーです。Windows が不明な発行元について警告する場合があります。ソースを確認して続行してください。
 
@@ -141,7 +142,7 @@ GitHub Actions CI が設定されています。プッシュとプルリクエ�
 
 ## 実験版ステータス
 
-現在のバージョン `v1.0.0-alpha.2` は実験的プレリリースです：クリエイティブモード、署名アップデートセンター、三言語 UI、デモサイト同期はすべて実験的機能であり、不安定な可能性があります。正式な学習フロー（単語リストインポート、問題生成、回答、解説、復習）は安定しています。アップグレード前に `%APPDATA%\Lang Drill Agent` データディレクトリをバックアップしてください。ロールバックする場合は新バージョンをアンインストールして旧バージョンを再インストールしてください。
+現在のバージョン `v1.0.1` は実験的プレリリースです：クリエイティブモード、署名アップデートセンター、三言語 UI、デモサイト同期はすべて実験的機能であり、不安定な可能性があります。正式な学習フロー（単語リストインポート、問題生成、回答、解説、復習）は安定しています。`v1.0.0-alpha.2` は履歴版になりました。アップグレード前に `%APPDATA%\Lang Drill Agent` をバックアップし、必要ならその履歴版または安定版 `v0.1.2` を再インストールしてください。
 
 ## License
 

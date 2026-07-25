@@ -5,11 +5,14 @@
 .DESCRIPTION
   verify-version.ps1 读取 VERSION 文件，比对：
   - pyproject.toml
+  - backend/langdrill_agent/__init__.py
   - frontend/package.json
+  - frontend/src/features/update/UpdateCenter.tsx
   - src-tauri/Cargo.toml
   - src-tauri/Cargo.lock
   - src-tauri/tauri.conf.json
   - 演示web2/src/demoVersion.ts
+  - 演示web2/src/mock/features/update/UpdateCenter.tsx
 
   任何不一致立即抛错退出，便于 CI 阻断不一致的发布。
 
@@ -39,6 +42,24 @@ function Get-PyprojectVersion {
     param([string]$Path)
     $content = Get-Content $Path -Raw -Encoding UTF8
     if ($content -match '(?m)^version\s*=\s*"([^"]+)"') {
+        return $Matches[1]
+    }
+    return $null
+}
+
+function Get-PythonPackageVersion {
+    param([string]$Path)
+    $content = Get-Content $Path -Raw -Encoding UTF8
+    if ($content -match '__version__\s*=\s*"([^"]+)"') {
+        return $Matches[1]
+    }
+    return $null
+}
+
+function Get-UpdateCenterVersion {
+    param([string]$Path)
+    $content = Get-Content $Path -Raw -Encoding UTF8
+    if ($content -match 'const DEFAULT_CURRENT_VERSION = "([^"]+)";') {
         return $Matches[1]
     }
     return $null
@@ -80,11 +101,14 @@ function Get-DemoVersion {
 
 $checks = @(
     @{ Name = "pyproject.toml";       Path = (Join-Path $repoRoot "pyproject.toml");                          Value = (Get-PyprojectVersion (Join-Path $repoRoot "pyproject.toml")) },
+    @{ Name = "backend/__init__.py";   Path = (Join-Path $repoRoot "backend\langdrill_agent\__init__.py");     Value = (Get-PythonPackageVersion (Join-Path $repoRoot "backend\langdrill_agent\__init__.py")) },
     @{ Name = "frontend/package.json"; Path = (Join-Path $repoRoot "frontend\package.json");                   Value = (Get-JsonVersion (Join-Path $repoRoot "frontend\package.json")) },
+    @{ Name = "frontend/UpdateCenter"; Path = (Join-Path $repoRoot "frontend\src\features\update\UpdateCenter.tsx"); Value = (Get-UpdateCenterVersion (Join-Path $repoRoot "frontend\src\features\update\UpdateCenter.tsx")) },
     @{ Name = "Cargo.toml";            Path = (Join-Path $repoRoot "src-tauri\Cargo.toml");                    Value = (Get-CargoTomlVersion (Join-Path $repoRoot "src-tauri\Cargo.toml")) },
     @{ Name = "Cargo.lock";            Path = (Join-Path $repoRoot "src-tauri\Cargo.lock");                    Value = (Get-CargoLockVersion (Join-Path $repoRoot "src-tauri\Cargo.lock") "lang-drill-agent-desktop") },
     @{ Name = "tauri.conf.json";       Path = (Join-Path $repoRoot "src-tauri\tauri.conf.json");               Value = (Get-JsonVersion (Join-Path $repoRoot "src-tauri\tauri.conf.json")) },
-    @{ Name = "demoVersion.ts";        Path = (Join-Path $repoRoot "演示web2\src\demoVersion.ts");             Value = (Get-DemoVersion (Join-Path $repoRoot "演示web2\src\demoVersion.ts")) }
+    @{ Name = "demoVersion.ts";        Path = (Join-Path $repoRoot "演示web2\src\demoVersion.ts");             Value = (Get-DemoVersion (Join-Path $repoRoot "演示web2\src\demoVersion.ts")) },
+    @{ Name = "demo/UpdateCenter";     Path = (Join-Path $repoRoot "演示web2\src\mock\features\update\UpdateCenter.tsx"); Value = (Get-UpdateCenterVersion (Join-Path $repoRoot "演示web2\src\mock\features\update\UpdateCenter.tsx")) }
 )
 
 $failed = $false

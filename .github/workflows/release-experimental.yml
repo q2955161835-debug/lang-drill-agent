@@ -1,14 +1,16 @@
 name: Release Experimental
 
-# 触发条件：push v*-alpha.* 标签 或 手动 dispatch
+# 触发条件：push 任意 v* 版本标签或手动 dispatch。
+# 发布渠道仍固定为 GitHub Pre-release；版本号可使用用户确认的正式 SemVer，
+# 不再强制伪造 alpha 后缀。
 on:
   push:
     tags:
-      - "v*-alpha.*"
+      - "v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to release (e.g. v1.0.0-alpha.2); defaults to GITHUB_REF"
+        description: "Tag to release (e.g. v1.0.1); defaults to GITHUB_REF"
         required: false
         default: ""
 

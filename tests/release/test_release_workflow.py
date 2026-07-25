@@ -1,7 +1,7 @@
 """验证实验版发布工作流的契约。
 
 契约来源：07-更新国际化演示与实验版发布-实施计划.md Task 7。
-- 触发条件：push tag 匹配 v*-alpha.* + 手动 dispatch
+- 触发条件：push tag 匹配 v* + 手动 dispatch
 - 发布 job 必须依赖后端/前端/Pi/Rust/桌面测试 job
 - 权限最小化：只给 contents: write
 - 使用固定主版本号的 actions
@@ -83,13 +83,13 @@ class TestReleaseWorkflowExists:
 
 
 class TestReleaseTriggers:
-    def test_triggers_on_experimental_tag_push(self, release_workflow: dict):
+    def test_triggers_on_version_tag_push(self, release_workflow: dict):
         on = release_workflow.get("on") or release_workflow.get(True, {})
         assert "push" in on, "工作流必须由 push 触发"
         tags = on["push"].get("tags", [])
-        assert any(
-            fnmatch.fnmatch(t, "v*-alpha.*") for t in tags
-        ), f"push.tags 必须包含 v*-alpha.* 模式，实际: {tags}"
+        assert any(fnmatch.fnmatch(t, "v*") for t in tags), (
+            f"push.tags 必须包含 v* 模式，实际: {tags}"
+        )
 
     def test_supports_manual_dispatch(self, release_workflow: dict):
         on = release_workflow.get("on") or release_workflow.get(True, {})
@@ -264,7 +264,7 @@ class TestVersionConsistency:
         ), "工作流必须验证 tag 版本与清单版本一致"
 
     def test_release_notes_file_exists(self):
-        notes = REPO_ROOT / "release-notes" / "v1.0.0-alpha.2.md"
+        notes = REPO_ROOT / "release-notes" / "v1.0.1.md"
         assert notes.exists(), "发布说明文件不存在"
 
 

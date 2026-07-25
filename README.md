@@ -8,7 +8,7 @@ Lang Drill Agent 是一个面向语言考试备考的本地学习工作台，核
 
 项目重点服务英语四级/六级、法语四级、日语四级/六级等语言考试。正式学习状态统一写入 SQLite，模型负责生成题目和讲解，程序负责题目落库、判分、进度推进和统计，避免学习记录散落在聊天上下文里。
 
-当前同时提供 Web 版和 Windows 桌面版。桌面版用 Tauri 承载同一套 React/Vite 界面，并在本机启动 FastAPI 后端；Web 开发启动方式保持不变。当前版本为 `v1.0.0-alpha.2` 实验版，正式学习流程保持不变，创造模式为可选的实验性能力。
+当前同时提供 Web 版和 Windows 桌面版。桌面版用 Tauri 承载同一套 React/Vite 界面，并在本机启动 FastAPI 后端；Web 开发启动方式保持不变。当前版本为 `v1.0.1` 实验版，`v1.0.0-alpha.2` 作为 v1.0.0 系列历史版本保留，正式学习流程保持不变。
 
 ## 核心功能
 
@@ -112,15 +112,16 @@ npm run dev
 npm run build
 ```
 
-该站点是静态前端，由 `.github/workflows/pages-demo-web2.yml` 构建并部署到 GitHub Pages：`https://q2955161835-debug.github.io/lang-drill-agent/`。下载区同时提供稳定版 `v0.1.2` 和实验版 `v1.0.0-alpha.2`，在线体验入口仍保持实验版。演示工作台不连接真实后端，不读取 `.env`，模型回复为固定模拟内容。
+该站点是静态前端，由 `.github/workflows/pages-demo-web2.yml` 构建并部署到 GitHub Pages：`https://q2955161835-debug.github.io/lang-drill-agent/`。下载区提供稳定版 `v0.1.2`、当前实验版 `v1.0.1` 和 v1.0.0 系列历史版本，在线体验入口仍保持实验版。演示工作台不连接真实后端，不读取 `.env`，模型回复为固定模拟内容。
 
 ## Windows 安装包与更新
 
 当前 Windows 安装包发布在 GitHub Release：
 
 - 稳定版 `v0.1.2`：[发布页](https://github.com/q2955161835-debug/lang-drill-agent/releases/tag/v0.1.2) · [安装包](https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v0.1.2/Lang.Drill.Agent_0.1.2_x64-setup.exe)
-- 实验版 `v1.0.0-alpha.2`：[发布页](https://github.com/q2955161835-debug/lang-drill-agent/releases/tag/v1.0.0-alpha.2) · [安装包](https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v1.0.0-alpha.2/Lang.Drill.Agent_1.0.0-alpha.2_x64-setup.exe)
-- SHA256：`6b26f9901efd089650ed3cf584a8dcbc64ce0af808bbf5ad8d62d4924d4f1702`
+- 当前实验版 `v1.0.1`：[发布页](https://github.com/q2955161835-debug/lang-drill-agent/releases/tag/v1.0.1) · [安装包](https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v1.0.1/Lang.Drill.Agent_1.0.1_x64-setup.exe)
+- v1.0.0 系列历史版 `v1.0.0-alpha.2`：[发布页](https://github.com/q2955161835-debug/lang-drill-agent/releases/tag/v1.0.0-alpha.2) · [安装包](https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v1.0.0-alpha.2/Lang.Drill.Agent_1.0.0-alpha.2_x64-setup.exe)
+- 各版本 SHA256 校验值见对应 Release 附件中的 `checksums.sha256`。
 
 这是未签名的内测安装包。Windows 可能提示未知发布者，确认来源后继续安装即可。
 
@@ -149,7 +150,7 @@ cargo check --manifest-path src-tauri\Cargo.toml
 
 ## 实验版状态
 
-当前版本 `v1.0.0-alpha.2` 为实验性预发布：创造模式、签名更新中心、三语界面和演示站同步均为实验性能力，可能存在不稳定。正式学习流程（词表导入、组卷、答题、讲解、复盘）保持稳定。升级前请备份 `%APPDATA%\Lang Drill Agent` 数据目录；如需回退，卸载新版本后重新安装旧版即可。
+当前版本 `v1.0.1` 为实验性预发布：创造模式、签名更新中心、三语界面和演示站同步均为实验性能力，可能存在不稳定。正式学习流程（词表导入、组卷、答题、讲解、复盘）保持稳定。`v1.0.0-alpha.2` 已归入历史版本；升级前请备份 `%APPDATA%\Lang Drill Agent` 数据目录，如需回退可重新安装该历史版本或 `v0.1.2` 稳定版。
 
 ## License
 
