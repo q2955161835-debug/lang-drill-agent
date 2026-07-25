@@ -163,6 +163,23 @@ def test_tauri_conf_builds_signed_updater_artifacts():
     assert data.get("bundle", {}).get("createUpdaterArtifacts") is True
 
 
+def test_tauri_conf_bundles_complete_backend_package():
+    """桌面包必须递归携带完整后端包，不能按历史子目录逐项枚举。"""
+    data = json.loads(_read_text(TAURI_CONF))
+    resources = data.get("bundle", {}).get("resources", {})
+    assert resources.get("../backend/langdrill_agent/") == "app/backend/langdrill_agent/"
+
+    stale_partial_entries = [
+        source
+        for source in resources
+        if source.startswith("../backend/langdrill_agent/") and source != "../backend/langdrill_agent/"
+    ]
+    assert not stale_partial_entries, (
+        "backend package must use one recursive resource mapping; "
+        f"partial mappings found: {stale_partial_entries}"
+    )
+
+
 def test_demo_version_metadata_matches_canonical():
     text = _read_text(DEMO_VERSION_TS)
     assert _extract_demo_version_ts(text) == EXPECTED_VERSION

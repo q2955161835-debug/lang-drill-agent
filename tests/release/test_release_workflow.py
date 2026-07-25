@@ -101,6 +101,14 @@ class TestReleaseTriggers:
         on = release_workflow.get("on") or release_workflow.get(True, {})
         assert "workflow_dispatch" in on, "工作流必须支持手动触发"
 
+    def test_manual_dispatch_uses_requested_tag(self, release_workflow_text: str):
+        assert "${{ inputs.tag }}" in release_workflow_text, (
+            "手动重建发布资产时必须读取 workflow_dispatch 的 tag 输入"
+        )
+        assert "${{ github.event_name }}" in release_workflow_text, (
+            "工作流必须区分 tag push 与 workflow_dispatch"
+        )
+
 
 # ---------- Job 依赖 ----------
 
@@ -230,6 +238,13 @@ class TestReleaseArtifacts:
     def test_uploads_pi_runtime_manifest(self, release_workflow_text: str):
         assert re.search(r"pi.runtime.manifest|pi-runtime-manifest", release_workflow_text, re.IGNORECASE), (
             "必须上传 Pi 运行时清单"
+        )
+
+    def test_overwrites_same_name_assets_on_manual_rebuild(
+        self, release_workflow_text: str
+    ):
+        assert "overwrite_files: true" in release_workflow_text, (
+            "手动重建发布时必须覆盖同名错误资产"
         )
 
 
