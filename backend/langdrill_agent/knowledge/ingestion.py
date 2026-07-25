@@ -44,7 +44,52 @@ class KnowledgeIngestionService:
         source = path.expanduser().resolve()
         if not source.is_file():
             raise FileNotFoundError(source)
+        return self._persist_import(
+            source,
+            title=title,
+            language=language,
+            document_id=document_id,
+            extracted_text=None,
+            parser=None,
+        )
 
+    def import_preparsed(
+        self,
+        path: Path,
+        *,
+        extracted_text: str,
+        parser: str,
+        title: str,
+        language: str = "",
+    ) -> AgentRunRecord:
+        """Persist a knowledge document using already-extracted text.
+
+        Used by the staged resource import flow so that confirmation does not
+        run the extractor a second time. The staged file is the source of the
+        raw bytes; the extracted text comes from the staging preview.
+        """
+        source = path.expanduser().resolve()
+        if not source.is_file():
+            raise FileNotFoundError(source)
+        return self._persist_import(
+            source,
+            title=title,
+            language=language,
+            document_id=None,
+            extracted_text=extracted_text,
+            parser=parser,
+        )
+
+    def _persist_import(
+        self,
+        source: Path,
+        *,
+        title: str,
+        language: str = "",
+        document_id: str | None = None,
+        extracted_text: str | None = None,
+        parser: str | None = None,
+    ) -> AgentRunRecord:
         content_hash = _file_hash(source)
         mime_type = mimetypes.guess_type(source.name)[0] or "application/octet-stream"
         knowledge_repo = KnowledgeRepository(self.conn)
@@ -85,7 +130,8 @@ class KnowledgeIngestionService:
             shutil.copy2(source, raw_staging)
             run_repo.append_event(run.id, "progress", {"percent": 10, "document_id": document.id})
 
-            extracted_text, parser = self.extractor(source, language=language or "ch")
+            if extracted_text is None or parser is None:
+                extracted_text, parser = self.extractor(source, language=language or "ch")
             normalized = _normalize_markdown(extracted_text, title=title.strip() or source.stem)
             run_repo.append_event(run.id, "progress", {"percent": 35, "parser": parser})
 

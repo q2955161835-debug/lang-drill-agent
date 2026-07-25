@@ -4,10 +4,14 @@ import shutil
 import sqlite3
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from ..config import load_settings
 from ..knowledge.chunking import chunk_markdown
-from ..paper_assets import IMAGE_SUFFIXES, extract_text_from_file
+from ..knowledge.ingestion import KnowledgeIngestionService
+from ..knowledge.repository import KnowledgeRepository
+from ..paper_assets import IMAGE_SUFFIXES, extract_text_from_file, paper_root
+from ..past_papers.ingestion import PastPaperIngestionService
 from ..past_papers.parser import PaperParseResult, ParsedPaperQuestion, parse_extracted_paper_text
 from ..utils import new_id
 from .models import ImportTarget, ResourceImportPreview, ResourceImportRecord
@@ -152,6 +156,62 @@ class ResourceImportService:
         if staging_dir.exists():
             shutil.rmtree(staging_dir, ignore_errors=True)
         return self.repository.update(import_id, status="cancelled")
+
+    def confirm(
+        self,
+        import_id: str,
+        *,
+        metadata: dict[str, object],
+    ) -> dict[str, Any]:
+        """Persist a previewed staging record into its formal domain.
+
+        Dispatches to ``KnowledgeIngestionService.import_preparsed`` for
+        knowledge targets or ``PastPaperIngestionService.import_local_file``
+        for past-paper targets. The staging directory is removed only after
+        the domain write succeeds.
+        """
+        record = self.repository.get(import_id)
+        if record.status != "preview_ready" or not record.extracted_path:
+            raise ResourceImportError("RESOURCE_IMPORT_PREVIEW_REQUIRED")
+        if record.preview is None:
+            raise ResourceImportError("RESOURCE_IMPORT_PREVIEW_REQUIRED")
+
+        source = Path(record.staged_path)
+        extracted_text = Path(record.extracted_path).read_text(encoding="utf-8")
+
+        if record.target == "knowledge":
+            run = KnowledgeIngestionService(self.conn).import_preparsed(
+                source,
+                extracted_text=extracted_text,
+                parser=record.parser,
+                title=str(metadata.get("title") or record.preview.title),
+                language=str(metadata.get("language") or record.preview.language),
+            )
+            documents = KnowledgeRepository(self.conn).list_documents()
+            if not documents:
+                raise ResourceImportError("RESOURCE_IMPORT_CONFIRM_FAILED")
+            result: dict[str, Any] = {
+                "run": run.model_dump(mode="json"),
+                "document": documents[-1].model_dump(mode="json"),
+            }
+        else:
+            document = PastPaperIngestionService(
+                self.conn,
+                papers_root=paper_root(),
+            ).import_local_file(
+                source,
+                extracted_text=extracted_text,
+                parser=record.parser,
+                exam_id=str(metadata.get("exam_id") or "custom"),
+                title=str(metadata.get("title") or record.preview.title),
+                year=_optional_year(metadata.get("year")),
+                source_url=str(metadata.get("source_url") or ""),
+            )
+            result = {"document": document.model_dump(mode="json")}
+
+        self.repository.update(import_id, status="confirmed")
+        shutil.rmtree(source.parent, ignore_errors=True)
+        return result
 
     def cleanup_expired(self) -> int:
         expired = self.repository.list_expired()

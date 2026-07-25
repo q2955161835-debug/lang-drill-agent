@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import shutil
 import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -8,12 +10,18 @@ from typing import Protocol
 from urllib.parse import urlparse
 
 from ..knowledge.embeddings import embedding_runtime_from_env
-from ..paper_assets import extract_text_from_file, write_paper_v2_assets
+from ..paper_assets import (
+    ensure_exam_paper_dirs,
+    extract_text_from_file,
+    write_paper_v2_assets,
+)
+from ..past_papers.markdown import render_paper_markdown
+from ..past_papers.parser import parse_extracted_paper_text
 from ..runtime.models import AgentRunRecord, RunStatus
 from ..runtime.repository import AgentRunRepository
-from ..utils import new_id
+from ..utils import dumps, new_id
 from .embeddings import PastPaperEmbeddingIndexService
-from .models import PaperDocumentInput, PaperQuestionInput, PaperSourceInput
+from .models import PaperDocument, PaperDocumentInput, PaperQuestionInput, PaperSourceInput
 from .repository import PastPaperRepository
 from .sources import DownloadReceipt, PastPaperSourceAdapter
 
@@ -36,7 +44,7 @@ class PastPaperIngestionService:
         conn: sqlite3.Connection,
         *,
         papers_root: Path,
-        downloader: Downloader,
+        downloader: Downloader | None = None,
         source_adapter: PastPaperSourceAdapter | None = None,
         extractor: Callable[..., tuple[str, str]] | None = None,
         preferred_parser: str = "auto",
@@ -142,6 +150,8 @@ class PastPaperIngestionService:
                 )
                 downloaded = False
             else:
+                if self.downloader is None:
+                    raise RuntimeError("past paper downloader is not configured")
                 receipt = self.downloader.download(source.source_url, destination)
                 downloaded = True
             self._update_job(
@@ -282,6 +292,99 @@ class PastPaperIngestionService:
             )
             raise PastPaperImportError(failed_run, str(exc)) from exc
 
+    def import_local_file(
+        self,
+        path: Path,
+        *,
+        exam_id: str,
+        title: str,
+        year: int | None,
+        source_url: str,
+        extracted_text: str,
+        parser: str,
+    ) -> PaperDocument:
+        """Confirm a staged local paper file using already-extracted text.
+
+        Re-parsing the extracted text produces the structured paper data; the
+        raw file is atomically copied into the paper assets directory, the
+        markdown and structured JSON are atomically written, and the existing
+        ``PastPaperRepository`` records the document and questions. Local
+        papers use an empty ``source_id`` so they do not collide with remote
+        source catalog records.
+        """
+        source = path.expanduser().resolve()
+        if not source.is_file():
+            raise FileNotFoundError(source)
+
+        parsed = parse_extracted_paper_text(
+            extracted_text,
+            exam_id=exam_id,
+            title=title,
+            year=year,
+            source_url=source_url,
+        )
+        asset_id = new_id("paperasset")
+        dirs = ensure_exam_paper_dirs(exam_id)
+        suffix = source.suffix.lower() or ".bin"
+        raw_path = dirs["raw"] / f"{asset_id}{suffix}"
+        markdown_path = dirs["parsed"] / f"{asset_id}.md"
+        structured_path = dirs["structured"] / f"{asset_id}.json"
+        paper_repo = PastPaperRepository(self.conn)
+
+        created_paths: list[Path] = []
+        try:
+            _atomic_copy(source, raw_path)
+            created_paths.append(raw_path)
+            _atomic_write(markdown_path, render_paper_markdown(parsed).encode("utf-8"))
+            created_paths.append(markdown_path)
+            _atomic_write(structured_path, dumps(parsed.model_dump(mode="json")).encode("utf-8"))
+            created_paths.append(structured_path)
+
+            document = paper_repo.create_document(
+                PaperDocumentInput(
+                    source_id=None,
+                    exam_id=exam_id,
+                    title=title,
+                    year=year,
+                    source_url=source_url,
+                    raw_path=str(raw_path),
+                    markdown_path=str(markdown_path),
+                    structured_path=str(structured_path),
+                    content_hash=_file_hash(raw_path),
+                    status="ready",
+                    parser=parser,
+                    parser_version="2",
+                )
+            )
+            paper_repo.replace_questions(
+                document.id,
+                [
+                    PaperQuestionInput(
+                        question_number=question.question_number,
+                        question_type=question.question_type,
+                        prompt=question.prompt,
+                        options=question.options,
+                        answer=question.answer,
+                        explanation=question.explanation,
+                        knowledge_tags=question.knowledge_tags,
+                        difficulty=question.difficulty,
+                        source_page=question.source_page,
+                        answer_confidence=question.answer_confidence,
+                        verification_status=question.verification_status,
+                    )
+                    for question in parsed.questions
+                ],
+            )
+            try:
+                paper_repo.rebuild_question_fts(document.id)
+            except Exception:
+                pass
+            return paper_repo.get_document(document.id)
+        except Exception:
+            for created in created_paths:
+                created.unlink(missing_ok=True)
+            raise
+
     def _downloaded_document_for_source(self, source_id: str) -> sqlite3.Row | None:
         return self.conn.execute(
             """
@@ -341,3 +444,39 @@ class PastPaperImportError(RuntimeError):
     def __init__(self, run: AgentRunRecord, detail: str) -> None:
         super().__init__(detail)
         self.run = run
+
+
+def _atomic_copy(source: Path, destination: Path) -> None:
+    """Copy ``source`` to ``destination`` via a ``.staging`` suffix.
+
+    Uses ``Path.replace`` after the copy so the destination only appears once
+    the bytes are fully written. The staging file is removed on failure.
+    """
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    staging = destination.with_name(destination.name + ".staging")
+    try:
+        shutil.copy2(source, staging)
+        staging.replace(destination)
+    except Exception:
+        staging.unlink(missing_ok=True)
+        raise
+
+
+def _atomic_write(destination: Path, data: bytes) -> None:
+    """Write ``data`` to ``destination`` via a ``.staging`` suffix."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    staging = destination.with_name(destination.name + ".staging")
+    try:
+        staging.write_bytes(data)
+        staging.replace(destination)
+    except Exception:
+        staging.unlink(missing_ok=True)
+        raise
+
+
+def _file_hash(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return "sha256:" + digest.hexdigest()
