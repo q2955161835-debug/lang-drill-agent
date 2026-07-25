@@ -2,13 +2,16 @@
 
 规范版本来自仓库根目录的 VERSION 文件。set-version.ps1 必须把同一版本写入：
 - pyproject.toml
+- backend/langdrill_agent/__init__.py
 - frontend/package.json
+- frontend/src/features/update/UpdateCenter.tsx
 - src-tauri/Cargo.toml
 - src-tauri/Cargo.lock
 - src-tauri/tauri.conf.json
-- 演示web2/src/demoVersion.ts（实验版元数据）
+- 演示web2/src/demoVersion.ts（发布渠道元数据）
+- 演示web2/src/mock/features/update/UpdateCenter.tsx
 
-发布说明 release-notes/v1.0.0-alpha.2.md 的 H1 标题必须同时包含
+发布说明 release-notes/v1.0.1.md 的 H1 标题必须同时包含
 `实验版`、`Experimental` 和 `実験版`，以体现三语实验版定位。
 """
 
@@ -24,17 +27,20 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 VERSION_FILE = REPO_ROOT / "VERSION"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
+BACKEND_INIT = REPO_ROOT / "backend" / "langdrill_agent" / "__init__.py"
 FRONTEND_PKG = REPO_ROOT / "frontend" / "package.json"
+FRONTEND_UPDATE_CENTER = REPO_ROOT / "frontend" / "src" / "features" / "update" / "UpdateCenter.tsx"
 CARGO_TOML = REPO_ROOT / "src-tauri" / "Cargo.toml"
 CARGO_LOCK = REPO_ROOT / "src-tauri" / "Cargo.lock"
 TAURI_CONF = REPO_ROOT / "src-tauri" / "tauri.conf.json"
 DEMO_VERSION_TS = REPO_ROOT / "演示web2" / "src" / "demoVersion.ts"
+DEMO_UPDATE_CENTER = REPO_ROOT / "演示web2" / "src" / "mock" / "features" / "update" / "UpdateCenter.tsx"
 RELEASE_NOTES_DIR = REPO_ROOT / "release-notes"
 
-EXPECTED_VERSION = "1.0.0-alpha.2"
+EXPECTED_VERSION = "1.0.1"
 
-# SemVer 校验：MAJOR.MINOR.PATCH-prerelease.identifier
-# 接受 1.0.0-alpha.1 这类带预发布标签的实验版本号。
+# SemVer 校验：MAJOR.MINOR.PATCH[-prerelease.identifier]
+# 发布渠道由 release metadata 指定，不要求实验发布必须带预发布后缀。
 SEMVER_RE = re.compile(
     r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)"
     r"(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?"
@@ -52,6 +58,20 @@ def _extract_pyproject_version(text: str) -> str:
     match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
     if not match:
         pytest.fail("pyproject.toml missing top-level version field")
+    return match.group(1)
+
+
+def _extract_python_package_version(text: str) -> str:
+    match = re.search(r'__version__\s*=\s*"([^"]+)"', text)
+    if not match:
+        pytest.fail("backend package missing __version__")
+    return match.group(1)
+
+
+def _extract_update_center_version(text: str) -> str:
+    match = re.search(r'const DEFAULT_CURRENT_VERSION = "([^"]+)";', text)
+    if not match:
+        pytest.fail("UpdateCenter missing DEFAULT_CURRENT_VERSION")
     return match.group(1)
 
 
@@ -110,9 +130,17 @@ def test_pyproject_version_matches_canonical():
     assert _extract_pyproject_version(text) == EXPECTED_VERSION
 
 
+def test_backend_package_version_matches_canonical():
+    assert _extract_python_package_version(_read_text(BACKEND_INIT)) == EXPECTED_VERSION
+
+
 def test_frontend_package_version_matches_canonical():
     data = json.loads(_read_text(FRONTEND_PKG))
     assert data.get("version") == EXPECTED_VERSION
+
+
+def test_frontend_update_center_default_matches_canonical():
+    assert _extract_update_center_version(_read_text(FRONTEND_UPDATE_CENTER)) == EXPECTED_VERSION
 
 
 def test_cargo_toml_version_matches_canonical():
@@ -139,6 +167,10 @@ def test_demo_version_metadata_matches_canonical():
     text = _read_text(DEMO_VERSION_TS)
     assert _extract_demo_version_ts(text) == EXPECTED_VERSION
     assert _extract_demo_channel_ts(text) == "experimental"
+
+
+def test_demo_update_center_default_matches_canonical():
+    assert _extract_update_center_version(_read_text(DEMO_UPDATE_CENTER)) == EXPECTED_VERSION
 
 
 def test_release_notes_file_exists_with_trilingual_titles():

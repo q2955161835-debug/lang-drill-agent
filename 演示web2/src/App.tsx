@@ -521,7 +521,7 @@ function SiteHeader({ themeChoice, onThemeCycle }: { themeChoice: ThemeChoice; o
           </a>
           <a className="button primary-button" href={EXPERIMENTAL_DOWNLOAD.downloadUrl}>
             <DownloadSimple size={18} />
-            <span>下载实验版 v1.0.0-alpha.2</span>
+            <span>下载实验版 {EXPERIMENTAL_DOWNLOAD.version}</span>
           </a>
         </div>
       </div>
@@ -943,7 +943,7 @@ function InstallSection() {
           <h2>复习策略可追踪</h2>
           <p>
             推荐安装 Windows 桌面版体验完整能力：掌握度分、错题权重和间隔复习窗口会随每次作答更新，下一轮优先召回最应该巩固的词和题。
-            当前实验版 {EXPERIMENTAL_DOWNLOAD.version} 首次集成分层记忆、知识库 RAG 引用、Agent 计划时间线、Pi 创造模式、真实真题检索与蒸馏、三语 UI 和应用内签名更新中心；内测未签名安装包首次运行可能触发 Windows SmartScreen 提示，请选择"仍要运行"。稳定版 {releaseChannels.stable.version} 适合优先考虑稳定性的本地安装。
+            当前实验版 {EXPERIMENTAL_DOWNLOAD.version} 集成分层记忆、知识库 RAG 引用、Agent 计划时间线、Pi 创造模式、真实真题检索与蒸馏、三语 UI 和应用内签名更新中心；内测未代码签名安装包首次运行可能触发 Windows SmartScreen 提示，请选择"仍要运行"。稳定版 {releaseChannels.stable.version} 适合优先考虑稳定性的本地安装，v1.0.0 系列已归入历史版本。
           </p>
           <div className="install-warning">
             <Warning size={16} weight="fill" />
@@ -958,10 +958,10 @@ function InstallSection() {
                 <a
                   className={channel.id === "experimental" ? "button primary-button large" : "button ghost-button large"}
                   href={channel.downloadUrl}
-                  aria-label={channel.id === "stable" ? "下载 稳定版" : "下载 实验版"}
+                  aria-label={`下载 ${channel.label}`}
                 >
                   <DownloadSimple size={20} />
-                  {channel.id === "stable" ? "下载 稳定版" : "下载 实验版"}
+                  下载 {channel.label}
                 </a>
               </article>
             ))}
