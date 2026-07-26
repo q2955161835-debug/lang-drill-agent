@@ -224,7 +224,12 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\desktop\build-de
 否则 `tests/demo/test_demo_sanitization.py` 的逐字节一致性门禁会失败。
 
 本地调试测试放在 `try/`（已 gitignore，新检出不存在），需要时按文件显式指定，例如
-`py -m pytest try/test_db_core_indexes.py -q`；不要用 `py -m pytest try` 作为整体验证入口。
+`py -m pytest try/<某个本地脚本>.py -q`；不要用 `py -m pytest try` 作为整体验证入口——
+该目录当前还残留一份 `try/worktrees/release-alpha2/tests/`，`pytest try` 会收集到那批陈旧测试。
+
+一条实际教训：放在 `try/` 的测试**不会进入远端 CI**，因为该目录被 gitignore、CI 检出里不存在，
+`ci.yml` 的 `if (Test-Path try)` 守卫会跳过并打印 `skipping try test suite`。凡是为核心流程
+（答题写入、权限边界、数据层）编写的回归测试，都应经用户确认后放入 `tests/`，否则改动在远端没有护栏。
 
 GitHub（代码托管平台）桌面安装包 VM（虚拟机）验收通过 `.github/workflows/desktop-installer-vm-test.yml` 手动触发，脚本入口为 `.github/scripts/test-desktop-installer-vm.ps1`；该验收会构建 NSIS（Windows 安装器），确认中文/非 ASCII（美国信息交换标准代码）安装目录被拒绝，写入旧安装目录被删除后的残留注册表记录，再安装到英文目录、启动安装目录内后端、检查 `/api/health`、验证用户数据不写安装目录并执行卸载。
 
