@@ -14,7 +14,7 @@ import {
 
 const DEFAULT_RELEASE_NOTES_URL =
   "https://github.com/q2955161835-debug/lang-drill-agent/releases";
-const DEFAULT_CURRENT_VERSION = "1.0.1";
+const DEFAULT_CURRENT_VERSION = "1.0.2";
 
 export interface UpdateCenterProps {
   /** 当前应用版本；桌面模式由调用方从 Tauri app API 获取后注入，便于测试。 */
