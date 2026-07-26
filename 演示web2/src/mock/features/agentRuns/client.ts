@@ -1,4 +1,4 @@
-import { apiGet, apiPost } from "../../api";
+import { API, apiGet, apiPost } from "../../api";
 import type {
   AgentRun,
   AgentRunApi,
@@ -47,8 +47,13 @@ export function subscribeAgentRun(
   onEvent: (event: AgentRunEvent) => void,
   after = 0,
 ): () => void {
+  // 必须带上 API 基础地址：桌面打包版的前端由 Tauri asset protocol 从 frontendDist 加载，
+  // 相对路径会解析到 webview 自身的 origin 而不是本地后端（后端不提供静态 SPA），
+  // EventSource 因此永远到不了 FastAPI，而这里没有 onerror、AgentRunCard 也没有轮询兜底，
+  // 卡片会静默冻住。Web 模式下 API 为空字符串，行为与原先完全一致。
+  // 具体的桌面后端地址由 VITE_LANGDRILL_API_BASE 注入，见 api.ts 与桌面构建脚本。
   const source = new EventSource(
-    `/api/agent-runs/${encodeURIComponent(id)}/events?after=${after}`,
+    `${API}/api/agent-runs/${encodeURIComponent(id)}/events?after=${after}`,
   );
   const listeners = new Map<string, EventListener>();
   const accept = (eventType: string, event: MessageEvent<string>) => {
