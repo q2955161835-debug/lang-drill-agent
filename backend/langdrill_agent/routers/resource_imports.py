@@ -4,6 +4,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from ..db import init_db, transaction
 from ..resource_imports.models import ImportTarget
@@ -44,23 +45,29 @@ async def stage(
     target: ImportTarget,
     filename: str,
 ) -> dict[str, Any]:
-    init_db()
+    # init_db() 原先在 await request.body() 之前同步执行完整迁移周期，会在读取请求体之前
+    # 就占用事件循环；连同暂存写盘一起移入线程池。
     data = await request.body()
     mime_type = request.headers.get("content-type", "application/octet-stream")
-    with transaction() as conn:
-        service = ResourceImportService(conn)
-        try:
-            item = service.stage_bytes(
-                target=target,
-                filename=filename,
-                mime_type=mime_type,
-                data=data,
-            )
-        except ResourceImportError as exc:
-            raise HTTPException(
-                status_code=_error_status(exc.code),
-                detail={"code": exc.code, "params": {}},
-            ) from exc
+
+    def _stage_blocking() -> Any:
+        init_db()
+        with transaction() as conn:
+            service = ResourceImportService(conn)
+            try:
+                return service.stage_bytes(
+                    target=target,
+                    filename=filename,
+                    mime_type=mime_type,
+                    data=data,
+                )
+            except ResourceImportError as exc:
+                raise HTTPException(
+                    status_code=_error_status(exc.code),
+                    detail={"code": exc.code, "params": {}},
+                ) from exc
+
+    item = await run_in_threadpool(_stage_blocking)
     return {"item": item.model_dump(mode="json")}
 
 

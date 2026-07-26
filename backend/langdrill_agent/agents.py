@@ -199,19 +199,6 @@ class QuestionAuthorAgent:
         self.validator = QuestionValidator()
         self.assembler = PromptAssembler(PromptRegistry(conn))
 
-    def ensure_first_question(self, session_id: str) -> Question:
-        active = QuestionService(self.conn).active_question(session_id)
-        if active:
-            return Question(**active)
-        self.ensure_question_set(session_id, "")
-        active = QuestionService(self.conn).active_question(session_id)
-        if active:
-            return Question(**active)
-        profile = self.profile_service.get()
-        question = self._fallback_question(session_id, profile.exam_name, 1, profile.exam_id)
-        self._save_question(question)
-        return question
-
     def ensure_question_set(
         self,
         session_id: str,
@@ -727,20 +714,6 @@ class QuestionAuthorAgent:
         except Exception:
             return None
 
-    def _authored_from_question(self, question: Question):
-        from .models import AuthoredQuestion
-
-        return AuthoredQuestion(
-            type=question.type,
-            prompt=question.prompt,
-            options=question.options,
-            answer=question.answer,
-            explanation=question.explanation,
-            knowledge_tags=question.knowledge_tags,
-            difficulty=question.difficulty,
-            source_refs=question.source_refs,
-        )
-
     def _normalize_answer(self, answer: dict[str, object], options: list[str]) -> dict[str, str] | None:
         letter = str(answer.get("letter") or "").strip().upper()
         correct = str(answer.get("correct") or "").strip()
@@ -1023,136 +996,6 @@ class QuestionAuthorAgent:
         hint = meaning.split("；", 1)[0].split(";", 1)[0].strip() or "the meaning in context"
         return f"In this short passage, the word that best matches the idea of \"{hint}\" is ______."
 
-    def _try_parse_model_output(
-        self, content: str, session_id: str, sequence: int
-    ) -> Question | None:
-        """尝试从模型 JSON 输出解析为 Question，失败返回 None。"""
-        from .utils import loads as json_loads
-
-        # 尝试从 markdown 代码块中提取 JSON
-        import re
-
-        json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL)
-        raw_json = json_match.group(1) if json_match else content
-
-        parsed = json_loads(raw_json.strip(), None)
-        if not isinstance(parsed, dict):
-            return None
-
-        try:
-            # 补充必要的字段默认值
-            parsed.setdefault("id", new_id("q"))
-            parsed.setdefault("session_id", session_id)
-            parsed.setdefault("sequence", sequence)
-            parsed.setdefault("type", "multiple_choice")
-            parsed.setdefault("difficulty", 0.5)
-            parsed.setdefault("knowledge_tags", [])
-            parsed.setdefault("source_refs", [{"type": "generated", "boundary": "practice_only"}])
-
-            # 确保 answer 字段格式正确
-            if "answer" not in parsed or not isinstance(parsed["answer"], dict):
-                return None
-
-            return Question(**parsed)
-        except Exception:
-            return None
-
-    def _fallback_question(
-        self,
-        session_id: str,
-        exam_name: str,
-        sequence: int = 1,
-        exam_id: str = "cet4",
-    ) -> Question:
-        imported_word = self._first_imported_word(exam_id)
-        if imported_word:
-            term = imported_word["term"]
-            meaning = imported_word["meaning"] or "该单词的截图导入释义"
-            terms = [imported_word, *self._term_distractors(exam_id, term)]
-            logger.info("using imported vocabulary fallback question", extra={"term": term, "exam_id": exam_id})
-            return self._fallback_question_for_term(
-                session_id,
-                exam_id,
-                sequence,
-                term,
-                meaning,
-                terms,
-                source_scope="screenshot_import",
-            )
-        paper_refs = PastPaperService(self.conn).generation_context(exam_id).get("selected_papers", [])
-        source_refs = [{"type": "generated", "boundary": "practice_only"}]
-        if paper_refs:
-            ref = paper_refs[0]
-            source_refs.append(
-                {
-                    "type": "past_paper_style",
-                    "id": ref.get("id", ""),
-                    "year": ref.get("year"),
-                    "title": ref.get("title", ""),
-                    "source_url": ref.get("source_url", ""),
-                    "boundary": "style_reference_only",
-                }
-            )
-        return Question(
-            id=new_id("q"),
-            session_id=session_id,
-            sequence=sequence,
-            type="multiple_choice",
-            prompt=f"第 {sequence} 题 / 共 5 题\n根据今日学习内容，选择最符合 {exam_name or '目标考试'} 语境的答案：\nWhich sentence uses the word \"affect\" correctly?",
-            options=["The new policy may affect student attendance.", "The new policy may effect student attendance.", "The new policy is affect on attendance.", "The policy affected to attendance."],
-            answer={"correct": "The new policy may affect student attendance.", "letter": "A"},
-            explanation='"Affect" is usually a verb meaning "to influence". In this sentence, the policy may influence attendance, so "affect" is correct.',
-            knowledge_tags=["vocabulary:affect-vs-effect", "grammar:verb_usage"],
-            difficulty=0.35,
-            source_refs=source_refs,
-        )
-
-    def _first_imported_word(self, exam_id: str) -> dict[str, str] | None:
-        row = self.conn.execute(
-            """
-            SELECT term, meaning
-            FROM knowledge_items
-            WHERE exam_id=? AND source_scope='screenshot_import'
-            ORDER BY mastery_score ASC, updated_at ASC
-            LIMIT 1
-            """,
-            (exam_id,),
-        ).fetchone()
-        return dict(row) if row else None
-
-    def _term_distractors(self, exam_id: str, correct_term: str) -> list[dict[str, str]]:
-        rows = self.conn.execute(
-            """
-            SELECT term, meaning, source_scope
-            FROM knowledge_items
-            WHERE exam_id=? AND term<>? AND meaning<>''
-            ORDER BY updated_at ASC
-            LIMIT 3
-            """,
-            (exam_id, correct_term),
-        ).fetchall()
-        return [dict(row) for row in rows if self._allow_pool_item(exam_id, dict(row))]
-
-    def _save_question(self, question: Question) -> None:
-        QuestionService(self.conn).save_question(question)
-
-    def _question_from_row(self, row: sqlite3.Row) -> Question:
-        from .utils import loads
-
-        return Question(
-            id=row["id"],
-            session_id=row["session_id"],
-            sequence=row["sequence"],
-            type=row["type"],
-            prompt=row["prompt"],
-            options=loads(row["options_json"], []),
-            answer=loads(row["answer_json"], {}),
-            explanation=row["explanation"],
-            knowledge_tags=loads(row["knowledge_tags_json"], []),
-            difficulty=row["difficulty"],
-            source_refs=loads(row["source_refs_json"], []),
-        )
-
     def _record_model_call(self, result, prompt_modules: list[str], validation_status: str) -> None:
         self.conn.execute(
             """
@@ -1205,28 +1048,16 @@ class EvaluatorTutorAgent:
                 wrong_repeat_count=0 if is_correct else 1,
             )
         )
-        feedback = (
+        base_feedback = (
             f"判断：{'正确' if is_correct else '不正确'}。\n\n"
             f"正确答案：{letter or ''} {correct}\n\n"
             f"讲解：{question_payload['explanation']}\n\n"
             f"知识点：{', '.join(question_payload.get('knowledge_tags', []))}"
         )
-        try:
-            feedback = self._feedback_with_model(
-                session_id=session_id,
-                question_payload=question_payload,
-                user_answer=user_answer,
-                is_correct=is_correct,
-                base_feedback=feedback,
-                extra_prompt=extra_prompt.strip(),
-            )
-            feedback_source = "model"
-            model_error = ""
-        except RuntimeError as exc:
-            logger.warning("model request failed during answer feedback, using base feedback", exc_info=True)
-            feedback_source = "program_fallback"
-            model_error = self._safe_model_error(exc)
-            feedback = self._model_failure_feedback(feedback, model_error)
+        # 作答记录必须先落库，再调用模型。程序判定此刻已经完成，而模型讲解可能超时、
+        # 连接失败或返回不可用结果；若把写入放在模型调用之后，一次超时就会同时丢掉
+        # attempts、mark_answered、mastery_events 和掌握度更新，违反 AGENTS.md:37
+        # “不得丢失作答记录”。先写入程序判定，模型成功后再回写讲解正文。
         attempt_id = new_id("att")
         self.conn.execute(
             """
@@ -1240,7 +1071,7 @@ class EvaluatorTutorAgent:
                 session_id,
                 user_answer,
                 1 if is_correct else 0,
-                feedback,
+                base_feedback,
                 score - 0.5,
             ),
         )
@@ -1258,6 +1089,31 @@ class EvaluatorTutorAgent:
             ),
         )
         self._update_knowledge_mastery(question_payload, score)
+        try:
+            feedback = self._feedback_with_model(
+                session_id=session_id,
+                question_payload=question_payload,
+                user_answer=user_answer,
+                is_correct=is_correct,
+                base_feedback=base_feedback,
+                extra_prompt=extra_prompt.strip(),
+            )
+            feedback_source = "model"
+            model_error = ""
+        except RuntimeError as exc:
+            # 只捕获 RuntimeError：供应商层已把超时、连接错误和响应解析错误统一归一化成
+            # ModelProviderError(RuntimeError)，因此这里覆盖了真实的“模型不可用”场景。
+            # 提示词组装或数据库层的内部缺陷不属于该类型，应当继续向上抛出而不是被伪装成
+            # 模型故障——此时作答记录已经安全落库。
+            logger.warning("model request failed during answer feedback, using base feedback", exc_info=True)
+            feedback_source = "program_fallback"
+            model_error = self._safe_model_error(exc)
+            feedback = self._model_failure_feedback(base_feedback, model_error)
+        # 回写最终讲解，使成功路径的落库结果与调整顺序前完全一致。
+        self.conn.execute(
+            "UPDATE attempts SET feedback=? WHERE id=?",
+            (feedback, attempt_id),
+        )
         MemoryHooks(self.conn).on_attempt(
             session_id=session_id,
             is_correct=is_correct,

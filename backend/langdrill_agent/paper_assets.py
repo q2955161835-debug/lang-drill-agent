@@ -179,14 +179,27 @@ def _extract_with_mineru(path: Path, *, language: str, mineru_token: str = "") -
     attempts = 2
     last_error = ""
     for attempt in range(1, attempts + 1):
-        result = subprocess.run(
-            [mineru, mode, str(path), "--language", language],
-            capture_output=True,
-            text=True,
-            timeout=900,
-            check=False,
-            env=env,
-        )
+        try:
+            result = subprocess.run(
+                [mineru, mode, str(path), "--language", language],
+                capture_output=True,
+                text=True,
+                timeout=900,
+                check=False,
+                env=env,
+            )
+        except subprocess.TimeoutExpired as exc:
+            # TimeoutExpired 继承 SubprocessError 而不是 RuntimeError；不归一化的话会直接
+            # 穿过调用方的 `except RuntimeError`，让 _extract_image_text 的 RapidOCR 本地
+            # OCR 兜底完全不执行（AGENTS.md:69 要求可回退）。
+            last_error = f"MinerU CLI 超时（{exc.timeout} 秒未返回）"
+            if attempt < attempts:
+                time.sleep(1.5)
+                continue
+            break
+        except OSError as exc:
+            # 可执行文件存在但无法启动（权限、损坏的 npm 链接等）。
+            raise RuntimeError(f"MinerU CLI 无法启动：{exc}") from exc
         if result.returncode == 0:
             return result.stdout, f"mineru-open-api {mode}"
         last_error = result.stderr.strip()[:300] or result.stdout.strip()[:300]

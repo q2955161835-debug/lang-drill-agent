@@ -13,6 +13,17 @@ from .models import PromptPack
 from .utils import dumps, estimate_tokens, normalize_api_key, validate_http_header_value
 
 
+class ModelProviderError(RuntimeError):
+    """模型供应商调用失败。
+
+    继承 RuntimeError，让既有的 `except RuntimeError` 兜底处理器（api.py 与 agents.py
+    共 12 处）保持兼容，同时给出一个明确的类型供新代码使用。
+
+    所有出站调用的失败都必须在本模块归一化成这个异常：httpx 的超时、连接错误和
+    响应体解析错误都不继承 RuntimeError，若直接向上抛出会绕过全部兜底逻辑。
+    """
+
+
 @dataclass(frozen=True)
 class ModelResult:
     content: str
@@ -106,6 +117,46 @@ class ModelProvider:
         elif self.reasoning_parameter == "anthropic_thinking_switch":
             payload["thinking"] = {"type": "enabled"}
 
+    REQUEST_TIMEOUT_SECONDS = 60
+
+    def _post(self, url: str, headers: dict[str, str], payload: dict[str, Any]) -> httpx.Response:
+        """发起模型请求，并把所有 httpx 传输层异常归一化成 ModelProviderError。"""
+        try:
+            return httpx.post(url, headers=headers, json=payload, timeout=self.REQUEST_TIMEOUT_SECONDS)
+        except httpx.TimeoutException as exc:
+            # 必须排在 HTTPError 之前：TimeoutException 是 HTTPError 的子类。
+            raise ModelProviderError(
+                f"模型 API 请求超时（{self.REQUEST_TIMEOUT_SECONDS} 秒未返回）。请检查网络或稍后重试。"
+            ) from exc
+        except (httpx.HTTPError, httpx.InvalidURL) as exc:
+            raise ModelProviderError(
+                f"无法连接模型 API（{type(exc).__name__}）：{exc}。请检查 Base URL 和网络。"
+            ) from exc
+
+    @staticmethod
+    def _raise_for_status(response: httpx.Response) -> None:
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise ModelProviderError(
+                    "模型 API 密钥无效或未授权 (401)。请检查 API Key 配置。"
+                ) from e
+            raise ModelProviderError(
+                f"模型 API 请求失败 ({e.response.status_code}): {e.response.text[:200]}"
+            ) from e
+
+    @staticmethod
+    def _decode_json(response: httpx.Response) -> Any:
+        """解析响应体。代理或错误页可能在 HTTP 200 下返回 HTML，必须归一化而不是抛 ValueError。"""
+        try:
+            return response.json()
+        except ValueError as exc:
+            preview = response.text[:200].strip().replace("\n", " ")
+            raise ModelProviderError(
+                f"模型 API 返回的不是合法 JSON（HTTP {response.status_code}）：{preview}"
+            ) from exc
+
     def _endpoint(self, base_url: str, suffix: str) -> str:
         clean_base = base_url.rstrip("/")
         clean_suffix = suffix if suffix.startswith("/") else f"/{suffix}"
@@ -190,26 +241,29 @@ class ModelProvider:
         if pack.output_schema:
             payload["response_format"] = {"type": "json_object"}
 
-        response = httpx.post(
+        response = self._post(
             self._endpoint(base_url, "/chat/completions"),
-            headers={"Authorization": f"Bearer {api_key}"},
-            json=payload,
-            timeout=60,
+            {"Authorization": f"Bearer {api_key}"},
+            payload,
         )
+        self._raise_for_status(response)
+        data = self._decode_json(response)
         try:
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 401:
-                raise RuntimeError("模型 API 密钥无效或未授权 (401)。请检查 API Key 配置。")
-            raise RuntimeError(f"模型 API 请求失败 ({e.response.status_code}): {e.response.text[:200]}")
-        data = response.json()
-        content = data["choices"][0]["message"]["content"]
-        usage = data.get("usage", {})
+            content = data["choices"][0]["message"]["content"]
+            usage = data.get("usage") or {}
+            input_tokens = int(usage.get("prompt_tokens") or estimate_tokens(dumps(payload)))
+            output_tokens = int(usage.get("completion_tokens") or estimate_tokens(content or ""))
+        except (KeyError, IndexError, TypeError, ValueError, AttributeError) as exc:
+            raise ModelProviderError(
+                f"模型 API 响应结构不符合 OpenAI Chat Completions 约定：{str(data)[:200]}"
+            ) from exc
+        if not isinstance(content, str):
+            raise ModelProviderError("模型 API 未返回文本内容（content 为空或非文本）。")
         latency = int((time.perf_counter() - started) * 1000)
         return ModelResult(
             content=content,
-            input_tokens=int(usage.get("prompt_tokens") or estimate_tokens(dumps(payload))),
-            output_tokens=int(usage.get("completion_tokens") or estimate_tokens(content)),
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
             latency_ms=latency,
             model=self.model,
         )
@@ -234,34 +288,37 @@ class ModelProvider:
             ],
         }
         self._apply_anthropic_reasoning(payload)
-        response = httpx.post(
+        response = self._post(
             self._endpoint(base_url, "/v1/messages"),
-            headers={
+            {
                 "x-api-key": api_key,
                 "anthropic-version": "2023-06-01",
                 "content-type": "application/json",
                 "Authorization": f"Bearer {api_key}",
             },
-            json=payload,
-            timeout=60,
+            payload,
         )
+        self._raise_for_status(response)
+        data = self._decode_json(response)
         try:
-            response.raise_for_status()
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 401:
-                raise RuntimeError("模型 API 密钥无效或未授权 (401)。请检查 API Key 配置。")
-            raise RuntimeError(f"模型 API 请求失败 ({e.response.status_code}): {e.response.text[:200]}")
-        data = response.json()
-        content_items = data.get("content", [])
-        content = "\n".join(
-            str(item.get("text", "")) for item in content_items if isinstance(item, dict) and item.get("type") == "text"
-        ).strip()
-        usage = data.get("usage", {})
+            content_items = data.get("content") or []
+            content = "\n".join(
+                str(item.get("text", ""))
+                for item in content_items
+                if isinstance(item, dict) and item.get("type") == "text"
+            ).strip()
+            usage = data.get("usage") or {}
+            input_tokens = int(usage.get("input_tokens") or estimate_tokens(dumps(payload)))
+            output_tokens = int(usage.get("output_tokens") or estimate_tokens(content))
+        except (KeyError, IndexError, TypeError, ValueError, AttributeError) as exc:
+            raise ModelProviderError(
+                f"模型 API 响应结构不符合 Anthropic Messages 约定：{str(data)[:200]}"
+            ) from exc
         latency = int((time.perf_counter() - started) * 1000)
         return ModelResult(
             content=content,
-            input_tokens=int(usage.get("input_tokens") or estimate_tokens(dumps(payload))),
-            output_tokens=int(usage.get("output_tokens") or estimate_tokens(content)),
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
             latency_ms=latency,
             model=self.model,
         )
