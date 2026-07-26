@@ -24,7 +24,9 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Run Python lint
-        run: python -m ruff check backend
+        # tests/ 有 60 个已提交的契约测试文件，scripts/release/verify_demo_downloads.py 是
+        # 活跃的发布门禁，两者原先都不在任何 lint 范围内。
+        run: python -m ruff check backend tests scripts
 
       - name: Run Python tests
         shell: pwsh
@@ -52,7 +54,50 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Run frontend tests
+        # 12 个已提交的 vitest 文件（53 项）原先只在 release tag 构建时才跑，
+        # 普通 push/PR 上完全不执行；npm run build 只是 tsc 类型检查，零断言。
+        working-directory: frontend
+        run: npm run test -- --run
+
       - name: Build frontend
         working-directory: frontend
         run: npm run build
+
+  # pi-bridge 的 protocol 测试原先同样只在 release tag 上跑。
+  pi-bridge:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: runtime/pi-bridge/package-lock.json
+
+      - name: Install pi-bridge dependencies
+        working-directory: runtime/pi-bridge
+        run: npm ci
+
+      - name: Run pi-bridge tests
+        working-directory: runtime/pi-bridge
+        run: npm test
+
+  # 桌面壳的 Rust 侧原先在 push/PR 上完全不编译，构建失败只在 release tag 时才暴露。
+  rust:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cargo check
+        run: cargo check --manifest-path src-tauri/Cargo.toml
 

@@ -84,7 +84,6 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - `frontend/`：React（前端框架）+ TypeScript（类型化 JavaScript）+ Vite（前端构建工具）网页前端。
 - `frontend/src/api.ts`：前端 API（接口）基础地址。默认空字符串，Web（网页）模式继续走相对 `/api` 和 Vite（前端构建工具）代理；桌面构建通过 `VITE_LANGDRILL_API_BASE=http://127.0.0.1:18080` 指向桌面本地后端。
 - `frontend/public/assets/`：前端静态资源目录，当前保存深色主题背景图、浅色/深色 logo（标志）等无需打包导入的公开资产；浏览器 favicon（页签图标）使用 `frontend/public/favicon-light.png` 和 `frontend/public/favicon-dark.png`；聊天气泡使用浅蓝紫/深蓝紫专用颜色，不能把用户/助手消息退回纯白或纯黑。
-- `演示web/`：第一版独立产品展示网站，不重构或替代 `frontend/` 主应用；使用 React（前端框架）+ TypeScript（类型化 JavaScript）+ Vite（前端构建工具）+ GSAP（网页动画库）构建静态站点，不连接真实后端，不读取 `.env`，演示模型回复为固定模拟内容。
 - `演示web2/`：当前用于 GitHub Pages（GitHub 静态站点）公开部署的第二版产品展示网站，使用 React（前端框架）+ TypeScript（类型化 JavaScript）+ Vite（前端构建工具）+ GSAP（网页动画库）构建，包含动态单词银河、滚动组卷演示、脱敏截图画廊和 1:1 主应用 mock（模拟）前端；下载区只展示稳定版 `v0.1.2` 与当前实验版 `v1.0.1`，历史版本不在演示网页展示，右上角与首页默认下载稳定版，在线体验入口仍为实验版；`vite.config.ts` 默认 `base=/lang-drill-agent/`，由 `.github/workflows/pages-demo-web2.yml` 在下载资产在线验证通过后构建 `演示web2/dist` 并发布到 `https://q2955161835-debug.github.io/lang-drill-agent/`。该站点不连接真实后端、不读取 `.env`，不得暴露真实主机路径、真实密钥或私有学习数据。
 - `logo/`：用户提供的浅色/深色 logo（标志）源图目录；替换品牌时应从这里重新生成 `frontend/public/assets/logo-light.png`、`frontend/public/assets/logo-dark.png`、`frontend/public/favicon-light.png`、`frontend/public/favicon-dark.png` 和 `src-tauri/icons/icon.ico`。
 - `frontend/src/App.tsx`：前端主入口，负责可拖拽三栏布局、聊天、主聊天粘贴图片/拖拽文件/上传按钮导入、设置、初始化、当前题吸附显示、已答题回顾卡片、上下文容量圆环、Agent 设置权限、拓展 Skills（拓展技能）状态页和右侧工作台接入。
@@ -95,7 +94,8 @@ Lang Drill Agent 是语言学习刷题训练 Agent（智能体），目标是把
 - `src-tauri/`：Tauri（桌面应用框架）Windows 桌面封装工程，负责窗口配置、资源打包、启动/停止本地后端、后端健康检查和 NSIS（Windows 安装器）产物生成；`installer-hooks.nsh` 负责安装目录英文/ASCII（美国信息交换标准代码）校验，阻止安装到中文或其它非 ASCII 路径，并在旧安装目录被手动删除时清理旧卸载注册表残留；当前首版为 unsigned（未代码签名）内测包，MSI（Windows Installer，Windows 安装包）保留为后续目标。
 - `doc/`：本地维护目录，保存项目地图、验收标准、人工验收清单、桌面打包说明、长版 README（项目说明文档）、脱敏截图资产和进展记录；该目录已加入 `.gitignore`，不再提交到 GitHub（代码托管平台），但本地仍按项目规则维护。
 - `doc/进展记录/`：本地阶段性工作记录，包含完成内容、文件清单、错误汇报、验证结果和回退方案；记录文件不再进入 GitHub 提交。
-- `try/`：本地自动测试、调试脚本和临时验证文件；该目录已加入 `.gitignore`，不再提交到 GitHub（代码托管平台）。目录内文件必须只服务于测试/调试，可清理后不影响项目运行。
+- `tests/`：提交到仓库的正式契约测试目录，由 `.github/workflows/ci.yml` 在每次 push 和 pull request 上执行，是判断改动是否回归的权威依据；`pyproject.toml` 的 `testpaths` 也指向这里。
+- `try/`：本地自动测试、调试脚本和临时验证文件；该目录已加入 `.gitignore`，不再提交到 GitHub（代码托管平台）。目录内文件必须只服务于测试/调试，可清理后不影响项目运行。新检出不存在该目录，因此它不能作为主验证入口。
 - `测试数据/`：从正式运行路径迁出的开发/联调/污染数据，按时间戳分类保存；该目录禁止提交，可清理但清理前应确认不再需要回溯。
 - `archive/optimized-out/`：已从运行路径移除的旧功能归档，只作历史参考。
 - `logs/`：本地运行日志，禁止提交。
@@ -188,7 +188,7 @@ cd frontend
 npm install
 npm run dev
 cd ..
-cd 演示web
+cd 演示web2
 npm install
 npm run dev
 cd ..
@@ -197,46 +197,80 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\desktop\build-de
 
 ## 测试命令
 
+主验证入口（与 CI 一致）：
+
 ```powershell
-py -m pytest try -q
-py -m ruff check backend try
+py -m pytest tests -q
+py -m ruff check backend tests scripts
 cd frontend
 npm run build
+npm run test -- --run
 cd ..
-cd 演示web
+npm --prefix runtime/pi-bridge test
+cargo check --manifest-path src-tauri\Cargo.toml
+```
+
+演示站与桌面包：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\demo\sync-demo-web2.ps1 -Verify
+cd 演示web2
 npm run build
 cd ..
-cargo check --manifest-path src-tauri\Cargo.toml
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\desktop\build-desktop.ps1 -SkipInstall
-py try/browser_acceptance_check.py
 ```
+
+改动 `frontend/src/` 后必须先运行 `scripts\demo\sync-demo-web2.ps1` 同步 `演示web2/src/mock`，
+否则 `tests/demo/test_demo_sanitization.py` 的逐字节一致性门禁会失败。
+
+本地调试测试放在 `try/`（已 gitignore，新检出不存在），需要时按文件显式指定，例如
+`py -m pytest try/<某个本地脚本>.py -q`；不要用 `py -m pytest try` 作为整体验证入口——
+该目录当前还残留一份 `try/worktrees/release-alpha2/tests/`，`pytest try` 会收集到那批陈旧测试。
+
+一条实际教训：放在 `try/` 的测试**不会进入远端 CI**，因为该目录被 gitignore、CI 检出里不存在，
+`ci.yml` 的 `if (Test-Path try)` 守卫会跳过并打印 `skipping try test suite`。凡是为核心流程
+（答题写入、权限边界、数据层）编写的回归测试，都应经用户确认后放入 `tests/`，否则改动在远端没有护栏。
 
 GitHub（代码托管平台）桌面安装包 VM（虚拟机）验收通过 `.github/workflows/desktop-installer-vm-test.yml` 手动触发，脚本入口为 `.github/scripts/test-desktop-installer-vm.ps1`；该验收会构建 NSIS（Windows 安装器），确认中文/非 ASCII（美国信息交换标准代码）安装目录被拒绝，写入旧安装目录被删除后的残留注册表记录，再安装到英文目录、启动安装目录内后端、检查 `/api/health`、验证用户数据不写安装目录并执行卸载。
 
-`try/browser_acceptance_check.py` 用 Playwright（浏览器自动化工具）验证设置页权限、拓展 Skills 单项开关、自定义模型增删、真题设置和截图导入状态保持；运行前需用 `LANGDRILL_DB_PATH=try\.cache\browser-acceptance\langdrill-agent.db`、`LANGDRILL_USER_DATA_DIR=try\.cache\browser-acceptance` 和 `LANGDRILL_SKILLS_ROOTS=try\.cache\browser-acceptance\skills` 启动服务，并确保 `http://127.0.0.1:8000` 与 `http://127.0.0.1:5173` 可访问。浏览器验收的临时文件统一写入 `try/.cache/`。
+浏览器端人工/半自动验收清单以 `doc/manual-acceptance-checklist.md` 为准。历史上曾有
+`try/browser_acceptance_check.py`（Playwright 脚本）与 `try/test_startup_scripts.py`，
+这两个文件当前已不存在；如需恢复自动化浏览器验收，需重新编写并在此登记。
 
 针对启动脚本：
 
 ```powershell
-py -m pytest try/test_startup_scripts.py -q
+py -m pytest tests/release/test_dev_start_dependencies.py -q
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\dev\start-dev.ps1 -NoBrowser -SkipInstall
 ```
+
+`tests/release/test_dev_start_dependencies.py` 只覆盖 `start-dev.ps1` 是否安装真题解析依赖，
+启动链路其余部分仍靠上面的手动运行与日志/端口检查验证。
 
 CI（持续集成）：
 
 ```powershell
-# GitHub Actions 在 push 和 pull_request 时运行
-py -m ruff check backend
-# try/ 为本地目录；若远端检出不存在则跳过 try 测试
+# GitHub Actions 在 push 和 pull_request 时运行（.github/workflows/ci.yml）
+# job: test
+py -m ruff check backend tests scripts
+py -m pytest tests -q          # try/ 不在远端检出中，工作流会跳过
 cd frontend
+npm ci
+npm run test -- --run
 npm run build
+# job: pi-bridge
+npm --prefix runtime/pi-bridge ci
+npm --prefix runtime/pi-bridge test
+# job: rust
+cargo check --manifest-path src-tauri\Cargo.toml
 # GitHub Actions 手动触发 Desktop Installer VM Test 做桌面安装包验收
+# tag 推送时由 release-experimental.yml 另做发布前验收
 ```
 
 ## 允许修改范围
 
-- 任务相关的 `backend/langdrill_agent/`、`frontend/src/`、`frontend/public/assets/`、`演示web/`、`scripts/`、`doc/`、`try/`。
-- 新增测试必须放入本地 `try/`，默认不提交到 GitHub（代码托管平台）；如需把测试纳入远端 CI（持续集成），必须先征得用户确认并同步调整 `.gitignore` 与工作流。
+- 任务相关的 `backend/langdrill_agent/`、`frontend/src/`、`frontend/public/assets/`、`演示web2/`、`scripts/`、`doc/`、`tests/`、`try/`。
+- 新增测试默认放入本地 `try/`，不提交到 GitHub（代码托管平台）。`tests/` 是已提交并由 `ci.yml` 在每次 push/PR 执行的契约测试目录：把测试放进 `tests/` 等于纳入远端 CI（持续集成），必须先征得用户确认；如同时需要调整 `.gitignore` 或工作流，也要一并同步。
 - 新增开发脚本优先放入 `scripts/dev/`，并同步更新 `AGENTS.md` 与验收标准。
 - 文档更新优先修改 `AGENTS.md`、`doc/项目地图.md`、`doc/验收标准.md`、`README.md` 和当天进展记录。
 

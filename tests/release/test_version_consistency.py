@@ -11,7 +11,7 @@
 - 演示web2/src/demoVersion.ts（发布渠道元数据）
 - 演示web2/src/mock/features/update/UpdateCenter.tsx
 
-发布说明 release-notes/v1.0.1.md 的 H1 标题必须同时包含
+发布说明 release-notes/v<EXPECTED_VERSION>.md 的 H1 标题必须同时包含
 `实验版`、`Experimental` 和 `実験版`，以体现三语实验版定位。
 """
 
@@ -37,7 +37,7 @@ DEMO_VERSION_TS = REPO_ROOT / "演示web2" / "src" / "demoVersion.ts"
 DEMO_UPDATE_CENTER = REPO_ROOT / "演示web2" / "src" / "mock" / "features" / "update" / "UpdateCenter.tsx"
 RELEASE_NOTES_DIR = REPO_ROOT / "release-notes"
 
-EXPECTED_VERSION = "1.0.1"
+EXPECTED_VERSION = "1.0.2"
 
 # SemVer 校验：MAJOR.MINOR.PATCH[-prerelease.identifier]
 # 发布渠道由 release metadata 指定，不要求实验发布必须带预发布后缀。

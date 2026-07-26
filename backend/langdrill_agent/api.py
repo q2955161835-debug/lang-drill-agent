@@ -15,6 +15,7 @@ from fastapi import HTTPException
 from fastapi import Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 
 from .agents import EvaluatorTutorAgent, OrchestratorAgent, QuestionAuthorAgent, token_totals
 from .config import load_settings
@@ -987,6 +988,28 @@ async def _uploaded_file_to_temp(request: Request, *, filename: str) -> tuple[te
     return temp_dir, path, len(data)
 
 
+def _extract_uploaded_file_text_blocking(
+    path: Path,
+    *,
+    filename: str,
+    language: str,
+    size: int,
+) -> dict:
+    init_db()
+    with transaction() as conn:
+        mineru_token = MinerUConfigService(conn).token_for_runtime()
+    try:
+        text, parser = extract_text_from_file(path, language=language, mineru_token=mineru_token)
+    except (OSError, RuntimeError, UnicodeDecodeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {
+        "filename": filename or path.name,
+        "text": text,
+        "parser": parser,
+        "size": size,
+    }
+
+
 async def _extract_uploaded_file_text(
     request: Request,
     *,
@@ -995,19 +1018,16 @@ async def _extract_uploaded_file_text(
 ) -> dict:
     temp_dir, path, size = await _uploaded_file_to_temp(request, filename=filename)
     try:
-        init_db()
-        with transaction() as conn:
-            mineru_token = MinerUConfigService(conn).token_for_runtime()
-        try:
-            text, parser = extract_text_from_file(path, language=language, mineru_token=mineru_token)
-        except (OSError, RuntimeError, UnicodeDecodeError) as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-        return {
-            "filename": filename or path.name,
-            "text": text,
-            "parser": parser,
-            "size": size,
-        }
+        # 必须放到线程池：MinerU CLI 子进程（timeout=900）、RapidOCR 同步推理和 init_db 的
+        # 完整迁移周期都是阻塞调用。uvicorn 单事件循环下直接执行会冻结所有其它接口，
+        # 包括桌面壳轮询的 /api/health 和前端等待中的聊天接口。
+        return await run_in_threadpool(
+            _extract_uploaded_file_text_blocking,
+            path,
+            filename=filename,
+            language=language,
+            size=size,
+        )
     finally:
         temp_dir.cleanup()
 
@@ -2789,19 +2809,24 @@ async def past_paper_import_file(
     temp_dir, path, _size = await _uploaded_file_to_temp(request, filename=filename)
     try:
         clean_types = [item.strip() for item in re.split(r"[，,\n]", question_types) if item.strip()]
-        init_db()
-        with transaction() as conn:
-            return PastPaperService(conn).manual_import(
-                exam_id=exam_id,
-                title=title,
-                year=year,
-                source_url=source_url,
-                local_path=str(path),
-                summary=summary,
-                question_types=clean_types,
-                raw_text="",
-                parse_now=parse_now,
-            )
+
+        def _import_blocking() -> dict:
+            init_db()
+            with transaction() as conn:
+                return PastPaperService(conn).manual_import(
+                    exam_id=exam_id,
+                    title=title,
+                    year=year,
+                    source_url=source_url,
+                    local_path=str(path),
+                    summary=summary,
+                    question_types=clean_types,
+                    raw_text="",
+                    parse_now=parse_now,
+                )
+
+        # parse_now=True 会走文件解析（可能触发 MinerU CLI / OCR），必须离开事件循环。
+        return await run_in_threadpool(_import_blocking)
     finally:
         temp_dir.cleanup()
 
@@ -2819,30 +2844,39 @@ async def past_paper_draft_file(
 ) -> dict:
     temp_dir, path, _size = await _uploaded_file_to_temp(request, filename=filename)
     try:
-        init_db()
-        with transaction() as conn:
-            mineru_token = MinerUConfigService(conn).token_for_runtime()
-        try:
-            text, file_parser = extract_text_from_file(path, language="ch", mineru_token=mineru_token)
-        except (OSError, RuntimeError, UnicodeDecodeError) as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
-        clean_types = [item.strip() for item in re.split(r"[，,\n]", question_types) if item.strip()]
-        with transaction() as conn:
-            result = _past_paper_draft_response(
-                conn,
-                exam_id=exam_id,
-                title=title,
-                year=year,
-                source_url=source_url,
-                local_path=filename or path.name,
-                summary=summary,
-                question_types=clean_types,
-                raw_text=text,
-                filename=filename or path.name,
-                include_raw_text=False,
-            )
-            result["file_parser"] = file_parser
-            return result
+
+        def _draft_blocking() -> dict:
+            init_db()
+            with transaction() as conn:
+                mineru_token = MinerUConfigService(conn).token_for_runtime()
+            try:
+                text, file_parser = extract_text_from_file(
+                    path, language="ch", mineru_token=mineru_token
+                )
+            except (OSError, RuntimeError, UnicodeDecodeError) as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            clean_types = [
+                item.strip() for item in re.split(r"[，,\n]", question_types) if item.strip()
+            ]
+            with transaction() as conn:
+                result = _past_paper_draft_response(
+                    conn,
+                    exam_id=exam_id,
+                    title=title,
+                    year=year,
+                    source_url=source_url,
+                    local_path=filename or path.name,
+                    summary=summary,
+                    question_types=clean_types,
+                    raw_text=text,
+                    filename=filename or path.name,
+                    include_raw_text=False,
+                )
+                result["file_parser"] = file_parser
+                return result
+
+        # 同上：文件抽取可能调用 MinerU CLI 或本地 OCR，不能占用事件循环。
+        return await run_in_threadpool(_draft_blocking)
     finally:
         temp_dir.cleanup()
 

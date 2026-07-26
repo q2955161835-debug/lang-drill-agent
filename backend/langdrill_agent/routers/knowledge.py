@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
+from starlette.concurrency import run_in_threadpool
 
 from ..db import init_db, transaction
 from ..embeddings.runtime import EmbeddingRuntime
@@ -74,17 +75,22 @@ async def import_uploaded_document(
             detail={"code": "KNOWLEDGE_UPLOAD_EMPTY", "params": {}},
         )
     safe_name = Path(filename.replace("\\", "/")).name or "knowledge.txt"
-    with tempfile.TemporaryDirectory(prefix="langdrill-knowledge-") as temp_dir:
-        source = Path(temp_dir) / safe_name
-        source.write_bytes(data)
-        init_db()
-        with transaction() as conn:
-            run = KnowledgeIngestionService(conn).import_file(
-                source,
-                title=title or source.stem,
-                language=language,
-            )
-            document = KnowledgeRepository(conn).list_documents()[-1]
+
+    def _import_blocking() -> tuple[Any, Any]:
+        with tempfile.TemporaryDirectory(prefix="langdrill-knowledge-") as temp_dir:
+            source = Path(temp_dir) / safe_name
+            source.write_bytes(data)
+            init_db()
+            with transaction() as conn:
+                imported = KnowledgeIngestionService(conn).import_file(
+                    source,
+                    title=title or source.stem,
+                    language=language,
+                )
+                return imported, KnowledgeRepository(conn).list_documents()[-1]
+
+    # 文档切块、解析和可能的嵌入计算都是阻塞调用，必须离开事件循环。
+    run, document = await run_in_threadpool(_import_blocking)
     return {
         "run_id": run.id,
         "run": run.model_dump(mode="json"),

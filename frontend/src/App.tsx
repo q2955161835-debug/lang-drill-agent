@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type ClipboardEvent, type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type ClipboardEvent, type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 import {
@@ -75,7 +75,13 @@ import type {
 
 gsap.registerPlugin(useGSAP);
 
-function MessageItem({
+// memo 是必要的：聊天记录的 map 和受控输入框都在 App 组件内，setInput 会让每次按键
+// 重新渲染整份聊天记录，而 MarkdownText 会从头重新解析每条消息，成本是 O(整场会话长度)
+// 且没有虚拟化或条数上限。三个 prop 在打字期间引用稳定（handleConfirmSettingsAction 是
+// useCallback([])，showMessageMenu 依赖 [activeSessionId, copyText, stageBranchQuote]），
+// 消息对象只做追加或整场替换，因此 memo 能真正命中。
+// 入场动画是 mount-only（dependencies: []），不会被 memo 抑制。
+const MessageItem = memo(function MessageItem({
   message,
   onContextMenu,
   onConfirmSettingsAction
@@ -115,7 +121,7 @@ function MessageItem({
       </div>
     </article>
   );
-}
+});
 
 function SettingsActionCard({ action, onConfirm }: { action: SettingsAction; onConfirm: (action: SettingsAction) => void }) {
   if (action.type === "custom_model_draft") {

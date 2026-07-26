@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from "react";
+import { Fragment, useMemo, type ReactNode } from "react";
 
 type MarkdownTextProps = {
   content: string;
@@ -13,7 +13,10 @@ type Block =
 
 export function MarkdownText({ content, className = "" }: MarkdownTextProps) {
   const classes = ["markdown-text", className].filter(Boolean).join(" ");
-  return <div className={classes}>{parseBlocks(content).map(renderBlock)}</div>;
+  // parseBlocks 会逐行扫描并让 renderInline 逐字符走一遍，重新构造全部 React 元素；
+  // 内容不变时没有理由重算。
+  const blocks = useMemo(() => parseBlocks(content), [content]);
+  return <div className={classes}>{blocks.map(renderBlock)}</div>;
 }
 
 function parseBlocks(content: string): Block[] {

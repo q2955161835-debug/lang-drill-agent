@@ -130,15 +130,17 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\desktop\build-de
 ## Verification
 
 ```powershell
-py -m pytest try -q
-py -m ruff check backend try
+py -m pytest tests -q
+py -m ruff check backend tests scripts
 cd frontend
 npm run build
+npm run test -- --run
 cd ..
+npm --prefix runtime/pi-bridge test
 cargo check --manifest-path src-tauri\Cargo.toml
 ```
 
-GitHub Actions CI is configured. Pushes and pull requests run backend tests, Python lint and frontend build. The desktop installer can be verified on a Windows VM via the manually triggered `Desktop Installer VM Test`.
+GitHub Actions CI is configured. Pushes and pull requests run Python lint, backend tests, the frontend build, frontend Vitest tests, pi-bridge tests and `cargo check` for the desktop shell. The desktop installer can be verified on a Windows VM via the manually triggered `Desktop Installer VM Test`.
 
 ## Experimental Status
 

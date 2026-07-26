@@ -15,7 +15,7 @@ from .command_rules import (
     normalize_command,
 )
 from .models import CreativeModeSettings, PermissionProfile, PolicyDecision
-from .path_rules import is_within, normalize_path, tool_path_targets
+from .path_rules import is_within, normalize_path, sensitive_path_reason, tool_path_targets
 
 
 class ToolRequest(BaseModel):
@@ -115,6 +115,16 @@ class ToolPolicyGateway:
         )
 
     def _smart_decision(self, request: NormalizedToolRequest) -> PolicyDecision:
+        # 工作区内并不等于不敏感：workspace_root 是仓库根目录（api.py 里由
+        # Path(__file__).resolve().parents[2] 得出），开发期 .env、start.bat 和
+        # scripts/ 下的启动脚本都在里面。read 会把文件正文原样转发给模型，
+        # write/edit 则等于往下次启动会执行的脚本里写代码。
+        if any(sensitive_path_reason(path, request.workspace_root) for path in request.paths):
+            return self._decision(
+                "require_approval",
+                "smart_sensitive_path",
+                request,
+            )
         if request.tool_name == "read" and all(
             is_within(path, request.workspace_root) for path in request.paths
         ):
