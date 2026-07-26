@@ -1433,7 +1433,6 @@ class SyllabusService:
 
 
 class PastPaperService:
-    DEFAULT_RECENT_YEARS = [2025, 2024, 2023]
     CET_PAPER_SOURCE = "https://www.guojiya.cn/#exams"
     RESERVED_LISTENING_REASON = "暂未接入听力题和语音模型，此题型先预留，当前不可勾选。"
     EXAM_PAPER_SOURCES = {
@@ -1625,78 +1624,6 @@ class PastPaperService:
                 "只生成 enabled_question_types 中已勾选的题型；未勾选题型不得进入本轮题组。",
             ],
         }
-
-    def seed_default_papers(self, exam_id: str) -> None:
-        source_info = self._source_info(exam_id)
-        question_type_ids = [item["id"] for item in self._question_type_options(exam_id)]
-        dirs = ensure_exam_paper_dirs(exam_id)
-        for year in self.DEFAULT_RECENT_YEARS:
-            paper_id = f"paper_{exam_id}_{year}"
-            title = f"{source_info['title_prefix']} {year} 年真题参考索引"
-            summary = f"默认近三年真题索引，用于参考 {source_info['title_prefix']} 的题型结构、难度和常见主题。"
-            slug = paper_slug(exam_id, title, year, paper_id)
-            raw_path = dirs["raw"] / f"{slug}.md"
-            parsed_path = dirs["parsed"] / f"{slug}.json"
-            manifest = source_manifest_text(
-                exam_id=exam_id,
-                title=title,
-                year=year,
-                source_url=source_info["source_website"],
-                summary=summary,
-                question_types=question_type_ids,
-            )
-            raw_path.write_text(manifest, encoding="utf-8")
-            parsed_payload = parse_paper_text(
-                manifest,
-                exam_id=exam_id,
-                title=title,
-                year=year,
-                source_url=source_info["source_website"],
-                raw_path=relative_display_path(raw_path),
-                parser="source_manifest",
-                fallback_summary=summary,
-                fallback_question_types=question_type_ids,
-                parse_status="source_manifest_only",
-            )
-            write_parsed_json(parsed_path, parsed_payload)
-            metadata = {
-                "summary": summary,
-                "question_types": question_type_ids,
-                "import_mode": "default_recent_source_manifest",
-                "raw_path": relative_display_path(raw_path),
-                "parsed_path": relative_display_path(parsed_path),
-                "parse_status": "source_manifest_only",
-                "parsed": loads(parsed_path.read_text(encoding="utf-8"), {}),
-            }
-            self.conn.execute(
-                """
-                INSERT OR IGNORE INTO exam_assets
-                (id, exam_id, asset_type, title, year, source_url, local_path,
-                 trusted_level, copyright_boundary, metadata_json)
-                VALUES (?, ?, 'past_paper', ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    paper_id,
-                    exam_id,
-                    title,
-                    year,
-                    source_info["source_website"],
-                    relative_display_path(raw_path),
-                    "needs_verification",
-                    "style_reference_only",
-                    dumps(metadata),
-                ),
-            )
-            self.conn.execute(
-                """
-                UPDATE exam_assets
-                SET source_url=?,
-                    local_path=?,
-                    metadata_json=?
-                WHERE id=?
-                """,
-                (source_info["source_website"], relative_display_path(raw_path), dumps(metadata), paper_id),
-            )
 
     def select_papers(self, exam_id: str, paper_ids: list[str]) -> dict[str, Any]:
         existing = {paper["id"] for paper in self._papers(exam_id)}
