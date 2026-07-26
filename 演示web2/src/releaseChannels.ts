@@ -2,7 +2,7 @@
  * 演示站下载渠道清单。
  *
  * 仅在 `演示web2` 内部使用：桌面版下载区只展示稳定版 (v0.1.2) 与
- * 当前实验版 (v1.0.1)，默认下载入口指向稳定版。在线体验入口仍只指向
+ * 当前实验版 (v1.0.2)，默认下载入口指向稳定版。在线体验入口仍只指向
  * 实验版 (`#/app`)。
  */
 
@@ -26,10 +26,10 @@ export const releaseChannels = {
   experimental: {
     id: "experimental",
     label: "实验版",
-    version: "v1.0.1",
+    version: "v1.0.2",
     description: "包含最新 Agent、记忆、知识库与创造模式能力。",
     downloadUrl:
-      "https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v1.0.1/Lang.Drill.Agent_1.0.1_x64-setup.exe",
+      "https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v1.0.2/Lang.Drill.Agent_1.0.2_x64-setup.exe",
   },
 } satisfies Record<"stable" | "experimental", DemoReleaseChannel>;
 

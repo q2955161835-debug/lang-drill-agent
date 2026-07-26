@@ -3,7 +3,7 @@
 验证三件事：
 
 1. ``演示web2/src/releaseChannels.ts`` 只声明稳定版 (v0.1.2) 与实验版
-   (v1.0.1) 两个下载渠道，历史版本不出现在演示网页。
+   (v1.0.2) 两个下载渠道，历史版本不出现在演示网页。
 2. ``演示web2/src/App.tsx`` 的在线体验入口仍指向 ``#/app`` 并标注为实验版，
    不得出现“稳定版在线体验”字样。
 3. 页眉与首页下载按钮默认指向稳定版；本任务不得修改 GitHub Release 元数据工作流。
@@ -34,8 +34,8 @@ def test_demo_has_only_stable_and_experimental_downloads() -> None:
     assert 'version: "v0.1.2"' in text
     assert "Lang.Drill.Agent_0.1.2_x64-setup.exe" in text
     assert 'label: "实验版"' in text
-    assert 'version: "v1.0.1"' in text
-    assert "Lang.Drill.Agent_1.0.1_x64-setup.exe" in text
+    assert 'version: "v1.0.2"' in text
+    assert "Lang.Drill.Agent_1.0.2_x64-setup.exe" in text
     assert 'label: "历史版本"' not in text
     assert "v1.0.0-alpha.2" not in text
 

@@ -8,7 +8,7 @@ Many learning tools split word lists, practice, mistakes, explanations and stati
 
 The project focuses on exams such as CET-4/CET-6, CFT-4, CJT4/CJT6 and other language tests. Formal learning state is persisted in SQLite. Models generate questions and explanations; the program persists questions, scores answers, advances progress and computes statistics, so learning records never drift inside chat context.
 
-Both a Web edition and a Windows desktop edition are provided. The desktop edition wraps the same React/Vite UI with Tauri and starts a local FastAPI backend; the Web development workflow stays unchanged. The current experimental release is `v1.0.1`; `v1.0.0-alpha.2` remains available as the historical v1.0.0-series build.
+Both a Web edition and a Windows desktop edition are provided. The desktop edition wraps the same React/Vite UI with Tauri and starts a local FastAPI backend; the Web development workflow stays unchanged. The current experimental release is `v1.0.2`; `v1.0.1` remains available as the previous experimental build.
 
 ## Core Features
 
@@ -104,15 +104,15 @@ npm run dev
 npm run build
 ```
 
-The site is a static frontend built and deployed to GitHub Pages by `.github/workflows/pages-demo-web2.yml` at `https://q2955161835-debug.github.io/lang-drill-agent/`. Its download area only lists stable `v0.1.2` and current experimental `v1.0.1`; the header and home-page download actions default to the stable build. The online experience remains experimental. Historical builds remain available on GitHub Releases but are not shown on the demo site. The demo workbench does not connect to a real backend, does not read `.env`, and model replies are fixed mock content.
+The site is a static frontend built and deployed to GitHub Pages by `.github/workflows/pages-demo-web2.yml` at `https://q2955161835-debug.github.io/lang-drill-agent/`. Its download area only lists stable `v0.1.2` and current experimental `v1.0.2`; the header and home-page download actions default to the stable build. The online experience remains experimental. Historical builds remain available on GitHub Releases but are not shown on the demo site. The demo workbench does not connect to a real backend, does not read `.env`, and model replies are fixed mock content.
 
 ## Windows Installer and Update
 
 The current Windows installer is published on GitHub Release:
 
 - Stable `v0.1.2`: [release](https://github.com/q2955161835-debug/lang-drill-agent/releases/tag/v0.1.2) · [installer](https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v0.1.2/Lang.Drill.Agent_0.1.2_x64-setup.exe)
-- Current experimental `v1.0.1`: [release](https://github.com/q2955161835-debug/lang-drill-agent/releases/tag/v1.0.1) · [installer](https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v1.0.1/Lang.Drill.Agent_1.0.1_x64-setup.exe)
-- Historical v1.0.0-series build `v1.0.0-alpha.2`: [release](https://github.com/q2955161835-debug/lang-drill-agent/releases/tag/v1.0.0-alpha.2) · [installer](https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v1.0.0-alpha.2/Lang.Drill.Agent_1.0.0-alpha.2_x64-setup.exe)
+- Current experimental `v1.0.2`: [release](https://github.com/q2955161835-debug/lang-drill-agent/releases/tag/v1.0.2) · [installer](https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v1.0.2/Lang.Drill.Agent_1.0.2_x64-setup.exe)
+- Previous experimental `v1.0.1`: [release](https://github.com/q2955161835-debug/lang-drill-agent/releases/tag/v1.0.1) · [installer](https://github.com/q2955161835-debug/lang-drill-agent/releases/download/v1.0.1/Lang.Drill.Agent_1.0.1_x64-setup.exe)
 - SHA256 values are published in each Release's `checksums.sha256` attachment.
 
 This is an unsigned internal test installer. Windows may warn about an unknown publisher; confirm the source and continue.
@@ -144,7 +144,7 @@ GitHub Actions CI is configured. Pushes and pull requests run Python lint, backe
 
 ## Experimental Status
 
-The current version `v1.0.1` is an experimental pre release: creative mode, the signed update center, the trilingual UI and demo site sync are all experimental capabilities and may be unstable. The formal learning flow (word list import, question generation, answering, explanation, review) remains stable. `v1.0.0-alpha.2` is now historical; back up `%APPDATA%\Lang Drill Agent` before upgrading and reinstall that build or stable `v0.1.2` to roll back.
+The current version `v1.0.2` is an experimental pre release: creative mode, the signed update center, the trilingual UI and demo site sync are all experimental capabilities and may be unstable. The formal learning flow (word list import, question generation, answering, explanation, review) remains stable. Back up `%APPDATA%\Lang Drill Agent` before upgrading; reinstall the previous experimental `v1.0.1` or stable `v0.1.2` to roll back.
 
 ## License
 
