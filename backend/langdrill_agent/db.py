@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 import shutil
 import os
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
@@ -14,6 +15,11 @@ import logging
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 SCHEMA_PATH = MIGRATIONS_DIR / "001_initial.sql"
 logger = logging.getLogger(__name__)
+
+# 已完成 init_db 的数据库路径。迁移、补列、索引和提示词模块播种都是一次性工作，
+# 但 init_db 被上百个接口处理函数无条件调用，重复执行会让只读接口也去抢 SQLite 写锁。
+_INITIALIZED_DB_PATHS: set[Path] = set()
+_INIT_LOCK = threading.Lock()
 
 
 def iter_migration_files() -> list[Path]:
@@ -60,6 +66,12 @@ def connect(db_path: Path | None = None) -> sqlite3.Connection:
     conn = sqlite3.connect(target, isolation_level=None)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    # WAL 下 synchronous=NORMAL 仍然能防住程序崩溃，只在操作系统崩溃或断电时可能丢掉
+    # 最后若干次提交。本项目是本地单用户学习应用，用这一点换掉"每行写入各自 fsync 一次"
+    # 的开销（批量导入词表、知识块和嵌入索引时差别是数量级的）。
+    conn.execute("PRAGMA synchronous=NORMAL")
+    # 写锁被其它连接占用时先等待，而不是立刻抛 "database is locked"。
+    conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
@@ -77,12 +89,20 @@ def transaction(db_path: Path | None = None) -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
-def init_db(db_path: Path | None = None) -> Path:
+def init_db(db_path: Path | None = None, *, force: bool = False) -> Path:
     target = prepare_user_database_path(db_path)
-    with transaction(target) as conn:
-        apply_migrations(conn)
-        ensure_schema_columns(conn)
-        seed_prompt_modules(conn)
+    # 数据目录迁移会传入新路径，所以缓存按解析后的真实路径记账；文件被删掉时重新初始化。
+    if not force and target in _INITIALIZED_DB_PATHS and target.exists():
+        return target
+    with _INIT_LOCK:
+        if not force and target in _INITIALIZED_DB_PATHS and target.exists():
+            return target
+        with transaction(target) as conn:
+            apply_migrations(conn)
+            ensure_schema_columns(conn)
+            ensure_core_indexes(conn)
+            seed_prompt_modules(conn)
+        _INITIALIZED_DB_PATHS.add(target)
     logger.info("initialized database", extra={"db_path": str(target)})
     return target
 
@@ -93,6 +113,55 @@ def ensure_schema_columns(conn: sqlite3.Connection) -> None:
     }
     if "exam_id" not in session_columns:
         conn.execute("ALTER TABLE study_sessions ADD COLUMN exam_id TEXT NOT NULL DEFAULT 'cet4'")
+
+
+# 001_initial.sql 建了 20 张核心表却没有任何二级索引，因此 WHERE session_id=? /
+# question_id=? / exam_id=? 全部是全表扫描，成本随学习历史增长。
+#
+# 这里刻意不使用 .sql 迁移文件：init_db 中 apply_migrations 跑在 ensure_schema_columns
+# 之前，而 study_sessions.exam_id 在早期版本建立的老库上要靠 ensure_schema_columns 补建，
+# 迁移脚本引用该列会在这些老库上直接失败。索引统一放在补列之后创建。
+# 全部带 IF NOT EXISTS，配合 init_db 的一次性守卫，重复调用是廉价的模式检查。
+_CORE_INDEXES = (
+    # WHERE session_id=? ORDER BY created_at；也服务 study_sessions 级联删除
+    "CREATE INDEX IF NOT EXISTS idx_messages_session_created "
+    "ON messages(session_id, created_at)",
+    # 取当前待答题：WHERE session_id=? AND status='ready' ORDER BY sequence
+    "CREATE INDEX IF NOT EXISTS idx_questions_session_status_sequence "
+    "ON questions(session_id, status, sequence)",
+    # 会话作答历史：WHERE session_id=? ORDER BY created_at DESC
+    "CREATE INDEX IF NOT EXISTS idx_attempts_session_created "
+    "ON attempts(session_id, created_at)",
+    # 每题最近一次作答的关联子查询：WHERE question_id=? AND session_id=? ORDER BY created_at DESC
+    "CREATE INDEX IF NOT EXISTS idx_attempts_question_session_created "
+    "ON attempts(question_id, session_id, created_at)",
+    # 当日词汇、掌握度统计、复习候选：均以 exam_id 领先
+    "CREATE INDEX IF NOT EXISTS idx_knowledge_items_exam_term_scope "
+    "ON knowledge_items(exam_id, term, source_scope)",
+    # 判题时按词条反查（WHERE term=? OR term=?），需要 term 领先
+    "CREATE INDEX IF NOT EXISTS idx_knowledge_items_term ON knowledge_items(term)",
+    # 一条同时服务两种形状：当日面板 WHERE folder_date=? AND exam_id=? AND status!='deleted'
+    # （exam_id + folder_date 双等值 seek，status 在索引内过滤）和会话列表
+    # WHERE exam_id=? ORDER BY folder_date DESC。列序刻意让 exam_id 领先，
+    # 额外加 folder_date 领先的索引经查询计划验证是冗余的。
+    "CREATE INDEX IF NOT EXISTS idx_study_sessions_exam_date_status "
+    "ON study_sessions(exam_id, folder_date, status)",
+    # 分支消息：WHERE branch_id=? ORDER BY created_at DESC
+    "CREATE INDEX IF NOT EXISTS idx_branch_messages_branch_created "
+    "ON branch_messages(branch_id, created_at)",
+    # 下面两条只为 PRAGMA foreign_keys=ON 下 DELETE FROM study_sessions 的级联查子表，
+    # 缺索引时每次删会话都要全表扫这两张表。
+    "CREATE INDEX IF NOT EXISTS idx_branch_conversations_session "
+    "ON branch_conversations(session_id)",
+    "CREATE INDEX IF NOT EXISTS idx_generation_jobs_session ON generation_jobs(session_id)",
+    # 真题资产选择：WHERE exam_id=? AND asset_type='past_paper'
+    "CREATE INDEX IF NOT EXISTS idx_exam_assets_exam_type ON exam_assets(exam_id, asset_type)",
+)
+
+
+def ensure_core_indexes(conn: sqlite3.Connection) -> None:
+    for statement in _CORE_INDEXES:
+        conn.execute(statement)
 
 
 def seed_prompt_modules(conn: sqlite3.Connection) -> None:
