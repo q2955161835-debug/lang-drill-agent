@@ -10,11 +10,8 @@ node_modules/
 frontend/dist/
 frontend/*.tsbuildinfo
 runtime/pi-bridge/dist/
-演示web/dist/
-演示web/.vite/
-演示web/*.tsbuildinfo
-演示web/vite.config.js
-演示web/vite.config.d.ts
+# 演示web2/ 的构建产物由 演示web2/.gitignore 自行覆盖（dist、.vite、*.tsbuildinfo）。
+# 原先这里有一组 演示web/ 规则，该目录已于 2026-07-04 从仓库和磁盘移除。
 src-tauri/target/
 src-tauri/gen/
 data/*.db
@@ -27,6 +24,7 @@ backend/*.db-*
 try/*.db
 try/*.db-*
 logs/*.log
+logs/*.log.*
 %TEMP%*.log
 frontend/%TEMP%*.log
 tmp/
@@ -36,5 +34,9 @@ try/.cache/
 doc/
 papers/**/raw/*
 papers/**/parsed/*
+# structured/ 存 past_papers/ingestion 写出的完整结构化解析结果（题干、选项、答案、
+# 篇章），是最不该进公开仓库的一类内容，原先没有任何规则覆盖。
+papers/**/structured/*
 !papers/**/raw/.gitkeep
 !papers/**/parsed/.gitkeep
+!papers/**/structured/.gitkeep
