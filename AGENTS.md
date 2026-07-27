@@ -166,6 +166,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\desktop\build-de
 ```
 
 桌面版规则：
+- 每次发布新版本时，必须在本机执行桌面 release（发布版）构建；构建和版本验证通过后，将最新 NSIS（Windows 安装器）安装包复制到项目根目录并替换根目录旧版本。根目录只保留当前版本安装包，安装包必须由 Git（版本控制）忽略且禁止提交。
 - NSIS（Windows 安装器）安装目录必须使用英文/ASCII（美国信息交换标准代码）路径；用户选择中文或其它非 ASCII 路径时必须在复制文件前中止安装并提示改用 `C:\LangDrillAgent`、`D:\LangDrillAgent` 等路径。
 - NSIS（Windows 安装器）必须兼容旧版安装目录被用户手动删除的情况：若旧 `uninstall.exe` 和主程序都不存在，应在判断已安装前清理旧卸载注册表残留；用户看到旧版 `Already Installed` 页面且旧目录已删除时，可选择 `Do not uninstall` 继续安装。
 - 桌面后端固定监听 `http://127.0.0.1:18080`；端口被非 Lang Drill Agent 进程占用时必须给出清晰错误。
