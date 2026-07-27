@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [switch]$SkipInstall
+    [switch]$SkipInstall,
+    [switch]$PrintBuildCommand
 )
 
 $ErrorActionPreference = "Stop"
@@ -13,6 +14,20 @@ $Root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $FrontendDir = Join-Path $Root "frontend"
 $TauriConfig = Join-Path $Root "src-tauri\tauri.conf.json"
 $TauriBin = Join-Path $FrontendDir "node_modules\.bin\tauri.cmd"
+$SigningKeyConfigured = -not [string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)
+$TauriBuildArguments = @("build", "--config", $TauriConfig)
+if (-not $SigningKeyConfigured) {
+    $TauriBuildArguments += "--no-sign"
+}
+
+if ($PrintBuildCommand) {
+    [pscustomobject]@{
+        command = $TauriBin
+        arguments = $TauriBuildArguments
+        signing_key_configured = $SigningKeyConfigured
+    } | ConvertTo-Json -Compress
+    exit 0
+}
 
 $PiRuntimeManifest = Join-Path $Root "runtime\pi-runtime-manifest.json"
 if (Test-Path -LiteralPath $PiRuntimeManifest -PathType Leaf) {
@@ -50,7 +65,11 @@ if (-not (Test-Path $TauriBin)) {
     throw "Tauri CLI was not found at $TauriBin. Run npm install in frontend first."
 }
 
-& $TauriBin build --config $TauriConfig
+if (-not $SigningKeyConfigured) {
+    Write-Host "No updater signing key configured; building local desktop artifacts with --no-sign."
+}
+
+& $TauriBin @TauriBuildArguments
 if ($LASTEXITCODE -ne 0) {
     throw "Tauri desktop build failed."
 }
