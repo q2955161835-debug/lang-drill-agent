@@ -14,6 +14,7 @@ runtime/pi-bridge/dist/
 # 原先这里有一组 演示web/ 规则，该目录已于 2026-07-04 从仓库和磁盘移除。
 src-tauri/target/
 src-tauri/gen/
+/Lang Drill Agent_*_x64-setup.exe
 data/*.db
 data/*.db-*
 data_backups/
